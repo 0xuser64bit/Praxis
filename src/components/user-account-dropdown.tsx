@@ -1,4 +1,6 @@
-import { signOut } from "@/app/lib/auth";
+"use client";
+
+import { handleSignOut } from "@/app/actions/user";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -26,18 +28,15 @@ export default function UserAccountDropdown({
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56 mt-2" align="end">
         <DropdownMenuItem className="cursor-pointer">
-          <User />
+          <User className="mr-2 h-4 w-4" />
           <span>Profile</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          className="cursor-pointer"
-          onClick={async () => {
-            "use server";
-            await signOut({ redirectTo: "/" });
-          }}
+          className={`cursor-pointer`}
+          onClick={() => handleSignOut()}
         >
-          <LogOut />
+          <LogOut className="mr-2 h-4 w-4" />
           <span>Log out</span>
         </DropdownMenuItem>
       </DropdownMenuContent>

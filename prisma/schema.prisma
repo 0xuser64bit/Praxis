@@ -14,10 +14,38 @@ datasource db {
 }
 
 model User {
-  id          String   @id @default(cuid())
-  email       String   @unique
+  id          String        @id @default(cuid())
+  email       String        @unique
   private_key String?
   public_key  String?
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  messages    Message[]
+  chats       ChatSession[]
+  created_at  DateTime      @default(now())
+  updated_at  DateTime      @updatedAt
+}
+
+model ChatSession {
+  id         String    @id @default(cuid())
+  title      String?
+  user_id    String
+  user       User      @relation(fields: [user_id], references: [email], onDelete: Cascade)
+  messages   Message[]
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+}
+
+model Message {
+  id              String      @id @default(cuid())
+  content         String
+  user_id         String
+  user            User        @relation(fields: [user_id], references: [email], onDelete: Cascade)
+  chat_session_id String
+  chat_sessions   ChatSession @relation(fields: [chat_session_id], references: [id], onDelete: Cascade)
+  role            Role
+  created_at      DateTime    @default(now())
+}
+
+enum Role {
+  USER
+  ASSISTANT
 }

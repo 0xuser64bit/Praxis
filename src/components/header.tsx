@@ -5,6 +5,7 @@ import { useSession } from "@/app/providers";
 import { Coins, User, Zap } from "lucide-react";
 import { useTransition } from "react";
 import UserAccountDropdown from "./user-account-dropdown";
+import { redirect } from "next/navigation";
 
 export const Header = () => {
   const [isPending, startTransition] = useTransition();
@@ -12,7 +13,11 @@ export const Header = () => {
 
   return (
     <div className="flex justify-between items-center mb-8">
-      <div className="flex items-center">
+      <div
+        className="flex items-center cursor-pointer hover:opacity-80"
+        role="button"
+        onClick={() => redirect("/dashboard")}
+      >
         <Zap className="w-8 h-8 mr-3 text-emerald-400" />
         <h1 className="text-2xl font-bold tracking-wide">Better Wallet</h1>
       </div>
@@ -26,7 +31,7 @@ export const Header = () => {
               <span className="font-semibold">${"234.00"}</span>
             </div>
             <UserAccountDropdown
-              avatarImage={session.user.image as string}
+              avatarImage={session.user.image || "/fallback-avatar.png"}
               name={session.user.name as string}
             />
           </div>

@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { LogOut, User } from "lucide-react";
+import { redirect } from "next/navigation";
 
 export default function UserAccountDropdown({
   avatarImage,
@@ -21,13 +22,16 @@ export default function UserAccountDropdown({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Avatar className="cursor-pointer">
+        <Avatar className="cursor-pointer h-8 w-8">
           <AvatarImage src={avatarImage} alt="@better-wallet" />
           <AvatarFallback>{name.charAt(0).toUpperCase()}</AvatarFallback>
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56 mt-2" align="end">
-        <DropdownMenuItem className="cursor-pointer">
+        <DropdownMenuItem
+          className="cursor-pointer"
+          onClick={() => redirect("/profile")}
+        >
           <User className="mr-2 h-4 w-4" />
           <span>Profile</span>
         </DropdownMenuItem>

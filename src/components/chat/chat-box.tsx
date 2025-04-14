@@ -1,3 +1,5 @@
+"use client";
+
 import { Circle, Send, Zap } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../ui/button";
@@ -5,7 +7,11 @@ import { Input } from "../ui/input";
 import { sendMessageAction } from "@/app/actions/chat";
 import { useRouter } from "next/navigation";
 
-export default function ChatBox() {
+export default function ChatBox({
+  onMessageSent,
+}: {
+  onMessageSent: () => void;
+}) {
   const [inputValue, setInputValue] = useState("");
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
@@ -23,21 +29,26 @@ export default function ChatBox() {
         alert("Failed to send message new");
         return;
       }
+      setInputValue("");
       router.push(`/chat/${chat_session_id}`);
+      setIsLoading(false);
     } else if (url.includes("/chat")) {
       const { success } = await sendMessageAction({
         chat_session_id: url.split("/chat/")[1],
         content: inputValue,
-        role: "ASSISTANT",
+        role: "USER",
       });
       if (!success) {
         setIsLoading(false);
         alert("Failed to send message");
         return;
       }
+      setIsLoading(false);
+      setInputValue("");
+      if (onMessageSent) {
+        onMessageSent();
+      }
     }
-    setIsLoading(false);
-    setInputValue("");
   };
 
   return (

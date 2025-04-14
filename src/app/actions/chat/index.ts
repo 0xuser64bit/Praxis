@@ -100,3 +100,28 @@ export async function sendMessageAction({
     };
   }
 }
+
+export async function getChatSessions({
+  email,
+  chat_session_id,
+}: {
+  email: string;
+  chat_session_id: string;
+}) {
+  const ChatSessionMessages = await db.chatSession.findUnique({
+    where: {
+      user_id: email,
+      id: chat_session_id,
+    },
+    include: {
+      messages: true,
+    },
+  });
+  const messages = ChatSessionMessages?.messages.map((message) => ({
+    id: message.id,
+    content: message.content,
+    role: message.role.toString(),
+    created_at: message.created_at,
+  }));
+  return messages;
+}

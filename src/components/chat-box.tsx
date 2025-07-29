@@ -12,7 +12,7 @@ interface ChatInputProps {
 
 export const ChatBox = ({
   onSendMessage,
-  placeholder = "Message Better-Wallet",
+  placeholder = `Type a command… e.g. "Send 2 SOL to Alice"`,
   disabled = false,
   maxRows = 5,
   className = ""
@@ -51,6 +51,9 @@ export const ChatBox = ({
 
   return (
     <div className={`w-full max-w-4xl mx-auto ${className}`}>
+      <div className='flex justify-center text-2xl text-white pb-5'>
+        <h3>What do you want your wallet to do?</h3>
+      </div>
       <div className="relative">
         <div className="relative flex items-end bg-[#303030] rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-200 focus-within:shadow-md focus-within:border-gray-400">
           <textarea

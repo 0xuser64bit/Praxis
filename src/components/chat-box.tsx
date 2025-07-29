@@ -1,5 +1,6 @@
 import { ArrowUp } from 'lucide-react';
 import { useEffect, useRef, useState } from "react";
+import "./chat-box.css";
 
 interface ChatInputProps {
   onSendMessage: (message: string) => void;
@@ -60,7 +61,7 @@ export const ChatBox = ({
             placeholder={placeholder}
             disabled={disabled}
             rows={1}
-            className="flex-1 resize-none bg-transparent px-5 py-3 text-white placeholder-gray-500 border-none outline-none min-h-[48px] max-h-32 overflow-y-auto text-sm"
+            className="flex-1 resize-none bg-transparent px-5 py-3 my-1 text-white placeholder-gray-500 border-none outline-none min-h-[48px] max-h-32 overflow-y-auto text-sm scrollbar"
             style={{ lineHeight: '24px' }}
           />
 

@@ -19,7 +19,7 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${poppins.className} min-h-screen bg-gradient-to-br from-gray-900 to-black text-white antialiased`}
+        className={`${poppins.className} min-h-screen bg-[#212020] text-white antialiased`}
       >
         {children}
       </body>

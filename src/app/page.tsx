@@ -1,11 +1,20 @@
 "use client";
 
+import { ChatBox } from "@/components/chat-box";
+import { useState } from "react";
+
 export default function Home() {
+  // Todo: message will be fetched from the server if there are any
+  const [messages, setMessages] = useState<string[]>([]);
+  const handleSendMessage = (message: string) => {
+    setMessages(prev => [...prev, message]);
+    console.log('Message sent:', message);
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white">
+    <div className="min-h-screen bg-[#212020]">
       <div className="flex flex-col items-center justify-center h-screen">
-        <span className="text-6xl font-bold">Better Wallet</span>
+        <ChatBox onSendMessage={handleSendMessage} />
       </div>
     </div>
   );

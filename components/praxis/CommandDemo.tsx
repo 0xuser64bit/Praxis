@@ -113,13 +113,13 @@ export function CommandDemo() {
                 status={{ label: "Awaiting signature" }}
                 from={{
                   label: "You pay",
-                  amount: "100.00",
+                  primary: "100.00",
                   unit: "USDC",
                   sub: "≈ $100.00 USD",
                 }}
                 to={{
                   label: "You receive",
-                  amount: "87.42",
+                  primary: "87.42",
                   unit: "JUP",
                   sub: "≈ $99.82 USD",
                 }}

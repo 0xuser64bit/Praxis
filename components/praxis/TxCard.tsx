@@ -6,9 +6,13 @@ import { Eyebrow } from "@/components/praxis/Eyebrow";
 
 export type TxFlow = {
   label: string;
-  amount: string;
-  unit: string;
+  /** Main display text — an amount string ("100.00") or a name ("Maya Patel"). */
+  primary: string;
+  /** Optional suffix in --text-tertiary, used for the amount + unit case. */
+  unit?: string;
   sub: string;
+  /** Switches the primary text from 36px to 28px (for name-style entries). */
+  compact?: boolean;
 };
 
 export type TxMetaRow = {
@@ -134,16 +138,24 @@ export function TxCard({
 }
 
 function TxFlowCol({ flow }: { flow: TxFlow }) {
+  const sizeClass = flow.compact ? "text-[28px]" : "text-[36px]";
   return (
     <div>
       <div className="mb-1.5 [font-family:var(--font-mono)] text-[10px] tracking-[0.12em] text-[var(--text-tertiary)] uppercase">
         {flow.label}
       </div>
-      <div className="[font-family:var(--font-serif)] text-[36px] leading-none tracking-[-0.02em]">
-        {flow.amount}{" "}
-        <span className="text-[22px] text-[var(--text-tertiary)]">
-          {flow.unit}
-        </span>
+      <div
+        className={`[font-family:var(--font-serif)] ${sizeClass} leading-none tracking-[-0.02em]`}
+      >
+        {flow.primary}
+        {flow.unit && (
+          <>
+            {" "}
+            <span className="text-[22px] text-[var(--text-tertiary)]">
+              {flow.unit}
+            </span>
+          </>
+        )}
       </div>
       <div className="mt-1.5 [font-family:var(--font-mono)] text-[12px] text-[var(--text-tertiary)]">
         {flow.sub}

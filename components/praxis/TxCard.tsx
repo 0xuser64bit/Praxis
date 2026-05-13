@@ -80,9 +80,9 @@ export function TxCard({
         </div>
       )}
 
-      <div className="mb-[18px] grid grid-cols-[1fr_auto_1fr] items-center gap-5 pb-[22px] [border-bottom:0.5px_solid_var(--border)]">
+      <div className="mb-[18px] grid grid-cols-[1fr_auto_1fr] items-center gap-5 pb-[22px] [border-bottom:0.5px_solid_var(--border)] max-[960px]:grid-cols-1 max-[960px]:justify-items-start max-[960px]:gap-[14px]">
         <TxFlowCol flow={from} />
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)]">
+        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)] max-[960px]:rotate-90">
           <IconArrowRight size={16} />
         </div>
         <TxFlowCol flow={to} />

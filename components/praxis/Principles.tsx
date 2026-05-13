@@ -37,7 +37,7 @@ const PRINCIPLES: Principle[] = [
 
 export function Principles() {
   return (
-    <section id="principles" className="py-[140px]">
+    <section id="principles" className="py-[140px] max-[960px]:py-[100px]">
       <ContainerNarrow>
         <div className="mb-20 max-w-[720px]">
           <Eyebrow accent className="mb-5 block">
@@ -59,7 +59,7 @@ export function Principles() {
           {PRINCIPLES.map((p) => (
             <div
               key={p.mark}
-              className="grid grid-cols-[1fr_2fr] items-baseline gap-x-20 py-[50px] [border-bottom:0.5px_solid_var(--border)]"
+              className="grid grid-cols-[1fr_2fr] items-baseline gap-x-20 py-[50px] [border-bottom:0.5px_solid_var(--border)] max-[960px]:grid-cols-1 max-[960px]:gap-x-0 max-[960px]:gap-y-4"
             >
               <div className="[font-family:var(--font-serif)] text-[24px] text-[var(--accent)] italic">
                 {p.mark}

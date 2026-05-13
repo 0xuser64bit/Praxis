@@ -19,7 +19,7 @@ const META_ITEMS = [
 
 export function Hero() {
   return (
-    <section className="relative pt-[200px]">
+    <section className="relative pt-[200px] max-[960px]:pt-[140px]">
       <Container>
         <div className="max-w-[920px]">
           <div className="mb-9 inline-flex items-center gap-2.5 rounded-full px-3.5 py-1.5 [border:0.5px_solid_var(--border-strong)] [animation:fadeUp_0.8s_ease_both]">

@@ -6,7 +6,8 @@ type ContainerProps = {
 };
 
 export function Container({ children, className }: ContainerProps) {
-  const base = "relative z-[2] mx-auto w-full max-w-[1240px] px-8";
+  const base =
+    "relative z-[2] mx-auto w-full max-w-[1240px] px-8 max-[960px]:px-6";
   return (
     <div className={className ? `${base} ${className}` : base}>{children}</div>
   );

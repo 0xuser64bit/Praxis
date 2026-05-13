@@ -4,7 +4,7 @@ import { CAPABILITIES, type Capability } from "@/data/capabilities";
 
 export function Capabilities() {
   return (
-    <section className="pt-[60px] pb-[140px]">
+    <section className="pt-[60px] pb-[140px] max-[960px]:pb-[100px]">
       <Container>
         <div className="mb-20 max-w-[720px]">
           <Eyebrow accent className="mb-5 block">

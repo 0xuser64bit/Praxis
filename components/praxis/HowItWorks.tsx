@@ -31,7 +31,7 @@ const STEPS: Step[] = [
 
 export function HowItWorks() {
   return (
-    <section id="how" className="py-[140px]">
+    <section id="how" className="py-[140px] max-[960px]:py-[100px]">
       <Container>
         <div className="mb-20 max-w-[720px]">
           <Eyebrow accent className="mb-5 block">
@@ -48,14 +48,14 @@ export function HowItWorks() {
           {STEPS.map((step, i) => (
             <div
               key={step.numeral}
-              className={`grid grid-cols-[200px_1fr_1fr] items-start gap-x-[60px] py-[60px] [border-top:0.5px_solid_var(--border)] ${
+              className={`grid grid-cols-[200px_1fr_1fr] items-start gap-x-[60px] py-[60px] [border-top:0.5px_solid_var(--border)] max-[960px]:grid-cols-1 max-[960px]:gap-x-0 max-[960px]:gap-y-6 max-[960px]:py-10 ${
                 i === STEPS.length - 1
                   ? "[border-bottom:0.5px_solid_var(--border)]"
                   : ""
               }`}
             >
               <div>
-                <div className="[font-family:var(--font-serif)] text-[72px] leading-[0.9] text-[var(--accent)] italic">
+                <div className="[font-family:var(--font-serif)] text-[72px] leading-[0.9] text-[var(--accent)] italic max-[960px]:text-[56px]">
                   {step.numeral}
                 </div>
                 <div className="mt-4 [font-family:var(--font-mono)] text-[11px] tracking-[0.18em] text-[var(--text-tertiary)] uppercase">

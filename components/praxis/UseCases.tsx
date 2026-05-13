@@ -4,7 +4,7 @@ import { USE_CASES, type UseCase } from "@/data/usecases";
 
 export function UseCases() {
   return (
-    <section className="py-[140px]">
+    <section className="py-[140px] max-[960px]:py-[100px]">
       <Container>
         <div className="mb-20 max-w-[720px]">
           <Eyebrow accent className="mb-5 block">

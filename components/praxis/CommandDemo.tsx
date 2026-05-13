@@ -54,7 +54,7 @@ export function CommandDemo() {
   const caretVisible = started && !done;
 
   return (
-    <section className="pt-[100px] pb-[120px]">
+    <section className="pt-[100px] pb-[120px] max-[960px]:pb-[80px]">
       <Container>
         <div
           id="product"
@@ -81,7 +81,7 @@ export function CommandDemo() {
             </div>
           </div>
 
-          <div className="min-h-[380px] px-11 py-10">
+          <div className="min-h-[380px] px-11 py-10 max-[960px]:px-6 max-[960px]:py-7">
             <div className="mb-2 [font-family:var(--font-mono)] text-[11px] tracking-[0.05em] text-[var(--text-tertiary)]">
               YOU · 2:14 PM
             </div>

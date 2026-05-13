@@ -8,7 +8,7 @@ import { TxCard } from "@/components/praxis/TxCard";
 
 export function AppPreview() {
   return (
-    <section className="pt-10 pb-[140px]">
+    <section className="pt-10 pb-[140px] max-[960px]:pb-[100px]">
       <Container>
         <div className="mb-20 max-w-[720px]">
           <Eyebrow accent className="mb-5 block">

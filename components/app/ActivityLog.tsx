@@ -1,9 +1,12 @@
 "use client";
 
 /**
- * The audit trail: every agent action with its on-chain policy result. A
- * rejected, on-chain-reasoned action is the whole pitch, so rejections are
- * styled as first-class as successes. Doubles as the live demo feed.
+ * The audit trail: every agent action with its Aegis policy verdict. Allowed
+ * actions are read from the durable on-chain ActionLog; rejections are
+ * reconstructed for the current session (a rejected agent_transfer reverts, so
+ * no record is stored on-chain — its proof lives in the failed tx's logs/event).
+ * Enforcement is on-chain regardless; the rejection is styled first-class
+ * because the chain saying "no" is the whole pitch. Doubles as the demo feed.
  */
 
 import type { ActivityEntry } from "@praxis/shared";
@@ -40,8 +43,9 @@ export function ActivityLog() {
               Activity
             </h1>
             <p className="mt-2.5 text-[14px] text-[var(--text-secondary)]">
-              Every agent action and its Aegis verdict. Auditable without trusting us —{" "}
-              {activity.length} actions · {rejected} rejected on-chain.
+              Every agent action and its on-chain Aegis verdict. Allowed actions are
+              recorded on-chain; rejections are shown for this session.{" "}
+              {activity.length} actions · {rejected} rejected.
             </p>
           </div>
           <div className="flex shrink-0 gap-1 rounded-lg bg-[var(--bg-elevated)] p-1 [border:0.5px_solid_var(--border)]">

@@ -1,6 +1,5 @@
 import { PublicKey } from "@solana/web3.js";
 import {
-  ActionKind,
   type ActionProposal,
   type ActivityEntry,
   type AddressBookEntry,
@@ -83,7 +82,9 @@ export class PraxisServerProvider implements PraxisProvider {
     const onChain = logs.map((entry, index): ActivityEntry => {
       return {
         id: `chain-${entry.sig ?? entry.ts}-${index}`,
-        kind: entry.kind === ActionKind.Transfer ? "transfer" : "transfer",
+        // Phase 1: the on-chain ActionLog records transfers only (agent_swap is
+        // v2 / not on-chain), so every decoded entry maps to "transfer".
+        kind: "transfer",
         label: this.addressBook.labelFor(entry.target),
         asset: "SOL",
         amount: entry.amount,

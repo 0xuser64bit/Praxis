@@ -2,11 +2,15 @@ import { PublicKey } from "@solana/web3.js";
 import { RejectReason } from "@praxis/shared";
 
 import { AegisClient } from "../server/aegis/client";
+import {
+  JUPITER_PROGRAM_ID,
+  SYSTEM_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+} from "../server/aegis/constants";
 import { AddressBook } from "../server/agent/addressBook";
 import { parseIntentLocallyForDemo, parseIntentWithClaude, type ParsedAction } from "../server/agent/intent";
 import { checkTransferPolicy } from "../server/agent/policy";
 import {
-  defaultAllowedPrograms,
   getServerConfig,
   requireAgentKeypair,
   requireOwnerKeypair,
@@ -64,12 +68,21 @@ async function ensureDemoPolicy(client: AegisClient) {
   requireOwnerKeypair();
   requireAgentKeypair();
   const now = Math.floor(Date.now() / 1000);
+  // Seed the allow-lists to match the mock so the §9 #3 money-shot is faithful:
+  // Jupiter must be allow-listed for the swap's PROGRAM check to pass, so the
+  // unverified MINT is what rejects ("mint not in the verified set").
+  const config = getServerConfig();
+  const verifiedMints = config.tokens.filter((token) => token.verified).map((token) => token.mint);
   await client.initializePolicy({
     maxPerTx: parseHumanUnits("50", SOL_DECIMALS),
     dailyLimit: parseHumanUnits("5", SOL_DECIMALS),
-    allowedPrograms: defaultAllowedPrograms(),
+    allowedPrograms: [
+      SYSTEM_PROGRAM_ID.toBase58(),
+      TOKEN_PROGRAM_ID.toBase58(),
+      JUPITER_PROGRAM_ID.toBase58(),
+    ],
     allowedRecipients: [],
-    allowedMints: [],
+    allowedMints: verifiedMints,
     expiryTs: now + 7 * 86_400,
   });
   await client.fundVault(parseHumanUnits("1", SOL_DECIMALS));

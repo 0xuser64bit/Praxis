@@ -15,7 +15,9 @@ import {
 } from "@praxis/shared";
 
 import { AegisClient } from "../aegis/client";
+import { JUPITER_PROGRAM_ID } from "../aegis/constants";
 import { AddressBook } from "../agent/addressBook";
+import { checkSwapPolicy } from "../agent/policy";
 import {
   parseIntentLocallyForDemo,
   parseIntentWithClaude,
@@ -376,6 +378,26 @@ export class PraxisServerProvider implements PraxisProvider {
     const assetIn = this.token(action.assetIn);
     const assetOut = this.token(action.assetOut);
     const amountIn = parseHumanUnits(action.amountHuman, assetIn.decimals);
+
+    // Run the SAME allow-list check the mock runs, so demo §9 #3 ("the allow-list
+    // holds") is faithful in API mode. This is an agent-layer (pre-CPI) verdict:
+    // the on-chain agent_swap is v2, so a rejection here is the honest gate, not
+    // an on-chain RejectReason. Falls back to a plain stub if the policy can't be
+    // loaded (half-configured API mode).
+    const policy = await this.ensurePolicy();
+    const check = policy
+      ? checkSwapPolicy(policy, assetOut, JUPITER_PROGRAM_ID.toBase58(), nowSeconds())
+      : undefined;
+
+    // A swap can never EXECUTE today (no Jupiter CPI), so the proposal is always
+    // blocked. The REASON is what we make faithful: an allow-list rejection when
+    // the policy forbids the route, else an honest "v2 not built" note.
+    const blockedReason = !check
+      ? "agent_swap is a typed stub for v2. No Jupiter CPI is constructed or signed."
+      : check.allowed
+        ? "Your Aegis policy would allow this route, but agent_swap (the on-chain Jupiter CPI) is a v2 instruction and isn't built yet — Praxis won't sign a swap it can't enforce on-chain."
+        : check.reason;
+
     const proposal: ActionProposal = {
       id: this.id("p"),
       detail: {
@@ -388,28 +410,44 @@ export class PraxisServerProvider implements PraxisProvider {
         priceImpactBps: 0,
       },
       networkFee: 0n,
-      simulation: "agent_swap is intentionally out of scope; Jupiter CPI is not built.",
+      simulation: check && !check.allowed
+        ? `Would be rejected by policy: ${check.reason}`
+        : "agent_swap is intentionally out of scope; Jupiter CPI is not built.",
       check: {
         allowed: false,
-        reason: "agent_swap is a typed stub for v2. No Jupiter CPI is constructed or signed.",
-        spentToday: this.state.policy?.spentToday ?? 0n,
-        dailyLimit: this.state.policy?.dailyLimit ?? 0n,
-        remaining: 0n,
+        reason: blockedReason,
+        spentToday: check?.spentToday ?? policy?.spentToday ?? 0n,
+        dailyLimit: check?.dailyLimit ?? policy?.dailyLimit ?? 0n,
+        remaining: check?.remaining ?? 0n,
       },
       state: "blocked",
     };
     this.state.proposals[proposal.id] = proposal;
     this.logSwapRejection(proposal);
+
+    const blocked = Boolean(check && !check.allowed);
     return {
       blocks: [
         {
           type: "proposal",
-          text: "Swap intent parsed, but agent_swap is a typed stub until the Jupiter CPI is implemented.",
+          text: blocked
+            ? "I found a route, but your Aegis policy blocks it."
+            : "Swap intent parsed, but agent_swap is a typed stub until the Jupiter CPI is implemented.",
           proposalId: proposal.id,
         },
       ],
       title: `${assetIn.symbol} swap stub`,
     };
+  }
+
+  /** Return the cached policy, loading it once if needed; undefined if unloadable. */
+  private async ensurePolicy(): Promise<PolicyView | undefined> {
+    if (this.state.policy) return this.state.policy;
+    try {
+      return await this.refreshPolicy();
+    } catch {
+      return undefined;
+    }
   }
 
   private logSwapRejection(proposal: ActionProposal) {

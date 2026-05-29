@@ -12,6 +12,17 @@ export const DEFAULT_AEGIS_PROGRAM_ID = new PublicKey(
 
 export const SYSTEM_PROGRAM_ID = new PublicKey("11111111111111111111111111111111");
 
+/** SPL Token program — an allow-listed program for token-touching actions. */
+export const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+
+/**
+ * Jupiter aggregator (v6). Used by the agent-layer swap allow-list check: a swap
+ * is only routable if Jupiter is in the policy's `allowed_programs`. NOTE: the
+ * on-chain `agent_swap` CPI is not built (v2) — this gates the agent-layer
+ * verdict only, never an on-chain enforcement decision.
+ */
+export const JUPITER_PROGRAM_ID = new PublicKey("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
+
 export const SEEDS = {
   policy: Buffer.from("policy"),
   vault: Buffer.from("vault"),

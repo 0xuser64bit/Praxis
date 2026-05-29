@@ -5,6 +5,7 @@ import {
   remaining,
   type PolicyCheckResult,
   type PolicyView,
+  type TokenInfo,
 } from "@praxis/shared";
 
 import { formatSol } from "../units";
@@ -86,6 +87,57 @@ export function checkFromAegisReason(
 
   const spentToday = effectiveSpentToday(policy, now);
   return rejected(policy, spentToday, reasonCode, `Aegis rejected the transfer: ${REJECT_REASON_LABEL[reasonCode]}.`);
+}
+
+/**
+ * Agent-layer swap allow-list check, mirrored from the mock so API mode is
+ * faithful to demo §9 #3 ("the allow-list holds"). Order matches the mock:
+ * paused → program (Jupiter) → mint (verified set).
+ *
+ * IMPORTANT (thesis): `agent_swap` is NOT on-chain yet (v2), so a swap verdict
+ * is an AGENT-LAYER decision and carries NO on-chain `RejectReason`. It is the
+ * honest pre-flight gate — never presented as an on-chain enforcement result.
+ */
+export function checkSwapPolicy(
+  policy: PolicyView,
+  assetOut: TokenInfo,
+  jupiterProgramId: string,
+  now: number,
+): PolicyCheckResult {
+  const spentToday = effectiveSpentToday(policy, now);
+  const base = {
+    spentToday,
+    dailyLimit: policy.dailyLimit,
+    remaining: remaining(policy.dailyLimit, spentToday),
+  };
+
+  if (policy.paused) {
+    return {
+      allowed: false,
+      reason:
+        "Aegis is paused — the agent session key has been revoked. Re-enable it from the Policy dashboard to route swaps again.",
+      ...base,
+    };
+  }
+
+  if (!policy.allowedPrograms.includes(jupiterProgramId)) {
+    return {
+      allowed: false,
+      reason:
+        "Jupiter is not in your allowed-program list, so Aegis will not let the agent route this swap.",
+      ...base,
+    };
+  }
+
+  if (!policy.allowedMints.includes(assetOut.mint)) {
+    return {
+      allowed: false,
+      reason: `${assetOut.symbol} isn't in your verified-mint allow-list, so Aegis won't let the agent route into it. Add the mint in the Policy dashboard if you trust it.`,
+      ...base,
+    };
+  }
+
+  return { allowed: true, ...base };
 }
 
 function rejected(

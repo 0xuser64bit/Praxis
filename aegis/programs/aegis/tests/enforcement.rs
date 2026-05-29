@@ -11,6 +11,7 @@
 
 use {
     aegis::{error::AegisError, state::PolicyAccount},
+    anchor_lang::prelude::Pubkey,
     anchor_lang::{
         solana_program::instruction::Instruction, AccountDeserialize, InstructionData,
         ToAccountMetas,
@@ -19,7 +20,6 @@ use {
     solana_clock::Clock,
     solana_instruction::error::InstructionError,
     solana_keypair::Keypair,
-    anchor_lang::prelude::Pubkey,
     solana_message::{Message, VersionedMessage},
     solana_signer::Signer,
     solana_transaction::versioned::VersionedTransaction,
@@ -60,7 +60,12 @@ fn expect_ok(r: &TransactionResult, ctx: &str) -> Result<(), String> {
     }
 }
 
-fn expect_reject(r: &TransactionResult, want: u32, want_name: &str, ctx: &str) -> Result<(), String> {
+fn expect_reject(
+    r: &TransactionResult,
+    want: u32,
+    want_name: &str,
+    ctx: &str,
+) -> Result<(), String> {
     let got = rejected_code(r).map_err(|e| format!("{ctx}: {e}"))?;
     if got == want {
         Ok(())
@@ -108,12 +113,20 @@ impl Ctx {
         svm.airdrop(&owner.pubkey(), sol(1_000)).unwrap();
         svm.airdrop(&agent.pubkey(), sol(10)).unwrap();
 
-        let policy = Pubkey::find_program_address(&[b"policy", owner.pubkey().as_ref()], &aegis::ID).0;
+        let policy =
+            Pubkey::find_program_address(&[b"policy", owner.pubkey().as_ref()], &aegis::ID).0;
         let vault = Pubkey::find_program_address(&[b"vault", policy.as_ref()], &aegis::ID).0;
         let action_log =
             Pubkey::find_program_address(&[b"action_log", policy.as_ref()], &aegis::ID).0;
 
-        let mut ctx = Ctx { svm, owner, agent, policy, vault, action_log };
+        let mut ctx = Ctx {
+            svm,
+            owner,
+            agent,
+            policy,
+            vault,
+            action_log,
+        };
         ctx.set_time(t0);
 
         // initialize_policy (owner)
@@ -177,7 +190,12 @@ impl Ctx {
         expect_ok(&self.send(ix, &[&owner]), "fund_vault").unwrap();
     }
 
-    fn agent_transfer(&mut self, amount: u64, recipient: Pubkey, signer: &Keypair) -> TransactionResult {
+    fn agent_transfer(
+        &mut self,
+        amount: u64,
+        recipient: Pubkey,
+        signer: &Keypair,
+    ) -> TransactionResult {
         let ix = Instruction::new_with_bytes(
             aegis::ID,
             &aegis::instruction::AgentTransfer { amount }.data(),
@@ -224,18 +242,24 @@ impl Ctx {
     }
 
     fn policy_state(&self) -> PolicyAccount {
-        let acct = self.svm.get_account(&self.policy).expect("policy account exists");
+        let acct = self
+            .svm
+            .get_account(&self.policy)
+            .expect("policy account exists");
         PolicyAccount::try_deserialize(&mut acct.data.as_slice()).expect("deserialize policy")
     }
 
     fn vault_lamports(&self) -> u64 {
-        self.svm.get_account(&self.vault).map(|a| a.lamports).unwrap_or(0)
+        self.svm
+            .get_account(&self.vault)
+            .map(|a| a.lamports)
+            .unwrap_or(0)
     }
 }
 
 // --------------------------------------------------------------------------
 // T1 — Cap boundary: per-tx {max-1 ok, max ok, max+1 reject};
-//                    daily {under ok, exact ok, over reject}.
+//                    daily {limit-1 ok, exact ok, over reject}.
 // --------------------------------------------------------------------------
 fn t1_cap_boundary() -> Result<String, String> {
     let far = 10_000_000_000i64;
@@ -256,8 +280,11 @@ fn t1_cap_boundary() -> Result<String, String> {
     // --- daily boundary (max_per_tx == daily so single txs can fill it) ---
     let mut b = Ctx::setup(sol(5), sol(5), vec![], far, 1_000, sol(10));
     let agent = b.agent.insecure_clone();
-    expect_ok(&b.agent_transfer(sol(4), to, &agent), "T1 daily under (4<5)")?; // spent=4
-    expect_ok(&b.agent_transfer(sol(1), to, &agent), "T1 daily == limit (5==5)")?; // spent=5
+    expect_ok(
+        &b.agent_transfer(sol(5) - 1, to, &agent),
+        "T1 daily limit-1",
+    )?; // spent=5 SOL - 1 lamport
+    expect_ok(&b.agent_transfer(1, to, &agent), "T1 daily == limit")?; // spent=5 SOL
     expect_reject(
         &b.agent_transfer(1, to, &agent), // 5 SOL + 1 lamport
         ecode(AegisError::ExceedsDailyLimit),
@@ -266,15 +293,15 @@ fn t1_cap_boundary() -> Result<String, String> {
     )?;
 
     Ok(format!(
-        "per-tx: max-1 ok, max ok, max+1→Custom({}) over_per_tx | daily: 4<5 ok, 5==5 ok, +1→Custom({}) over_daily",
+        "per-tx: max-1 ok, max ok, max+1→Custom({}) over_per_tx | daily: limit-1 ok, limit ok, +1→Custom({}) over_daily",
         ecode(AegisError::ExceedsPerTxLimit),
         ecode(AegisError::ExceedsDailyLimit),
     ))
 }
 
 // --------------------------------------------------------------------------
-// T2 — Day rollover: spend to cap; advance <24h → reject; advance ≥24h →
-//      allowed again AND spent_today reset.
+// T2 — Day rollover: spend to cap; advance <24h → reject; advance >=24h and
+//      >24h → allowed again AND spent_today reset.
 // --------------------------------------------------------------------------
 fn t2_day_rollover() -> Result<String, String> {
     let t0 = 1_000_000i64;
@@ -306,11 +333,17 @@ fn t2_day_rollover() -> Result<String, String> {
     // is the off-by-one guard the spec flags.)
     let boundary = t0 + 86_400;
     c.set_time(boundary);
-    expect_ok(&c.agent_transfer(sol(5), to, &agent), "T2 ==86400 boundary allowed")?;
+    expect_ok(
+        &c.agent_transfer(sol(5), to, &agent),
+        "T2 ==86400 boundary allowed",
+    )?;
 
     let st = c.policy_state();
     if st.spent_today != sol(5) {
-        return Err(format!("T2 reset: expected spent_today==5 SOL after rollover, got {}", st.spent_today));
+        return Err(format!(
+            "T2 reset: expected spent_today==5 SOL after rollover, got {}",
+            st.spent_today
+        ));
     }
     if st.day_start_ts != boundary {
         return Err(format!(
@@ -319,8 +352,33 @@ fn t2_day_rollover() -> Result<String, String> {
         ));
     }
 
+    // The prompt's gate calls out ">24h" explicitly. Use a fresh policy so
+    // the exact-boundary spend above does not consume this window.
+    let mut d = Ctx::setup(sol(5), sol(5), vec![], expiry, t0, sol(20));
+    let agent = d.agent.insecure_clone();
+    expect_ok(
+        &d.agent_transfer(sol(5), to, &agent),
+        "T2 >24h setup spend to cap",
+    )?;
+    d.set_time(t0 + 86_400 + 1);
+    expect_ok(&d.agent_transfer(sol(5), to, &agent), "T2 >24h allowed")?;
+    let st = d.policy_state();
+    if st.spent_today != sol(5) {
+        return Err(format!(
+            "T2 >24h reset: expected spent_today==5 SOL after rollover, got {}",
+            st.spent_today
+        ));
+    }
+    if st.day_start_ts != t0 + 86_400 + 1 {
+        return Err(format!(
+            "T2 >24h reset: expected day_start_ts=={}, got {}",
+            t0 + 86_400 + 1,
+            st.day_start_ts
+        ));
+    }
+
     Ok(format!(
-        "cap ok; +1→Custom({}) over_daily; t0+86399 (<24h)→Custom({}) over_daily; t0+86400 (exact boundary, >=) ok + spent_today reset to 5 SOL, day_start advanced",
+        "cap ok; +1→Custom({}) over_daily; t0+86399 (<24h)→Custom({}) over_daily; t0+86400 (exact >= boundary) ok; t0+86401 (>24h) ok + spent_today reset",
         ecode(AegisError::ExceedsDailyLimit),
         ecode(AegisError::ExceedsDailyLimit),
     ))
@@ -348,7 +406,10 @@ fn t3_signer() -> Result<String, String> {
     // Owner withdraws 10 SOL — five times the per-tx cap — UNCONSTRAINED.
     let before = c.vault_lamports();
     let owner = c.owner.insecure_clone();
-    expect_ok(&c.withdraw(sol(10), &owner), "T3 owner withdraw unconstrained")?;
+    expect_ok(
+        &c.withdraw(sol(10), &owner),
+        "T3 owner withdraw unconstrained",
+    )?;
     let after = c.vault_lamports();
     if before.saturating_sub(after) != sol(10) {
         return Err(format!(
@@ -374,7 +435,10 @@ fn t4_revoke() -> Result<String, String> {
     let agent = c.agent.insecure_clone();
 
     // Sanity: agent works before revoke.
-    expect_ok(&c.agent_transfer(sol(1), to, &agent), "T4 agent works pre-revoke")?;
+    expect_ok(
+        &c.agent_transfer(sol(1), to, &agent),
+        "T4 agent works pre-revoke",
+    )?;
 
     // Owner revokes.
     let owner = c.owner.insecure_clone();
@@ -406,7 +470,10 @@ fn t5_allow_list() -> Result<String, String> {
     let mut c = Ctx::setup(sol(10), sol(10), vec![allowed], far, 1_000, sol(20));
     let agent = c.agent.insecure_clone();
 
-    expect_ok(&c.agent_transfer(sol(1), allowed, &agent), "T5 allowed recipient")?;
+    expect_ok(
+        &c.agent_transfer(sol(1), allowed, &agent),
+        "T5 allowed recipient",
+    )?;
     expect_reject(
         &c.agent_transfer(sol(1), other, &agent),
         ecode(AegisError::RecipientNotAllowed),

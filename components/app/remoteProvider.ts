@@ -7,14 +7,34 @@ import type {
   AllowListKind,
   PolicyUpdate,
   PolicyView,
+  ProviderConnectionState,
   PraxisProvider,
   Thread,
 } from "@praxis/shared";
 
-import { createInitialState, type StoreState } from "./mock/seed";
+interface RemoteStoreState {
+  threads: Thread[];
+  proposals: Record<string, ActionProposal>;
+  policy?: PolicyView;
+  activity: ActivityEntry[];
+  addressBook: AddressBookEntry[];
+  thinking: Record<string, boolean>;
+  connection: ProviderConnectionState;
+}
+
+function createEmptyState(): RemoteStoreState {
+  return {
+    threads: [],
+    proposals: {},
+    activity: [],
+    addressBook: [],
+    thinking: {},
+    connection: { mode: "api", phase: "loading" },
+  };
+}
 
 export class RemotePraxisProvider implements PraxisProvider {
-  private state: StoreState = createInitialState();
+  private state: RemoteStoreState = createEmptyState();
   private listeners = new Set<() => void>();
   private version = 0;
 
@@ -32,10 +52,14 @@ export class RemotePraxisProvider implements PraxisProvider {
   getThreads = (): Thread[] => this.state.threads;
   getThread = (id: string): Thread | undefined => this.state.threads.find((thread) => thread.id === id);
   getProposal = (id: string): ActionProposal | undefined => this.state.proposals[id];
-  getPolicy = (): PolicyView => this.state.policy;
+  getPolicy = (): PolicyView => {
+    if (!this.state.policy) throw new Error("Praxis API policy has not loaded yet.");
+    return this.state.policy;
+  };
   getActivity = (): ActivityEntry[] => this.state.activity;
   getAddressBook = (): AddressBookEntry[] => this.state.addressBook;
   isThinking = (threadId: string): boolean => Boolean(this.state.thinking[threadId]);
+  getConnectionState = (): ProviderConnectionState => this.state.connection;
 
   newThread = (): string => {
     const id = `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -44,80 +68,87 @@ export class RemotePraxisProvider implements PraxisProvider {
       threads: [{ id, title: "New session", messages: [], updatedAt: Math.floor(Date.now() / 1000) }, ...this.state.threads],
     };
     this.notify();
-    void this.post<{ threadId: string }>("/api/praxis/new-thread", { threadId: id }).then(() => this.refreshAll());
+    void this.mutate(() => this.post<{ threadId: string }>("/api/praxis/new-thread", { threadId: id }))
+      .then(() => this.refreshAll())
+      .catch(() => undefined);
     return id;
   };
 
   send = async (threadId: string | null, text: string): Promise<{ threadId: string }> => {
-    const result = await this.post<{ threadId: string }>("/api/praxis/send", { threadId, text });
+    const result = await this.mutate(() => this.post<{ threadId: string }>("/api/praxis/send", { threadId, text }));
     await this.refreshAll();
     return result;
   };
 
   signProposal = async (proposalId: string): Promise<void> => {
-    await this.post("/api/praxis/sign-proposal", { proposalId });
+    await this.mutate(() => this.post("/api/praxis/sign-proposal", { proposalId }));
     await this.refreshAll();
   };
 
   cancelProposal = async (proposalId: string): Promise<void> => {
-    await this.post("/api/praxis/cancel-proposal", { proposalId });
+    await this.mutate(() => this.post("/api/praxis/cancel-proposal", { proposalId }));
     await this.refreshAll();
   };
 
   updatePolicy = async (patch: PolicyUpdate): Promise<void> => {
-    await this.post("/api/praxis/update-policy", { patch: toWire(patch) });
+    await this.mutate(() => this.post("/api/praxis/update-policy", { patch: toWire(patch) }));
     await this.refreshAll();
   };
 
   revokeAgent = async (): Promise<void> => {
-    await this.post("/api/praxis/revoke-agent", {});
+    await this.mutate(() => this.post("/api/praxis/revoke-agent", {}));
     await this.refreshAll();
   };
 
   rotateAgent = async (): Promise<void> => {
-    await this.post("/api/praxis/rotate-agent", {});
+    await this.mutate(() => this.post("/api/praxis/rotate-agent", {}));
     await this.refreshAll();
   };
 
   addToAllowList = async (kind: AllowListKind, address: string): Promise<void> => {
-    await this.post("/api/praxis/add-to-allow-list", { kind, address });
+    await this.mutate(() => this.post("/api/praxis/add-to-allow-list", { kind, address }));
     await this.refreshAll();
   };
 
   removeFromAllowList = async (kind: AllowListKind, address: string): Promise<void> => {
-    await this.post("/api/praxis/remove-from-allow-list", { kind, address });
+    await this.mutate(() => this.post("/api/praxis/remove-from-allow-list", { kind, address }));
     await this.refreshAll();
   };
 
   private async refreshAll() {
-    const [threads, policy, activity, addressBook] = await Promise.all([
-      this.get<Thread[]>("/api/praxis/get-threads"),
-      this.get<PolicyView>("/api/praxis/get-policy"),
-      this.get<ActivityEntry[]>("/api/praxis/get-activity"),
-      this.get<AddressBookEntry[]>("/api/praxis/get-address-book"),
-    ]);
+    try {
+      const [threads, policy, activity, addressBook] = await Promise.all([
+        this.get<Thread[]>("/api/praxis/get-threads"),
+        this.get<PolicyView>("/api/praxis/get-policy"),
+        this.get<ActivityEntry[]>("/api/praxis/get-activity"),
+        this.get<AddressBookEntry[]>("/api/praxis/get-address-book"),
+      ]);
 
-    const proposals: Record<string, ActionProposal> = {};
-    for (const thread of threads) {
-      for (const message of thread.messages) {
-        if (message.role !== "agent") continue;
-        for (const block of message.blocks) {
-          if (block.type !== "proposal") continue;
-          const proposal = await this.get<ActionProposal>(`/api/praxis/get-proposal?id=${encodeURIComponent(block.proposalId)}`);
-          proposals[proposal.id] = proposal;
+      const proposals: Record<string, ActionProposal> = {};
+      for (const thread of threads) {
+        for (const message of thread.messages) {
+          if (message.role !== "agent") continue;
+          for (const block of message.blocks) {
+            if (block.type !== "proposal") continue;
+            const proposal = await this.get<ActionProposal>(`/api/praxis/get-proposal?id=${encodeURIComponent(block.proposalId)}`);
+            proposals[proposal.id] = proposal;
+          }
         }
       }
-    }
 
-    this.state = {
-      ...this.state,
-      threads,
-      policy,
-      activity,
-      addressBook,
-      proposals,
-    };
-    this.notify();
+      this.state = {
+        ...this.state,
+        threads,
+        policy,
+        activity,
+        addressBook,
+        proposals,
+        connection: { mode: "api", phase: "ready" },
+      };
+      this.notify();
+    } catch (error) {
+      this.setConnectionError(error);
+    }
   }
 
   private async get<T>(url: string): Promise<T> {
@@ -138,6 +169,30 @@ export class RemotePraxisProvider implements PraxisProvider {
     return fromWire<T>(await parseResponse(res));
   }
 
+  private async mutate<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      const result = await fn();
+      this.state = { ...this.state, connection: { mode: "api", phase: "ready" } };
+      this.notify();
+      return result;
+    } catch (error) {
+      this.setConnectionError(error);
+      throw error;
+    }
+  }
+
+  private setConnectionError(error: unknown) {
+    this.state = {
+      ...this.state,
+      connection: {
+        mode: "api",
+        phase: "error",
+        message: error instanceof Error ? error.message : "Praxis API request failed.",
+      },
+    };
+    this.notify();
+  }
+
   private notify() {
     this.version++;
     for (const listener of this.listeners) listener();
@@ -145,11 +200,28 @@ export class RemotePraxisProvider implements PraxisProvider {
 }
 
 async function parseResponse(res: Response): Promise<unknown> {
-  const body = await res.json();
+  const body = await readResponseBody(res);
   if (!res.ok) {
-    throw new Error(typeof body?.error === "string" ? body.error : `Praxis API failed with ${res.status}`);
+    throw new Error(errorMessage(body, res.status));
   }
   return body;
+}
+
+async function readResponseBody(res: Response): Promise<unknown> {
+  const text = await res.text();
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: text };
+  }
+}
+
+function errorMessage(body: unknown, status: number): string {
+  if (body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string") {
+    return (body as { error: string }).error;
+  }
+  return `Praxis API failed with ${status}`;
 }
 
 function toWire(value: unknown): unknown {

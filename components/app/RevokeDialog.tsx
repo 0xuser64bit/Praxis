@@ -18,6 +18,7 @@ export function RevokeDialog({
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   return (
     <div
@@ -60,19 +61,30 @@ export function RevokeDialog({
           </Button>
           <button
             type="button"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            try {
               await onConfirm();
-              setBusy(false);
               onClose();
-            }}
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Revoke failed.");
+            } finally {
+              setBusy(false);
+            }
+          }}
             className="flex flex-1 items-center justify-center gap-2 rounded-lg py-[11px] text-[14px] font-medium text-white [transition:opacity_0.15s] disabled:opacity-60"
             style={{ background: "var(--danger)" }}
           >
             {busy ? "Revoking…" : "Revoke agent"}
           </button>
         </div>
+        {error && (
+          <p className="mt-3 rounded-lg bg-[rgba(199,91,91,0.1)] px-3 py-2 text-[12px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );

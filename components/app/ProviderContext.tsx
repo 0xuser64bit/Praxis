@@ -11,6 +11,7 @@ import type {
   ActivityEntry,
   AddressBookEntry,
   PolicyView,
+  ProviderConnectionState,
   PraxisProvider,
   Thread,
 } from "@praxis/shared";
@@ -60,3 +61,5 @@ export const useProposal = (id: string): ActionProposal | undefined =>
 export const useThinking = (id: string): boolean => useStore((p) => p.isThinking(id));
 export const useAddressBook = (): AddressBookEntry[] =>
   useStore((p) => p.getAddressBook());
+export const useConnectionState = (): ProviderConnectionState =>
+  useStore((p) => p.getConnectionState());

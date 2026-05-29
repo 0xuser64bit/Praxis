@@ -85,6 +85,7 @@ export class MockPraxisProvider implements PraxisProvider {
   getActivity = (): ActivityEntry[] => [...this.state.activity].sort((a, b) => b.ts - a.ts);
   getAddressBook = (): AddressBookEntry[] => this.state.addressBook;
   isThinking = (threadId: string): boolean => Boolean(this.state.thinking[threadId]);
+  getConnectionState = () => ({ mode: "mock" as const, phase: "ready" as const });
 
   // --- conversation ---
   newThread = (): string => {

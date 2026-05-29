@@ -57,7 +57,9 @@ export function PolicyDashboard() {
             <Button
               variant="primary"
               className="shrink-0"
-              onClick={() => provider.rotateAgent()}
+              onClick={() => {
+                void provider.rotateAgent().catch(() => undefined);
+              }}
             >
               <IconRefresh size={15} />
               Re-enable agent
@@ -88,13 +90,22 @@ export function PolicyDashboard() {
         <SpendCard policy={policy} now={now} />
 
         <div className="mt-4 grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
-          <CapsCard policy={policy} onSave={(patch) => provider.updatePolicy(patch)} />
+          <CapsCard
+            policy={policy}
+            onSave={(patch) => {
+              void provider.updatePolicy(patch).catch(() => undefined);
+            }}
+          />
           <SessionCard
             policy={policy}
             revoked={revoked}
             now={now}
-            onRotate={() => provider.rotateAgent()}
-            onUpdateExpiry={(expiryTs) => provider.updatePolicy({ expiryTs })}
+            onRotate={() => {
+              void provider.rotateAgent().catch(() => undefined);
+            }}
+            onUpdateExpiry={(expiryTs) => {
+              void provider.updatePolicy({ expiryTs }).catch(() => undefined);
+            }}
           />
         </div>
 
@@ -418,7 +429,7 @@ function AllowList({
 
   const add = (address: string) => {
     if (!address.trim()) return;
-    void provider.addToAllowList(kind, address.trim());
+    void provider.addToAllowList(kind, address.trim()).catch(() => undefined);
     setDraft("");
   };
 
@@ -454,7 +465,9 @@ function AllowList({
               <button
                 type="button"
                 aria-label={`Remove ${name ?? a}`}
-                onClick={() => provider.removeFromAllowList(kind, a)}
+                onClick={() => {
+                  void provider.removeFromAllowList(kind, a).catch(() => undefined);
+                }}
                 className="flex h-4 w-4 items-center justify-center rounded-full text-[var(--text-tertiary)] hover:bg-[var(--bg-card)] hover:text-[var(--danger)]"
               >
                 <IconX size={11} />

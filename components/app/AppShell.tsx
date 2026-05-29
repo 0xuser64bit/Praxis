@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  IconAlertTriangle,
   IconHistory,
   IconMessages,
   IconShieldLock,
@@ -12,6 +13,7 @@ import { AppSidebar } from "./AppSidebar";
 import { Conversation } from "./Conversation";
 import { PolicyDashboard } from "./PolicyDashboard";
 import {
+  useConnectionState,
   useActivity,
   usePolicy,
   useProvider,
@@ -26,6 +28,31 @@ export type View = "chat" | "policy" | "activity";
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 
 export function AppShell() {
+  const connection = useConnectionState();
+
+  if (connection.phase === "loading") {
+    return (
+      <ApiStateScreen
+        title="Connecting to Praxis API"
+        message="Loading the live Aegis policy, activity log, and address book."
+      />
+    );
+  }
+
+  if (connection.phase === "error") {
+    return (
+      <ApiStateScreen
+        error
+        title="Praxis API is not ready"
+        message={connection.message ?? "Check the backend environment and reload the app."}
+      />
+    );
+  }
+
+  return <ReadyAppShell />;
+}
+
+function ReadyAppShell() {
   const provider = useProvider();
   const policy = usePolicy();
   const threads = useThreads();
@@ -99,6 +126,49 @@ export function AppShell() {
         {view === "policy" && <PolicyDashboard />}
         {view === "activity" && <ActivityLog />}
       </main>
+    </div>
+  );
+}
+
+function ApiStateScreen({
+  title,
+  message,
+  error = false,
+}: {
+  title: string;
+  message: string;
+  error?: boolean;
+}) {
+  return (
+    <div className="flex h-[100dvh] items-center justify-center bg-[var(--bg)] px-6">
+      <div className="max-w-[460px] rounded-xl bg-[var(--bg-card)] p-6 [border:0.5px_solid_var(--border-strong)]">
+        <div className="mb-4 flex items-center gap-3">
+          <span
+            className="flex h-9 w-9 items-center justify-center rounded-lg"
+            style={{
+              background: error ? "rgba(199,91,91,0.14)" : "var(--accent-dim)",
+              color: error ? "var(--danger)" : "var(--accent)",
+            }}
+          >
+            {error ? (
+              <IconAlertTriangle size={18} />
+            ) : (
+              <span className="h-4 w-4 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+            )}
+          </span>
+          <h1 className="[font-family:var(--font-serif)] text-[24px] leading-none">
+            {title}
+          </h1>
+        </div>
+        <p className="text-[13.5px] leading-[1.6] text-[var(--text-secondary)]">
+          {message}
+        </p>
+        {error && (
+          <p className="mt-3 [font-family:var(--font-mono)] text-[11px] leading-[1.5] text-[var(--text-tertiary)]">
+            API mode intentionally does not fall back to mock state. Configure the live backend or use mock mode for a standalone walkthrough.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

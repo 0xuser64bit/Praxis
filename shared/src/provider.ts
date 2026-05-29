@@ -204,6 +204,10 @@ export interface PolicyUpdate {
 
 export type AllowListKind = "programs" | "recipients" | "mints";
 
+export type ProviderConnectionState =
+  | { mode: "mock"; phase: "ready" }
+  | { mode: "api"; phase: "loading" | "ready" | "error"; message?: string };
+
 // ---------------------------------------------------------------------------
 // The provider interface itself.
 //
@@ -223,6 +227,8 @@ export interface PraxisProvider {
   getAddressBook(): AddressBookEntry[];
   /** True while the agent is composing a reply on the given thread. */
   isThinking(threadId: string): boolean;
+  /** Connection health for API mode; mock mode is always ready. */
+  getConnectionState(): ProviderConnectionState;
 
   // --- conversation ---
   /**

@@ -118,6 +118,7 @@ export class PraxisServerProvider implements PraxisProvider {
   getActivity = (): ActivityEntry[] => [...this.state.activity].sort((a, b) => b.ts - a.ts);
   getAddressBook = (): AddressBookEntry[] => this.addressBook.all();
   isThinking = (threadId: string): boolean => Boolean(this.state.thinking[threadId]);
+  getConnectionState = () => ({ mode: "api" as const, phase: "ready" as const });
   getVersion = (): number => this.version;
 
   // --- conversation ---

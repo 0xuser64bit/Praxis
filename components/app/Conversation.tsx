@@ -27,7 +27,7 @@ export function Conversation({
   if (!thread) return null;
 
   const onSend = (text: string) => {
-    void provider.send(threadId, text);
+    void provider.send(threadId, text).catch(() => undefined);
   };
 
   return (

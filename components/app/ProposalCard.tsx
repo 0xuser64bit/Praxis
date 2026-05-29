@@ -93,14 +93,18 @@ export function ProposalCard({
             <Button
               variant="primary"
               className="flex-1 justify-center px-3.5 py-[11px]"
-              onClick={() => provider.signProposal(proposal.id)}
+              onClick={() => {
+                void provider.signProposal(proposal.id).catch(() => undefined);
+              }}
             >
               Confirm &amp; sign
               <IconArrowRight size={14} />
             </Button>
             <Button
               className="flex-1 justify-center px-3.5 py-[11px]"
-              onClick={() => provider.cancelProposal(proposal.id)}
+              onClick={() => {
+                void provider.cancelProposal(proposal.id).catch(() => undefined);
+              }}
             >
               Cancel
             </Button>

@@ -9,7 +9,8 @@
     "lint": "eslint",
     "aegis:build": "cd aegis && NO_DNA=1 anchor build",
     "aegis:test": "cd aegis && NO_DNA=1 anchor build && NO_DNA=1 cargo test --test enforcement -- --nocapture",
-    "praxis:demo": "bun scripts/praxis-demo.ts"
+    "praxis:demo": "bun scripts/praxis-demo.ts",
+    "praxis:moneyshots": "bun scripts/moneyshots.ts"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",

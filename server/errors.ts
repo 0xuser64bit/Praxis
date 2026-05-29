@@ -5,6 +5,13 @@ export class PraxisConfigError extends Error {
   }
 }
 
+export class PraxisAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PraxisAuthError";
+  }
+}
+
 export class PraxisInputError extends Error {
   constructor(message: string) {
     super(message);

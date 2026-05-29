@@ -126,9 +126,13 @@ export class RemotePraxisProvider implements PraxisProvider {
   }
 
   private async post<T = { ok: true }>(url: string, body: unknown): Promise<T> {
+    const token = process.env.NEXT_PUBLIC_PRAXIS_DEMO_MUTATION_TOKEN;
     const res = await fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { "x-praxis-demo-token": token } : {}),
+      },
       body: JSON.stringify(toWire(body)),
     });
     return fromWire<T>(await parseResponse(res));

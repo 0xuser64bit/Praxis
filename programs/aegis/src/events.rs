@@ -1,0 +1,72 @@
+use anchor_lang::prelude::*;
+
+/// Emitted by `initialize_policy`.
+#[event]
+pub struct PolicyInitialized {
+    pub policy: Pubkey,
+    pub owner: Pubkey,
+    pub agent_authority: Pubkey,
+    pub max_per_tx: u64,
+    pub daily_limit: u64,
+    pub expiry_ts: i64,
+}
+
+/// Emitted by `update_policy`.
+#[event]
+pub struct PolicyUpdated {
+    pub policy: Pubkey,
+    pub max_per_tx: u64,
+    pub daily_limit: u64,
+    pub expiry_ts: i64,
+    pub paused: bool,
+}
+
+#[event]
+pub struct VaultFunded {
+    pub policy: Pubkey,
+    pub amount: u64,
+    pub new_balance: u64,
+}
+
+#[event]
+pub struct VaultWithdrawn {
+    pub policy: Pubkey,
+    pub amount: u64,
+    pub new_balance: u64,
+}
+
+/// Emitted on a passing `agent_transfer`.
+#[event]
+pub struct AgentActionAllowed {
+    pub policy: Pubkey,
+    pub kind: u8,
+    pub amount: u64,
+    pub target: Pubkey,
+    pub spent_today: u64,
+    pub ts: i64,
+}
+
+/// Emitted just before a failing `agent_transfer` returns its typed error.
+/// Lives only in the (failed) transaction's logs — state writes are reverted.
+#[event]
+pub struct AgentActionRejected {
+    pub policy: Pubkey,
+    pub kind: u8,
+    /// `RejectReason` code.
+    pub reason: u8,
+    pub amount: u64,
+    pub target: Pubkey,
+    pub ts: i64,
+}
+
+#[event]
+pub struct AgentRevoked {
+    pub policy: Pubkey,
+    pub owner: Pubkey,
+}
+
+#[event]
+pub struct AgentRotated {
+    pub policy: Pubkey,
+    pub new_agent_authority: Pubkey,
+}

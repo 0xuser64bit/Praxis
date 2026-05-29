@@ -1,0 +1,20 @@
+[toolchain]
+anchor_version = "1.0.1"
+solana_version = "3.1.15"
+package_manager = "yarn"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+aegis = "7qRKV1dNPCixKWDLHsuHa5puFsNPtNCzC1sX6P1kpFgb"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "cargo test"
+
+[hooks]

@@ -12,6 +12,10 @@
 
 # testing
 /coverage
+/target
+/.anchor
+/test-ledger
+**/*.rs.bk
 
 # next.js
 /.next/
@@ -23,6 +27,8 @@
 # misc
 .DS_Store
 *.pem
+**/*-keypair.json
+**/id.json
 
 # debug
 npm-debug.log*

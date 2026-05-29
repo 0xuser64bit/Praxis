@@ -1,0 +1,488 @@
+import { PublicKey } from "@solana/web3.js";
+import {
+  ActionKind,
+  type ActionProposal,
+  type ActivityEntry,
+  type AddressBookEntry,
+  type AgentBlock,
+  type AllowListKind,
+  type Message,
+  type PolicyUpdate,
+  type PolicyView,
+  type PraxisProvider,
+  type Thread,
+  type TokenInfo,
+} from "@praxis/shared";
+
+import { AegisClient } from "../aegis/client";
+import { AddressBook } from "../agent/addressBook";
+import {
+  parseIntentLocallyForDemo,
+  parseIntentWithClaude,
+  type ParsedAction,
+  type ParsedIntent,
+} from "../agent/intent";
+import { researchToken } from "../agent/research";
+import { getConnection } from "../aegis/client";
+import { getServerConfig, validatePublicKey, type PraxisServerConfig } from "../env";
+import { PraxisInputError, PraxisNotFoundError } from "../errors";
+import { parseHumanUnits, SOL_DECIMALS } from "../units";
+
+interface StoreState {
+  threads: Thread[];
+  proposals: Record<string, ActionProposal>;
+  activity: ActivityEntry[];
+  policy?: PolicyView;
+  thinking: Record<string, boolean>;
+}
+
+const SYSTEM_PROGRAM = "11111111111111111111111111111111";
+
+let singleton: PraxisServerProvider | undefined;
+
+export function getPraxisServerProvider(): PraxisServerProvider {
+  if (!singleton) singleton = new PraxisServerProvider();
+  return singleton;
+}
+
+export function resetPraxisServerProviderForTests() {
+  singleton = undefined;
+}
+
+export class PraxisServerProvider implements PraxisProvider {
+  private readonly config: PraxisServerConfig;
+  private readonly aegis: AegisClient;
+  private readonly addressBook: AddressBook;
+  private readonly listeners = new Set<() => void>();
+  private state: StoreState;
+  private version = 0;
+
+  constructor(config = getServerConfig(), aegis = new AegisClient(config)) {
+    this.config = config;
+    this.aegis = aegis;
+    this.addressBook = new AddressBook(config.addressBook);
+    this.state = {
+      threads: [welcomeThread(nowSeconds())],
+      proposals: {},
+      activity: [],
+      thinking: {},
+    };
+  }
+
+  // --- refresh ---
+  async refreshPolicy(): Promise<PolicyView> {
+    const policy = await this.aegis.getPolicy();
+    this.state.policy = policy;
+    return policy;
+  }
+
+  async refreshActivity(): Promise<ActivityEntry[]> {
+    const logs = await this.aegis.getActionLog();
+    const onChain = logs.map((entry, index): ActivityEntry => {
+      return {
+        id: `chain-${entry.sig ?? entry.ts}-${index}`,
+        kind: entry.kind === ActionKind.Transfer ? "transfer" : "transfer",
+        label: this.addressBook.labelFor(entry.target),
+        asset: "SOL",
+        amount: entry.amount,
+        decimals: SOL_DECIMALS,
+        result: entry.result,
+        reason: entry.reason,
+        reasonCode: entry.reasonCode,
+        ts: entry.ts,
+        sig: entry.sig,
+      };
+    });
+    const keyed = new Map<string, ActivityEntry>();
+    for (const entry of [...this.state.activity, ...onChain]) {
+      keyed.set(entry.sig ?? entry.id, entry);
+    }
+    this.state.activity = [...keyed.values()].sort((a, b) => b.ts - a.ts);
+    return this.state.activity;
+  }
+
+  async refreshOnChain(): Promise<void> {
+    await this.refreshPolicy();
+    await this.refreshActivity();
+    this.notify();
+  }
+
+  // --- reads ---
+  getThreads = (): Thread[] => [...this.state.threads].sort((a, b) => b.updatedAt - a.updatedAt);
+  getThread = (id: string): Thread | undefined => this.state.threads.find((thread) => thread.id === id);
+  getProposal = (id: string): ActionProposal | undefined => this.state.proposals[id];
+  getPolicy = (): PolicyView => {
+    if (!this.state.policy) throw new PraxisNotFoundError("Policy has not been loaded yet.");
+    return this.state.policy;
+  };
+  getActivity = (): ActivityEntry[] => [...this.state.activity].sort((a, b) => b.ts - a.ts);
+  getAddressBook = (): AddressBookEntry[] => this.addressBook.all();
+  isThinking = (threadId: string): boolean => Boolean(this.state.thinking[threadId]);
+  getVersion = (): number => this.version;
+
+  // --- conversation ---
+  newThread = (preferredId?: string): string => {
+    const id = preferredId ?? this.id("t");
+    if (this.getThread(id)) return id;
+    this.state.threads = [{ id, title: "New session", messages: [], updatedAt: nowSeconds() }, ...this.state.threads];
+    this.notify();
+    return id;
+  };
+
+  send = async (threadId: string | null, text: string): Promise<{ threadId: string }> => {
+    const tid = threadId ?? this.newThread();
+    const thread = this.requireThread(tid);
+    const ts = nowSeconds();
+
+    thread.messages = [...thread.messages, { id: this.id("m"), role: "user", ts, text }];
+    thread.updatedAt = ts;
+    this.state.thinking = { ...this.state.thinking, [tid]: true };
+    this.notify();
+
+    let blocks: AgentBlock[];
+    let title: string | undefined;
+    try {
+      const intent = await this.parseIntent(text);
+      const result = await this.blocksForIntent(intent);
+      blocks = result.blocks;
+      title = result.title;
+    } catch (error) {
+      blocks = [
+        {
+          type: "prose",
+          text: error instanceof Error ? error.message : "The agent could not parse that request.",
+        },
+      ];
+    }
+
+    const reply: Message = { id: this.id("m"), role: "agent", ts: nowSeconds(), blocks };
+    thread.messages = [...thread.messages, reply];
+    if (title && (thread.title === "New session" || thread.messages.length <= 2)) thread.title = title;
+    thread.updatedAt = reply.ts;
+    this.state.thinking = { ...this.state.thinking, [tid]: false };
+    this.notify();
+    return { threadId: tid };
+  };
+
+  signProposal = async (proposalId: string): Promise<void> => {
+    const proposal = this.state.proposals[proposalId];
+    if (!proposal) throw new PraxisNotFoundError(`unknown proposal ${proposalId}`);
+    if (proposal.state !== "pending") return;
+
+    proposal.state = "signing";
+    this.notify();
+
+    if (proposal.detail.kind === "swap") {
+      proposal.state = "blocked";
+      proposal.simulation = "agent_swap is a typed stub; Jupiter CPI is not implemented.";
+      this.logSwapRejection(proposal);
+      this.notify();
+      return;
+    }
+
+    const recipient = new PublicKey(proposal.detail.recipientAddress);
+    const execution = await this.aegis.executeAgentTransfer(recipient, proposal.detail.amount);
+    proposal.check = execution.check;
+    proposal.sig = execution.sig;
+    proposal.state = execution.status === "confirmed" ? "signed" : "blocked";
+    proposal.simulation = execution.status === "confirmed"
+      ? "Confirmed through Aegis agent_transfer"
+      : "Rejected by Aegis during execution";
+
+    this.state.activity = [
+      {
+        id: this.id("a"),
+        kind: "transfer",
+        label: proposal.detail.recipientName,
+        asset: "SOL",
+        amount: proposal.detail.amount,
+        decimals: SOL_DECIMALS,
+        result: execution.status === "confirmed" ? "allowed" : "rejected",
+        reason: execution.check.reason,
+        reasonCode: execution.check.reasonCode,
+        ts: nowSeconds(),
+        sig: execution.sig,
+      },
+      ...this.state.activity,
+    ];
+
+    await this.refreshPolicy().catch(() => undefined);
+    this.notify();
+  };
+
+  cancelProposal = async (proposalId: string): Promise<void> => {
+    const proposal = this.state.proposals[proposalId];
+    if (!proposal) return;
+    proposal.state = "cancelled";
+    this.notify();
+  };
+
+  // --- policy dashboard ---
+  updatePolicy = async (patch: PolicyUpdate): Promise<void> => {
+    await this.aegis.updatePolicy(patch);
+    await this.refreshOnChain();
+  };
+
+  revokeAgent = async (): Promise<void> => {
+    await this.aegis.revokeAgent();
+    await this.refreshOnChain();
+  };
+
+  rotateAgent = async (): Promise<void> => {
+    await this.aegis.rotateAgent();
+    await this.refreshOnChain();
+  };
+
+  addToAllowList = async (kind: AllowListKind, address: string): Promise<void> => {
+    validatePublicKey(address);
+    await this.aegis.updateAllowList(kind, address, "add");
+    await this.refreshOnChain();
+  };
+
+  removeFromAllowList = async (kind: AllowListKind, address: string): Promise<void> => {
+    validatePublicKey(address);
+    await this.aegis.updateAllowList(kind, address, "remove");
+    await this.refreshOnChain();
+  };
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  private async parseIntent(text: string): Promise<ParsedIntent> {
+    if (process.env.PRAXIS_LOCAL_INTENT === "1") return parseIntentLocallyForDemo(text);
+    return parseIntentWithClaude(text, this.config);
+  }
+
+  private async blocksForIntent(intent: ParsedIntent): Promise<{ blocks: AgentBlock[]; title?: string }> {
+    if (intent.outcome === "clarify") {
+      return {
+        blocks: [
+          {
+            type: "clarify",
+            text: intent.question,
+            options: (intent.options ?? []).map((option) => ({ label: option, value: option })),
+          },
+        ],
+      };
+    }
+
+    if (intent.outcome === "unsupported") {
+      return { blocks: [{ type: "prose", text: intent.message }] };
+    }
+
+    const blocks: AgentBlock[] = [];
+    let title: string | undefined;
+    for (const action of intent.actions) {
+      const result = await this.blockForAction(action);
+      blocks.push(...result.blocks);
+      title ??= result.title;
+    }
+    return { blocks, title };
+  }
+
+  private async blockForAction(action: ParsedAction): Promise<{ blocks: AgentBlock[]; title?: string }> {
+    if (action.kind === "transfer") return this.transferBlock(action);
+    if (action.kind === "research") return this.researchBlock(action.token);
+    return this.swapStubBlock(action);
+  }
+
+  private async transferBlock(action: Extract<ParsedAction, { kind: "transfer" }>): Promise<{ blocks: AgentBlock[]; title?: string }> {
+    if (action.asset !== "SOL") {
+      throw new PraxisInputError("Aegis phase 1 only supports native SOL transfers.");
+    }
+
+    const resolved = this.addressBook.resolve(action.recipient);
+    if (resolved.kind !== "exact") {
+      return {
+        blocks: [
+          {
+            type: "clarify",
+            text: resolved.question,
+            options: resolved.options,
+          },
+        ],
+      };
+    }
+
+    const amount = parseHumanUnits(action.amountHuman, SOL_DECIMALS);
+    const recipient = new PublicKey(resolved.entry.address);
+    const preview = await this.aegis.simulateAgentTransfer(recipient, amount);
+    const sol = this.solToken();
+    const proposal: ActionProposal = {
+      id: this.id("p"),
+      detail: {
+        kind: "transfer",
+        amount,
+        asset: sol,
+        recipientName: resolved.entry.name,
+        recipientAddress: resolved.entry.address,
+        recipientNote: resolved.entry.note,
+      },
+      networkFee: preview.networkFee,
+      simulation: preview.simulation,
+      check: preview.check,
+      state: preview.check.allowed ? "pending" : "blocked",
+    };
+    this.state.proposals[proposal.id] = proposal;
+
+    if (!preview.check.allowed) {
+      this.state.activity = [
+        {
+          id: this.id("a"),
+          kind: "transfer",
+          label: resolved.entry.name,
+          asset: "SOL",
+          amount,
+          decimals: SOL_DECIMALS,
+          result: "rejected",
+          reason: preview.check.reason,
+          reasonCode: preview.check.reasonCode,
+          ts: nowSeconds(),
+        },
+        ...this.state.activity,
+      ];
+    }
+
+    return {
+      blocks: [
+        {
+          type: "proposal",
+          text: `Resolved ${resolved.entry.name} from the address book.`,
+          proposalId: proposal.id,
+        },
+      ],
+      title: `Send to ${resolved.entry.name.split(" ")[0]}`,
+    };
+  }
+
+  private async researchBlock(token: string): Promise<{ blocks: AgentBlock[]; title?: string }> {
+    const data = await researchToken(token, getConnection(this.config), this.config);
+    return {
+      blocks: [
+        {
+          type: "research",
+          text: `Read-only on-chain and market data for ${data.token}. No buy, sell, or hold advice.`,
+          data,
+        },
+      ],
+      title: `${data.token} research`,
+    };
+  }
+
+  private async swapStubBlock(action: Extract<ParsedAction, { kind: "swap_stub" }>): Promise<{ blocks: AgentBlock[]; title?: string }> {
+    const assetIn = this.token(action.assetIn);
+    const assetOut = this.token(action.assetOut);
+    const amountIn = parseHumanUnits(action.amountHuman, assetIn.decimals);
+    const proposal: ActionProposal = {
+      id: this.id("p"),
+      detail: {
+        kind: "swap",
+        amountIn,
+        assetIn,
+        estAmountOut: 0n,
+        assetOut,
+        route: "agent_swap stub",
+        priceImpactBps: 0,
+      },
+      networkFee: 0n,
+      simulation: "agent_swap is intentionally out of scope; Jupiter CPI is not built.",
+      check: {
+        allowed: false,
+        reason: "agent_swap is a typed stub for v2. No Jupiter CPI is constructed or signed.",
+        spentToday: this.state.policy?.spentToday ?? 0n,
+        dailyLimit: this.state.policy?.dailyLimit ?? 0n,
+        remaining: 0n,
+      },
+      state: "blocked",
+    };
+    this.state.proposals[proposal.id] = proposal;
+    this.logSwapRejection(proposal);
+    return {
+      blocks: [
+        {
+          type: "proposal",
+          text: "Swap intent parsed, but agent_swap is a typed stub until the Jupiter CPI is implemented.",
+          proposalId: proposal.id,
+        },
+      ],
+      title: `${assetIn.symbol} swap stub`,
+    };
+  }
+
+  private logSwapRejection(proposal: ActionProposal) {
+    if (proposal.detail.kind !== "swap") return;
+    this.state.activity = [
+      {
+        id: this.id("a"),
+        kind: "swap",
+        label: `${proposal.detail.assetIn.symbol} -> ${proposal.detail.assetOut.symbol}`,
+        asset: proposal.detail.assetIn.symbol,
+        amount: proposal.detail.amountIn,
+        decimals: proposal.detail.assetIn.decimals,
+        result: "rejected",
+        reason: proposal.check.reason,
+        ts: nowSeconds(),
+      },
+      ...this.state.activity,
+    ];
+  }
+
+  private requireThread(id: string): Thread {
+    const thread = this.getThread(id);
+    if (!thread) throw new PraxisNotFoundError(`unknown thread ${id}`);
+    return thread;
+  }
+
+  private solToken(): TokenInfo {
+    return this.token("SOL");
+  }
+
+  private token(symbol: string): TokenInfo {
+    const normalized = symbol.trim().replace(/^\$/, "").toUpperCase();
+    const token = this.config.tokens.find((item) => item.symbol.toUpperCase() === normalized);
+    if (token) return token;
+    return {
+      symbol: normalized,
+      mint: SYSTEM_PROGRAM,
+      decimals: SOL_DECIMALS,
+      verified: false,
+    };
+  }
+
+  private id(prefix: string): string {
+    return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  private notify() {
+    this.version++;
+    for (const listener of this.listeners) listener();
+  }
+}
+
+function welcomeThread(ts: number): Thread {
+  return {
+    id: "t-welcome",
+    title: "New session",
+    updatedAt: ts,
+    messages: [
+      {
+        id: "m-welcome",
+        role: "agent",
+        ts,
+        blocks: [
+          {
+            type: "prose",
+            text:
+              "Praxis is connected to the Aegis policy engine. Ask for a SOL send, token research, or a swap preview.",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}

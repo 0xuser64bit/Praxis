@@ -1,0 +1,52 @@
+# Praxis Backend Agent API
+
+The backend implements the `PraxisProvider` seam from `shared/src/provider.ts`.
+All money crosses JSON as integer decimal strings; in memory it is `bigint`.
+
+## Routes
+
+- `GET /api/praxis/get-threads`
+- `GET /api/praxis/get-thread?id=<threadId>`
+- `GET /api/praxis/get-proposal?id=<proposalId>`
+- `GET /api/praxis/get-policy`
+- `GET /api/praxis/get-activity`
+- `GET /api/praxis/get-address-book`
+- `GET /api/praxis/is-thinking?threadId=<threadId>`
+- `GET /api/praxis/get-version`
+- `GET /api/praxis/subscribe` returns polling metadata for `get-version`
+- `POST /api/praxis/send` with `{ "threadId": string | null, "text": string }`
+- `POST /api/praxis/sign-proposal` with `{ "proposalId": string }`
+- `POST /api/praxis/cancel-proposal` with `{ "proposalId": string }`
+- `POST /api/praxis/new-thread`
+- `POST /api/praxis/update-policy` with `{ "patch": { "maxPerTx"?: string, "dailyLimit"?: string, "expiryTs"?: number, "paused"?: boolean } }`
+- `POST /api/praxis/revoke-agent`
+- `POST /api/praxis/rotate-agent`
+- `POST /api/praxis/add-to-allow-list` with `{ "kind": "programs" | "recipients" | "mints", "address": string }`
+- `POST /api/praxis/remove-from-allow-list` with the same body as add
+
+## Environment
+
+Copy `.env.example` and fill in:
+
+- `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` for Messages API intent parsing.
+- `SOLANA_RPC_URL` for the target cluster.
+- `PRAXIS_AGENT_KEYPAIR_PATH` or `PRAXIS_AGENT_KEYPAIR` for the scoped agent signer.
+- `AEGIS_POLICY_ADDRESS`, or `AEGIS_OWNER_ADDRESS`, or an owner keypair so the server can locate the policy PDA.
+- Optional `PRAXIS_OWNER_KEYPAIR_PATH` / `PRAXIS_OWNER_KEYPAIR` for server-side policy admin routes.
+- Optional `PRAXIS_ADDRESS_BOOK` for off-chain labels.
+
+The agent executor only signs `agent_transfer` through Aegis. It never builds a raw system transfer.
+Swaps are represented as a typed `swap` proposal stub; no Jupiter CPI is built.
+
+## Demo
+
+Run:
+
+```bash
+bun scripts/praxis-demo.ts
+```
+
+With a local validator and owner/agent keypairs, the script initializes a demo
+policy if needed, funds the vault, prints the `send 0.5 sol to maya` preview and
+confirmation, then sends an over-cap transfer with preflight skipped so Aegis
+returns its typed rejection reason.

@@ -8,8 +8,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: "Geist", "Geist Fallback", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -54,6 +54,11 @@ body {
   --font-mono: var(--font-jetbrains-mono), "SF Mono", Menlo, monospace;
 }
 
+html,
+body {
+  overflow-x: hidden;
+}
+
 body {
   background: var(--bg);
   color: var(--text-primary);
@@ -79,11 +84,11 @@ body::before {
 
 body::after {
   content: "";
-  position: absolute;
+  position: fixed;
   top: -200px;
   left: 50%;
   transform: translateX(-50%);
-  width: 1200px;
+  width: min(1200px, 100vw);
   height: 800px;
   background: radial-gradient(ellipse at center, rgba(201, 160, 93, 0.06), transparent 60%);
   pointer-events: none;

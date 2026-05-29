@@ -4,7 +4,7 @@
  * no float ever touches a monetary value.
  */
 
-import type { BaseUnits } from "./types.js";
+import type { BaseUnits } from "./types";
 
 /** bigint base units → decimal string (for JSON). */
 export function serializeUnits(units: BaseUnits): string {

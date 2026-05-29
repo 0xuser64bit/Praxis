@@ -4,6 +4,7 @@
  * Aegis IDL and a typed client are added in Milestone 2.
  */
 
-export * from "./constants.js";
-export * from "./types.js";
-export * from "./serde.js";
+export * from "./constants";
+export * from "./types";
+export * from "./serde";
+export * from "./provider";

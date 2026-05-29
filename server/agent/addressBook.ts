@@ -48,6 +48,15 @@ export class AddressBook {
       };
     }
 
+    const fuzzy = fuzzyMatches(normalized, this.entries);
+    if (fuzzy.length > 0) {
+      return {
+        kind: "ambiguous",
+        question: `I found possible saved contacts for "${raw}". Which one did you mean?`,
+        options: fuzzy.map(toOption),
+      };
+    }
+
     return {
       kind: "missing",
       question: `I do not have "${raw}" saved. Paste the address or add it to the address book first.`,
@@ -58,6 +67,52 @@ export class AddressBook {
 
 function normalize(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function fuzzyMatches(input: string, entries: AddressBookEntry[]): AddressBookEntry[] {
+  if (input.length < 2) return [];
+
+  const scored: Array<{ entry: AddressBookEntry; score: number }> = [];
+  for (const entry of uniqueByAddress(entries)) {
+    const candidates = [entry.label, entry.name, ...entry.name.split(/\s+/)].map(normalize);
+    let best = Number.POSITIVE_INFINITY;
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      if (candidate.includes(input) || input.includes(candidate)) {
+        best = Math.min(best, 0);
+        continue;
+      }
+      best = Math.min(best, editDistance(input, candidate));
+    }
+
+    const maxDistance = input.length <= 5 ? 1 : 2;
+    if (best <= maxDistance) scored.push({ entry, score: best });
+  }
+
+  return scored
+    .sort((a, b) => a.score - b.score || a.entry.name.localeCompare(b.entry.name))
+    .slice(0, 6)
+    .map((item) => item.entry);
+}
+
+function editDistance(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  const curr = Array.from({ length: b.length + 1 }, () => 0);
+
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        curr[j - 1] + 1,
+        prev[j] + 1,
+        prev[j - 1] + cost,
+      );
+    }
+    prev.splice(0, prev.length, ...curr);
+  }
+
+  return prev[b.length];
 }
 
 function parseAddress(value: string): PublicKey | undefined {

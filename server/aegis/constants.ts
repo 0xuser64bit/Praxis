@@ -1,5 +1,10 @@
 import { PublicKey } from "@solana/web3.js";
-import { type RejectReason, RejectReason as AegisRejectReason } from "@praxis/shared";
+import {
+  AEGIS_IDL_JSON,
+  type AegisInstructionName,
+  type RejectReason,
+  RejectReason as AegisRejectReason,
+} from "@praxis/shared";
 
 export const DEFAULT_AEGIS_PROGRAM_ID = new PublicKey(
   "7qRKV1dNPCixKWDLHsuHa5puFsNPtNCzC1sX6P1kpFgb",
@@ -14,18 +19,18 @@ export const SEEDS = {
 };
 
 export const INSTRUCTION_DISCRIMINATOR = {
-  agentTransfer: Buffer.from([199, 111, 151, 49, 124, 13, 150, 44]),
-  fundVault: Buffer.from([26, 33, 207, 242, 119, 108, 134, 73]),
-  initializePolicy: Buffer.from([9, 186, 86, 225, 129, 162, 231, 56]),
-  revokeAgent: Buffer.from([227, 60, 209, 125, 240, 117, 163, 73]),
-  rotateAgent: Buffer.from([182, 91, 147, 107, 155, 47, 150, 176]),
-  updatePolicy: Buffer.from([212, 245, 246, 7, 163, 151, 18, 57]),
-  withdrawVault: Buffer.from([135, 7, 237, 120, 149, 94, 95, 7]),
-} as const;
+  agentTransfer: instructionDiscriminator("agent_transfer"),
+  fundVault: instructionDiscriminator("fund_vault"),
+  initializePolicy: instructionDiscriminator("initialize_policy"),
+  revokeAgent: instructionDiscriminator("revoke_agent"),
+  rotateAgent: instructionDiscriminator("rotate_agent"),
+  updatePolicy: instructionDiscriminator("update_policy"),
+  withdrawVault: instructionDiscriminator("withdraw_vault"),
+} satisfies Record<AegisInstructionName, Buffer>;
 
 export const ACCOUNT_DISCRIMINATOR = {
-  policyAccount: Buffer.from([218, 201, 183, 164, 156, 127, 81, 175]),
-  actionLog: Buffer.from([21, 124, 15, 134, 245, 104, 185, 20]),
+  policyAccount: accountDiscriminator("PolicyAccount"),
+  actionLog: accountDiscriminator("ActionLog"),
 } as const;
 
 export const ACTION_LOG_CAP = 32;
@@ -55,4 +60,16 @@ export const AEGIS_OPERATIONAL_ERROR: Record<number, string> = {
 
 export function reasonFromAegisErrorCode(code: number): RejectReason | undefined {
   return AEGIS_ERROR_CODE_TO_REASON[code];
+}
+
+function instructionDiscriminator(idlName: string): Buffer {
+  const instruction = AEGIS_IDL_JSON.instructions.find((item) => item.name === idlName);
+  if (!instruction) throw new Error(`Aegis IDL missing instruction ${idlName}`);
+  return Buffer.from(instruction.discriminator);
+}
+
+function accountDiscriminator(idlName: string): Buffer {
+  const account = AEGIS_IDL_JSON.accounts.find((item) => item.name === idlName);
+  if (!account) throw new Error(`Aegis IDL missing account ${idlName}`);
+  return Buffer.from(account.discriminator);
 }

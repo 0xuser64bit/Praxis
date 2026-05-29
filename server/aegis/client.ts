@@ -34,6 +34,7 @@ import {
 import { PraxisConfigError, PraxisNotFoundError } from "../errors";
 import { checkFromAegisReason, checkTransferPolicy } from "../agent/policy";
 import type { ActionLogEntry, PolicyCheckResult } from "@praxis/shared";
+import { formatSol } from "../units";
 
 export interface TransferSimulation {
   check: PolicyCheckResult;
@@ -131,7 +132,7 @@ export class AegisClient {
     return {
       check: mirrored,
       simulation: mirrored.allowed
-        ? `Simulation passed through Aegis; daily envelope remaining after this transfer: ${remainingAfter.toString()} lamports.`
+        ? `Simulation passed through Aegis; within your ${formatSol(mirrored.dailyLimit)} SOL daily limit; ${formatSol(remainingAfter)} SOL remaining after this transfer.`
         : `Would be rejected by Aegis: ${mirrored.reason}`,
       networkFee: fee,
       logs,

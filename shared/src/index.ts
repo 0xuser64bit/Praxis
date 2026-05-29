@@ -8,3 +8,4 @@ export * from "./constants";
 export * from "./types";
 export * from "./serde";
 export * from "./provider";
+export * from "./idl";

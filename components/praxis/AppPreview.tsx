@@ -152,7 +152,7 @@ export function AppPreview() {
                     ›
                   </span>
                   <span className="flex-1 [font-family:var(--font-mono)] text-[13px] text-[var(--text-primary)]">
-                    now swap 100 usdc for jup
+                    send 50 sol to maya
                     <span className="border-r-[1.5px] border-r-[var(--text-primary)] [animation:caretBlink_1s_steps(2)_infinite]">
                       {" "}
                     </span>

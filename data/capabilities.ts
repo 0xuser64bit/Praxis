@@ -33,15 +33,16 @@ export const CAPABILITIES: Capability[] = [
   },
   {
     icon: IconRoute,
-    title: "Best-route swaps",
+    title: "Swap policy preview",
     description:
-      "Jupiter aggregator under the hood. Verified tokens by default. Unverified mints require explicit override.",
+      "Swap intents are parsed and checked against verified-mint policy. Executable Jupiter routing is the next implementation phase.",
+    tag: "Stub in v0.1",
   },
   {
     icon: IconKey,
-    title: "Non-custodial",
+    title: "Scoped custody model",
     description:
-      "Connects to your existing Phantom or Solflare wallet. Praxis proposes and previews; only you can sign.",
+      "Aegis uses a program-owned vault and a revocable agent key for the demo. Owner-signed wallet admin is the production path.",
   },
   {
     icon: IconHistory,
@@ -55,7 +56,7 @@ export const CAPABILITIES: Capability[] = [
     title: "Market research",
     description:
       "On-chain volume, price action, holder concentration, sentiment. Data surfaced — never financial advice.",
-    tag: "Q2 2026",
+    tag: "Ships v0.1",
   },
   {
     icon: IconCalendarClock,

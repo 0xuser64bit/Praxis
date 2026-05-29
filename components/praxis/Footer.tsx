@@ -9,10 +9,10 @@ const FOOTER_COLS: FooterColumn[] = [
   {
     title: "Product",
     links: [
-      { label: "Beta access", href: "#" },
-      { label: "Roadmap", href: "#" },
-      { label: "Changelog", href: "#" },
-      { label: "Status", href: "#" },
+      { label: "Demo app", href: "/app" },
+      { label: "Product walkthrough", href: "#product" },
+      { label: "How it works", href: "#how" },
+      { label: "Principles", href: "#principles" },
     ],
   },
   {
@@ -86,13 +86,13 @@ export function Footer() {
 
         <div className="flex items-center justify-between pt-8 [font-family:var(--font-mono)] text-[11px] tracking-[0.05em] text-[var(--text-tertiary)] [border-top:0.5px_solid_var(--border)]">
           <span>© 2026 PRAXIS LABS · AHMEDABAD</span>
-          <div className="flex items-center gap-2">
-            <span>v0.1.2 · last deploy 4h ago</span>
+        <div className="flex items-center gap-2">
+            <span>v0.1 · demo build</span>
             <span
               aria-hidden
               className="h-1.5 w-1.5 rounded-full bg-[var(--success)]"
             />
-            <span>all systems normal</span>
+            <span>Aegis T1-T6 passing</span>
           </div>
         </div>
       </Container>

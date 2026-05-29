@@ -8,7 +8,6 @@ const NAV_LINKS = [
   { href: "#product", label: "Product" },
   { href: "#how", label: "How it works" },
   { href: "#principles", label: "Principles" },
-  { href: "#", label: "Docs" },
 ] as const;
 
 export function Nav() {
@@ -51,7 +50,7 @@ export function Nav() {
               {link.label}
             </a>
           ))}
-          <Button as="a" href="#" size="sm">
+          <Button as="a" href="/app" size="sm">
             Launch app
             <ArrowUpRight />
           </Button>

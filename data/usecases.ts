@@ -28,9 +28,10 @@ export const USE_CASES: UseCase[] = [
   {
     icon: IconRefresh,
     prompt: "swap 100 usdc for jup at best rate",
-    title: { lead: "Swap at the ", accent: "best route." },
+    title: { lead: "Preview a ", accent: "swap." },
     description:
-      "Routed across Orca, Raydium, Meteora, and more via Jupiter. Verified tokens by default. Slippage and impact shown before you sign.",
+      "Swap intents are parsed and policy-checked against verified mints. Jupiter execution is documented as the next phase, not hidden behind a fake sign flow.",
+    tag: "— stub in v0.1",
   },
   {
     icon: IconChartLine,

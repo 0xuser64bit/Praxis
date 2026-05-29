@@ -21,17 +21,17 @@ export function FinalCTA() {
           Start <em>typing.</em>
         </h2>
         <p className="mx-auto mt-8 mb-11 max-w-[540px] text-[19px] leading-[1.55] text-[var(--text-secondary)]">
-          Private beta opening to the first 500. Solana wallet required.
-          Five-minute setup. No credit card, no KYC for the beta — just connect,
-          talk, transact.
+          Walk the core flow: ask for a SOL send, preview the Aegis verdict,
+          confirm an allowed transfer, reject an over-limit request, and revoke
+          the agent key.
         </p>
         <div className="flex flex-wrap justify-center gap-3">
-          <Button as="a" href="#" variant="primary">
-            Request beta access
+          <Button as="a" href="/app" variant="primary">
+            Launch demo app
             <IconArrowRight size={16} />
           </Button>
-          <Button as="a" href="#">
-            Read the manifesto
+          <Button as="a" href="#principles">
+            Read the principles
           </Button>
         </div>
       </ContainerNarrow>

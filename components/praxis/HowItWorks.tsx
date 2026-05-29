@@ -25,7 +25,7 @@ const STEPS: Step[] = [
     numeral: "iii.",
     label: "Sign",
     title: { lead: "You confirm.\nIt ", accent: "executes." },
-    body: "Your wallet signs every transaction. Praxis is non-custodial — we never hold your keys, your tokens, or the right to act without you. When automation ships, you grant scoped permissions, not control.",
+    body: "In the live demo, the scoped agent key can only sign Aegis instructions from the policy vault. Owner/admin actions are the production wallet-signed path; the agent never gets unrestricted wallet authority.",
   },
 ];
 

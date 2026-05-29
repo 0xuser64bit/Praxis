@@ -3,6 +3,18 @@
 The backend implements the `PraxisProvider` seam from `shared/src/provider.ts`.
 All money crosses JSON as integer decimal strings; in memory it is `bigint`.
 
+## Security boundary
+
+Every `POST` route requires:
+
+- a same-origin browser request, when an `Origin` header is present
+- `x-praxis-demo-token` matching `PRAXIS_DEMO_MUTATION_TOKEN`
+
+The browser client sends that header from `NEXT_PUBLIC_PRAXIS_DEMO_MUTATION_TOKEN`
+in API mode. This is a local-demo guard, not production auth. A production build
+must replace it with wallet/session authorization and owner-signed policy/admin
+transactions.
+
 ## Routes
 
 - `GET /api/praxis/get-threads`
@@ -34,6 +46,7 @@ Copy `.env.example` and fill in:
 - `AEGIS_POLICY_ADDRESS`, or `AEGIS_OWNER_ADDRESS`, or an owner keypair so the server can locate the policy PDA.
 - Optional `PRAXIS_OWNER_KEYPAIR_PATH` / `PRAXIS_OWNER_KEYPAIR` for server-side policy admin routes.
 - Optional `PRAXIS_ADDRESS_BOOK` for off-chain labels.
+- `PRAXIS_DEMO_MUTATION_TOKEN` and `NEXT_PUBLIC_PRAXIS_DEMO_MUTATION_TOKEN` for local API-mode demos.
 
 The agent executor only signs `agent_transfer` through Aegis. It never builds a raw system transfer.
 Swaps are represented as a typed `swap` proposal stub; no Jupiter CPI is built.

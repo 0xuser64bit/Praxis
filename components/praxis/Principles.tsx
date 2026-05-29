@@ -10,8 +10,8 @@ type Principle = {
 const PRINCIPLES: Principle[] = [
   {
     mark: "i.",
-    title: { lead: "We will not ", accent: "hold your keys." },
-    body: "Praxis is non-custodial today and tomorrow. When autonomous actions ship in v2, you'll grant scoped permissions through session keys — not surrender control. The agent operates inside an envelope you set, with limits it cannot cross.",
+    title: { lead: "We will not grant ", accent: "unbounded power." },
+    body: "The demo uses a program-owned Aegis vault and a scoped agent key. Production owner actions must be wallet-signed, and any autonomous agent authority must stay inside an on-chain envelope it cannot cross.",
   },
   {
     mark: "ii.",

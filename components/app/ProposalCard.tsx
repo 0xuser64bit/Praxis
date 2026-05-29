@@ -133,14 +133,12 @@ export function ProposalCard({
                 {proposal.sig ? shortenAddress(proposal.sig, 6, 6) : "—"} · confirmed in 0.9s
               </div>
             </div>
-            <a
-              href="#"
-              onClick={(e) => e.preventDefault()}
-              aria-label="Open in explorer"
-              className="cursor-pointer text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+            <span
+              aria-label="Explorer link unavailable for local demo signatures"
+              className="text-[var(--text-tertiary)]"
             >
               <IconExternalLink size={14} />
-            </a>
+            </span>
           </div>
         )}
 

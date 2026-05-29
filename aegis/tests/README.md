@@ -1,12 +1,12 @@
 # Aegis tests
 
-The M1 enforcement gate is implemented as Rust LiteSVM integration tests at
+The enforcement gate is implemented as Rust LiteSVM integration tests at
 `programs/aegis/tests/enforcement.rs` so Cargo can discover them for the
-`aegis` program crate.
+`aegis` program crate. It covers T1-T6: cap boundaries, day rollover, signer
+checks, revoke, allow-list behavior, and admin invariants.
 
 Run from the repo root:
 
 ```sh
-NO_DNA=1 anchor build
-NO_DNA=1 cargo test --test enforcement -- --nocapture
+bun run aegis:test
 ```

@@ -34,18 +34,18 @@ export function Hero() {
           </h1>
 
           <p className="mb-11 max-w-[600px] text-[22px] leading-[1.55] font-normal text-[var(--text-secondary)] [animation:fadeUp_0.8s_0.2s_ease_both]">
-            Praxis is a conversational agent for Solana. Send, swap, and
-            research on-chain by writing what you want — not by hunting through
-            menus, gas calculators, and twelve open tabs.
+            Praxis is a conversational agent for Solana. Send SOL through an
+            on-chain policy envelope, preview blocked actions before signing,
+            and research tokens without handing the agent unrestricted power.
           </p>
 
           <div className="flex flex-wrap gap-3 [animation:fadeUp_0.8s_0.3s_ease_both]">
-            <Button as="a" href="#" variant="primary">
-              Request beta access
+            <Button as="a" href="/app" variant="primary">
+              Launch demo app
               <IconArrowRight size={16} />
             </Button>
-            <Button as="a" href="#">
-              Watch 60-second demo
+            <Button as="a" href="#product">
+              View walkthrough
               <IconPlayerPlay size={16} />
             </Button>
           </div>

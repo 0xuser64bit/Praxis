@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { Container } from "@/components/praxis/Container";
 import { TxCard } from "@/components/praxis/TxCard";
 
-const CMD = "swap 100 usdc for jup at best rate";
+const CMD = "send 50 sol to maya";
 const START_DELAY_MS = 1200;
 const REVEAL_DELAY_MS = 400;
 const MIN_KEY_MS = 45;
@@ -105,35 +105,30 @@ export function CommandDemo() {
                 PRAXIS · 2:14 PM
               </div>
               <div className="mb-4 text-[14px] leading-[1.6] text-[var(--text-secondary)] [&_strong]:font-medium [&_strong]:text-[var(--text-primary)]">
-                Best route found via Jupiter aggregator. Quote valid for{" "}
-                <strong>12 seconds</strong>.
+                Resolved <strong>Maya Patel</strong>, then checked the request
+                against the live Aegis policy before signing.
               </div>
 
               <TxCard
-                status={{ label: "Awaiting signature" }}
+                status={{ label: "Blocked by Aegis", dotColor: "var(--danger)" }}
                 from={{
-                  label: "You pay",
-                  primary: "100.00",
-                  unit: "USDC",
-                  sub: "≈ $100.00 USD",
+                  label: "Send",
+                  primary: "50.00",
+                  unit: "SOL",
+                  sub: "exceeds daily envelope",
                 }}
                 to={{
-                  label: "You receive",
-                  primary: "87.42",
-                  unit: "JUP",
-                  sub: "≈ $99.82 USD",
+                  label: "To",
+                  primary: "Maya Patel",
+                  sub: "9bLm…K3pQ",
+                  compact: true,
                 }}
                 meta={[
-                  {
-                    label: "Route",
-                    value: "USDC › Orca › Raydium › JUP",
-                    mono: true,
-                  },
-                  { label: "Price impact", value: "0.18%" },
-                  { label: "Slippage cap", value: "0.50%" },
                   { label: "Network fee", value: "~$0.00012" },
-                  { label: "Simulation", value: "Will succeed", ok: true },
+                  { label: "Simulation", value: "Rejected by Aegis" },
+                  { label: "Policy reason", value: "Exceeds remaining 5 SOL daily cap" },
                 ]}
+                actions={[]}
               />
             </div>
           </div>

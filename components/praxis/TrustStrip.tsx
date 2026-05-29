@@ -11,36 +11,36 @@ type TrustItem = {
 
 const TRUST_ITEMS: TrustItem[] = [
   {
-    eyebrow: "Non-custodial",
+    eyebrow: "Scoped signer",
     value: (
       <>
-        <em>You</em> hold
+        <em>Revocable</em>
       </>
     ),
-    sub: "Praxis never sees your seed phrase",
+    sub: "Agent authority dies on-chain when revoked",
   },
   {
     eyebrow: "Simulated",
     value: (
       <>
-        100<em>%</em>
+        T1<em>-T6</em>
       </>
     ),
-    sub: "Every transaction previewed against live state",
+    sub: "LiteSVM enforcement gate covers edge cases",
   },
   {
-    eyebrow: "Verified tokens",
-    value: "~500",
-    sub: "Jupiter-verified list, no rug exposure by default",
+    eyebrow: "Current scope",
+    value: "SOL",
+    sub: "Native transfers enforced by Aegis",
   },
   {
-    eyebrow: "Audit status",
+    eyebrow: "Swap status",
     value: (
       <>
-        Q2 <em>&apos;26</em>
+        v<em>2</em>
       </>
     ),
-    sub: "Sec3 audit scheduled before public launch",
+    sub: "Jupiter execution is not implemented yet",
   },
 ];
 

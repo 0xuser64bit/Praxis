@@ -1,36 +1,80 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Praxis
 
-## Getting Started
+Praxis is a conversational Solana agent demo backed by Aegis, an Anchor
+program that enforces a scoped agent policy on-chain.
 
-First, run the development server:
+The current product supports:
+
+- A polished standalone mock walkthrough at `/app`.
+- A live API mode for native SOL `agent_transfer` through Aegis.
+- Policy dashboard controls for caps, expiry, allow-lists, revoke, and rotate.
+- Activity and proposal surfaces that show Aegis policy verdicts.
+- Read-only token research through Solana RPC and a configured indexer.
+
+Swaps are intentionally a typed stub. No Jupiter CPI or owner-signed swap flow is
+implemented yet.
+
+## Modes
+
+### Mock mode
+
+Use this for a standalone product walkthrough. It does not need keypairs, RPC, or
+Anthropic credentials.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+NEXT_PUBLIC_PRAXIS_PROVIDER=mock bun run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000/app`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Live API mode
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Use this for the real Aegis send flow on localnet/devnet. Copy `.env.example`,
+then configure:
 
-## Learn More
+- `NEXT_PUBLIC_PRAXIS_PROVIDER=api`
+- `PRAXIS_DEMO_MUTATION_TOKEN`
+- `NEXT_PUBLIC_PRAXIS_DEMO_MUTATION_TOKEN` with the same local-demo value
+- `SOLANA_RPC_URL`
+- `PRAXIS_AGENT_KEYPAIR_PATH` or `PRAXIS_AGENT_KEYPAIR`
+- `AEGIS_POLICY_ADDRESS`, `AEGIS_OWNER_ADDRESS`, or `PRAXIS_OWNER_KEYPAIR_PATH`
+- `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`, unless using `PRAXIS_LOCAL_INTENT=1`
 
-To learn more about Next.js, take a look at the following resources:
+The demo mutation token is not production authentication. It only prevents an
+accidental public deployment from exposing server-side signer routes.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+bun run dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Open `http://localhost:3000/app`.
 
-## Deploy on Vercel
+## Validation
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+bun run lint
+bun run build
+bun run aegis:test
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`bun run aegis:test` rebuilds the Anchor program before running the LiteSVM
+enforcement gate.
+
+## Demo Script
+
+With a local validator and funded owner/agent keypairs:
+
+```bash
+bun run praxis:demo
+```
+
+The script initializes a demo policy if needed, funds the vault, previews and
+executes `send 0.5 sol to maya`, then submits an over-cap transfer so Aegis
+returns a typed rejection.
+
+## Production Gap
+
+This repo is now demo-ready, not production-ready. Before production, owner
+policy actions must be wallet-signed, user/session auth must replace the demo
+mutation token, durable storage must replace the in-memory provider, and API
+routes need per-user authorization and rate limits.

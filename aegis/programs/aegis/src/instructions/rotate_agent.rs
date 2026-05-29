@@ -20,6 +20,11 @@ pub struct RotateAgent<'info> {
 }
 
 pub fn handler(ctx: Context<RotateAgent>, new_agent_authority: Pubkey) -> Result<()> {
+    require!(
+        new_agent_authority != Pubkey::default(),
+        AegisError::InvalidAgentAuthority
+    );
+
     let policy = &mut ctx.accounts.policy;
     policy.agent_authority = new_agent_authority;
     policy.paused = false;

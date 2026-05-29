@@ -31,6 +31,11 @@ pub fn handler(
     require!(allowed_programs.len() <= MAX_ALLOWED_PROGRAMS, AegisError::TooManyPrograms);
     require!(allowed_recipients.len() <= MAX_ALLOWED_RECIPIENTS, AegisError::TooManyRecipients);
     require!(allowed_mints.len() <= MAX_ALLOWED_MINTS, AegisError::TooManyMints);
+    require!(max_per_tx > 0 && daily_limit > 0, AegisError::InvalidLimits);
+    require!(
+        expiry_ts > Clock::get()?.unix_timestamp,
+        AegisError::InvalidLimits
+    );
 
     let policy = &mut ctx.accounts.policy;
     policy.max_per_tx = max_per_tx;

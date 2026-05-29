@@ -780,6 +780,11 @@
       "code": 6011,
       "name": "InsufficientVaultBalance",
       "msg": "Vault has insufficient balance for this transfer"
+    },
+    {
+      "code": 6012,
+      "name": "InvalidAgentAuthority",
+      "msg": "Agent authority cannot be the default public key"
     }
   ],
   "types": [

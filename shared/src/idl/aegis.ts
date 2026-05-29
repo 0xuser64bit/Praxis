@@ -786,6 +786,11 @@ export type Aegis = {
       "code": 6011,
       "name": "insufficientVaultBalance",
       "msg": "Vault has insufficient balance for this transfer"
+    },
+    {
+      "code": 6012,
+      "name": "invalidAgentAuthority",
+      "msg": "Agent authority cannot be the default public key"
     }
   ],
   "types": [

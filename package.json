@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "aegis:build": "cd aegis && NO_DNA=1 anchor build",
+    "aegis:test": "cd aegis && NO_DNA=1 anchor build && NO_DNA=1 cargo test --test enforcement -- --nocapture",
     "praxis:demo": "bun scripts/praxis-demo.ts"
   },
   "dependencies": {

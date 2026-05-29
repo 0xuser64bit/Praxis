@@ -47,6 +47,11 @@ pub fn handler(
 
     let now = Clock::get()?.unix_timestamp;
     require!(expiry_ts > now, AegisError::InvalidLimits);
+    require!(max_per_tx > 0 && daily_limit > 0, AegisError::InvalidLimits);
+    require!(
+        agent_authority != Pubkey::default(),
+        AegisError::InvalidAgentAuthority
+    );
 
     let policy = &mut ctx.accounts.policy;
     policy.owner = ctx.accounts.owner.key();

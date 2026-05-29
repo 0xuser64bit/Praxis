@@ -1,4 +1,4 @@
-//! Aegis enforcement gate — the five §5 test scenarios (T1–T5).
+//! Aegis enforcement gate — the five §5 test scenarios plus admin invariants.
 //!
 //! These are simultaneously the correctness gate and the demo. We use LiteSVM
 //! (in-process SVM) so we can WARP THE CLOCK deterministically — a plain
@@ -6,7 +6,7 @@
 //!
 //! Run with output:  cargo test --test enforcement -- --nocapture
 //!
-//! All five run inside one `#[test]` so we can print a single pass/fail table
+//! All cases run inside one `#[test]` so we can print a single pass/fail table
 //! and report the exact assertion (the on-chain Custom error code) that fired.
 
 use {
@@ -232,6 +232,51 @@ impl Ctx {
             aegis::ID,
             &aegis::instruction::RevokeAgent {}.data(),
             aegis::accounts::RevokeAgent {
+                owner: self.owner.pubkey(),
+                policy: self.policy,
+            }
+            .to_account_metas(None),
+        );
+        let owner = self.owner.insecure_clone();
+        self.send(ix, &[&owner])
+    }
+
+    fn rotate(&mut self, new_agent_authority: Pubkey) -> TransactionResult {
+        let ix = Instruction::new_with_bytes(
+            aegis::ID,
+            &aegis::instruction::RotateAgent {
+                new_agent_authority,
+            }
+            .data(),
+            aegis::accounts::RotateAgent {
+                owner: self.owner.pubkey(),
+                policy: self.policy,
+            }
+            .to_account_metas(None),
+        );
+        let owner = self.owner.insecure_clone();
+        self.send(ix, &[&owner])
+    }
+
+    fn update_policy(
+        &mut self,
+        max_per_tx: u64,
+        daily_limit: u64,
+        expiry_ts: i64,
+    ) -> TransactionResult {
+        let ix = Instruction::new_with_bytes(
+            aegis::ID,
+            &aegis::instruction::UpdatePolicy {
+                max_per_tx,
+                daily_limit,
+                allowed_programs: vec![],
+                allowed_recipients: vec![],
+                allowed_mints: vec![],
+                expiry_ts,
+                paused: false,
+            }
+            .data(),
+            aegis::accounts::UpdatePolicy {
                 owner: self.owner.pubkey(),
                 policy: self.policy,
             }
@@ -488,6 +533,47 @@ fn t5_allow_list() -> Result<String, String> {
 }
 
 // --------------------------------------------------------------------------
+// T6 — Admin invariants: owner cannot update the policy into zero limits or an
+//      already-expired session, and rotate_agent cannot install the default key.
+// --------------------------------------------------------------------------
+fn t6_admin_invariants() -> Result<String, String> {
+    let t0 = 1_000_000i64;
+    let expiry = t0 + 10 * 86_400;
+    let mut c = Ctx::setup(sol(2), sol(5), vec![], expiry, t0, sol(10));
+
+    expect_reject(
+        &c.update_policy(0, sol(5), expiry),
+        ecode(AegisError::InvalidLimits),
+        "InvalidLimits",
+        "T6 zero max_per_tx",
+    )?;
+    expect_reject(
+        &c.update_policy(sol(2), 0, expiry),
+        ecode(AegisError::InvalidLimits),
+        "InvalidLimits",
+        "T6 zero daily_limit",
+    )?;
+    expect_reject(
+        &c.update_policy(sol(2), sol(5), t0),
+        ecode(AegisError::InvalidLimits),
+        "InvalidLimits",
+        "T6 expired policy update",
+    )?;
+    expect_reject(
+        &c.rotate(Pubkey::default()),
+        ecode(AegisError::InvalidAgentAuthority),
+        "InvalidAgentAuthority",
+        "T6 default rotate key",
+    )?;
+
+    Ok(format!(
+        "zero limits / expired update→Custom({}) invalid_limits; default rotate key→Custom({}) invalid_agent_authority",
+        ecode(AegisError::InvalidLimits),
+        ecode(AegisError::InvalidAgentAuthority),
+    ))
+}
+
+// --------------------------------------------------------------------------
 // THE GATE
 // --------------------------------------------------------------------------
 #[test]
@@ -498,6 +584,7 @@ fn aegis_enforcement_gate() {
         ("T3", "Signer / owner-withdraw", t3_signer),
         ("T4", "Revoke", t4_revoke),
         ("T5", "Allow-list", t5_allow_list),
+        ("T6", "Admin invariants", t6_admin_invariants),
     ];
 
     let mut results: Vec<(&str, &str, bool, String)> = Vec::new();
@@ -508,7 +595,7 @@ fn aegis_enforcement_gate() {
         }
     }
 
-    println!("\n┌──── AEGIS ENFORCEMENT GATE (T1–T5) ──────────────────────────────────────");
+    println!("\n┌──── AEGIS ENFORCEMENT GATE ──────────────────────────────────────────────");
     for (id, name, passed, detail) in &results {
         println!(
             "│ {id}  {:<24} {}\n│        ↳ {}",

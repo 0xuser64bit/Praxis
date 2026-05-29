@@ -33,4 +33,6 @@ pub enum AegisError {
     InvalidLimits, // 6010
     #[msg("Vault has insufficient balance for this transfer")]
     InsufficientVaultBalance, // 6011
+    #[msg("Agent authority cannot be the default public key")]
+    InvalidAgentAuthority, // 6012
 }

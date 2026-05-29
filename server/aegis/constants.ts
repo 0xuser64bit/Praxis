@@ -56,6 +56,7 @@ export const AEGIS_OPERATIONAL_ERROR: Record<number, string> = {
   [ANCHOR_ERROR_OFFSET + 9]: "too many allowed mints",
   [ANCHOR_ERROR_OFFSET + 10]: "invalid policy limits",
   [ANCHOR_ERROR_OFFSET + 11]: "vault has insufficient balance",
+  [ANCHOR_ERROR_OFFSET + 12]: "invalid agent authority",
 };
 
 export function reasonFromAegisErrorCode(code: number): RejectReason | undefined {

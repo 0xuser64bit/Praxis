@@ -50,6 +50,14 @@ export interface TransferExecution {
   logs: string[];
 }
 
+interface BuiltTransaction {
+  tx: Transaction;
+  latestBlockhash: {
+    blockhash: string;
+    lastValidBlockHeight: number;
+  };
+}
+
 let connection: Connection | undefined;
 
 export function getConnection(config = getServerConfig()): Connection {
@@ -92,7 +100,7 @@ export class AegisClient {
     const now = await this.chainTime();
     const mirrored = checkTransferPolicy(policy, amount, recipient.toBase58(), now);
     const ix = await this.agentTransferIx(agent.publicKey, recipient, amount);
-    const tx = await this.buildTransaction([ix], agent.publicKey);
+    const { tx } = await this.buildTransaction([ix], agent.publicKey);
     tx.sign(agent);
 
     const sim = await this.conn.simulateTransaction(tx);
@@ -148,7 +156,7 @@ export class AegisClient {
     const policy = await this.getPolicy();
     const now = await this.chainTime();
     const ix = await this.agentTransferIx(agent.publicKey, recipient, amount);
-    const tx = await this.buildTransaction([ix], agent.publicKey);
+    const { tx, latestBlockhash } = await this.buildTransaction([ix], agent.publicKey);
     tx.sign(agent);
 
     try {
@@ -156,9 +164,8 @@ export class AegisClient {
         skipPreflight: Boolean(opts.skipPreflight),
         preflightCommitment: this.config.commitment,
       });
-      const latest = await this.conn.getLatestBlockhash(this.config.commitment);
       const confirmation = await this.conn.confirmTransaction(
-        { signature: sig, ...latest },
+        { signature: sig, ...latestBlockhash },
         this.config.commitment,
       );
       const logs = await this.logsForSignature(sig);
@@ -314,23 +321,28 @@ export class AegisClient {
   private async buildTransaction(
     instructions: TransactionInstruction[],
     feePayer: PublicKey,
-  ): Promise<Transaction> {
+  ): Promise<BuiltTransaction> {
     const latest = await this.conn.getLatestBlockhash(this.config.commitment);
-    return new Transaction({
-      feePayer,
-      blockhash: latest.blockhash,
-      lastValidBlockHeight: latest.lastValidBlockHeight,
-    }).add(...instructions);
+    return {
+      tx: new Transaction({
+        feePayer,
+        blockhash: latest.blockhash,
+        lastValidBlockHeight: latest.lastValidBlockHeight,
+      }).add(...instructions),
+      latestBlockhash: latest,
+    };
   }
 
   private async sendOwnerTransaction(instructions: TransactionInstruction[], owner: Keypair): Promise<string> {
-    const tx = await this.buildTransaction(instructions, owner.publicKey);
+    const { tx, latestBlockhash } = await this.buildTransaction(instructions, owner.publicKey);
     tx.sign(owner);
     const sig = await this.conn.sendRawTransaction(tx.serialize(), {
       preflightCommitment: this.config.commitment,
     });
-    const latest = await this.conn.getLatestBlockhash(this.config.commitment);
-    const confirmation = await this.conn.confirmTransaction({ signature: sig, ...latest }, this.config.commitment);
+    const confirmation = await this.conn.confirmTransaction(
+      { signature: sig, ...latestBlockhash },
+      this.config.commitment,
+    );
     if (confirmation.value.err) {
       throw new Error(`owner transaction failed: ${JSON.stringify(confirmation.value.err)}`);
     }

@@ -1,0 +1,15 @@
+# Aegis Anchor workspace — build artifacts & secrets (kept out of git).
+target
+.anchor
+test-ledger
+**/*.rs.bk
+node_modules
+.yarn
+.surfpool
+
+# Secrets & keypairs — never commit
+*.env
+.env*
+**/*-keypair.json
+**/id.json
+*.pem

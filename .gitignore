@@ -12,10 +12,6 @@
 
 # testing
 /coverage
-/target
-/.anchor
-/test-ledger
-**/*.rs.bk
 
 # next.js
 /.next/

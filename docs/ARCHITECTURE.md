@@ -20,6 +20,8 @@ enforces the spending envelope.
 - Uses a deterministic rule-based parser.
 - Exercises the same proposal, policy, and activity UI as API mode.
 - Refuses to sign swaps, matching API mode.
+- Intended for local development and smoke testing. Production builds disable
+  mock mode unless `NEXT_PUBLIC_PRAXIS_ALLOW_MOCK=1` is deliberately set.
 
 ### API Mode
 
@@ -29,15 +31,16 @@ enforces the spending envelope.
 - Reads policy and activity through `PraxisServerProvider`.
 - Requires Solana wallet message signing and a signed HTTP-only session cookie.
 - Derives the live policy PDA from the signed-in wallet address.
-- Persists off-chain threads, proposals, and activity under `PRAXIS_STATE_DIR`.
-- Parses intent with Anthropic Messages API or the local demo parser.
+- Persists off-chain threads, proposals, and activity through the configured
+  state repository (`postgres` for production, `fs` for local/devnet).
+- Parses intent with Anthropic Messages API or the local deterministic parser.
 - Resolves address-book labels off-chain.
 - Simulates through `AegisClient`.
 - Signs agent actions with the configured scoped agent key.
-- Requires backend owner-key actions to match the signed-in wallet.
+- Builds wallet-signed owner/admin transactions when a signing wallet is present.
 
 The filesystem state adapter is for local/devnet durability. Production should
-replace it with managed database storage.
+use managed Postgres storage.
 
 ## Core Data Flow
 
@@ -103,7 +106,7 @@ Trusted:
 
 - Solana consensus.
 - Aegis program enforcement.
-- Owner key for owner/admin actions.
+- Owner wallet signatures for owner/admin actions.
 
 Not trusted for enforcement:
 
@@ -119,11 +122,13 @@ They are not the source of truth for value movement.
 
 ## Current Production Gaps
 
-- Server-side agent key custody is still demo/localnet oriented.
-- Owner/admin routes still rely on a backend owner keypair when used from API
-  mode; production should use wallet-signed owner transactions.
-- Filesystem state is local/devnet durability, not production database storage.
-- Route rate limits are process-local and need platform/WAF enforcement.
+- Self-serve policy initialization is still script/bootstrap driven.
+- The in-process agent signer is local/devnet oriented; production should use
+  `PRAXIS_AGENT_SIGNER_URL`.
+- Filesystem state is local/devnet durability; production should use
+  `PRAXIS_STATE_BACKEND=postgres`.
+- The in-memory rate limiter is process-local; production should use
+  `PRAXIS_RATE_LIMITER=redis` plus platform/WAF controls.
 - No durable rejected-transaction indexer for failures that happen outside the
   app process.
 - No managed setup/funding product flow for SPL token vault balances.

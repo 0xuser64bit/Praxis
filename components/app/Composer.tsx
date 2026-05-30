@@ -82,7 +82,7 @@ export function Composer({
 
       <div className="mt-2.5 flex items-center justify-between [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
         <span>↵ to send · every action is policy-checked before you sign</span>
-        <span>claude-sonnet-4.6</span>
+        <span>structured intent</span>
       </div>
     </div>
   );

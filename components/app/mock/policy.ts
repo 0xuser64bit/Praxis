@@ -6,22 +6,15 @@
  */
 
 import type { Address, PolicyCheckResult, PolicyView, TokenInfo } from "@praxis/shared";
-import { DAY_WINDOW_SECONDS, RejectReason, remaining } from "@praxis/shared";
+import { RejectReason, remaining } from "@praxis/shared";
 
 import { formatSol, formatUnits } from "../lib/units";
+import { effectiveSpentToday, effectiveTokenSpentToday } from "../lib/policyMath";
 
 /** Default (zero) mint sentinel — means the token envelope is not configured. */
 const DEFAULT_MINT = "11111111111111111111111111111111";
 
-/** Effective `spent_today` after applying the rolling 24h reset. */
-export function effectiveSpentToday(policy: PolicyView, now: number): bigint {
-  return now >= policy.dayStartTs + DAY_WINDOW_SECONDS ? 0n : policy.spentToday;
-}
-
-/** Effective token `spent_today` after applying the token's rolling 24h reset. */
-export function effectiveTokenSpentToday(policy: PolicyView, now: number): bigint {
-  return now >= policy.tokenDayStartTs + DAY_WINDOW_SECONDS ? 0n : policy.tokenSpentToday;
-}
+export { effectiveSpentToday, effectiveTokenSpentToday };
 
 function reject(
   code: RejectReason,

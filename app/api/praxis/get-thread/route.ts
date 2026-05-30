@@ -1,4 +1,5 @@
 import { readString, withReadProvider } from "@/server/api/json";
+import { PraxisNotFoundError } from "@/server/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -6,6 +7,8 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   return withReadProvider(request, (provider) => {
     const id = readString(new URL(request.url).searchParams.get("id"), "id");
-    return provider.getThread(id);
+    const thread = provider.getThread(id);
+    if (!thread) throw new PraxisNotFoundError(`unknown thread ${id}`);
+    return thread;
   });
 }

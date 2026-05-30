@@ -87,7 +87,7 @@ export function Footer() {
         <div className="flex items-center justify-between pt-8 [font-family:var(--font-mono)] text-[11px] tracking-[0.05em] text-[var(--text-tertiary)] [border-top:0.5px_solid_var(--border)]">
           <span>© 2026 PRAXIS LABS · AHMEDABAD</span>
         <div className="flex items-center gap-2">
-            <span>v0.1 · demo build</span>
+            <span>v0.1</span>
             <span
               aria-hidden
               className="h-1.5 w-1.5 rounded-full bg-[var(--success)]"

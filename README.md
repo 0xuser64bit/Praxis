@@ -1,11 +1,11 @@
 # Praxis
 
-Praxis is a conversational Solana agent demo backed by Aegis, an Anchor
+Praxis is a conversational Solana agent backed by Aegis, an Anchor
 program that enforces a scoped agent policy on-chain.
 
 The current product supports:
 
-- A polished standalone mock walkthrough at `/app`.
+- A local-only mock walkthrough at `/app` for development and smoke testing.
 - A live API mode for native SOL `agent_transfer` and configured SPL-token
   `agent_transfer_spl` through Aegis.
 - Policy dashboard controls for caps, expiry, allow-lists, revoke, and rotate.
@@ -17,10 +17,11 @@ implemented yet, and the mock refuses to sign swaps too.
 
 ## Modes
 
-### Mock mode
+### Local mock mode
 
-Use this for a standalone product walkthrough. It does not need keypairs, RPC, or
-Anthropic credentials.
+Use this only for local development and smoke testing. It does not need keypairs,
+RPC, or Anthropic credentials. Production builds disable mock mode unless
+`NEXT_PUBLIC_PRAXIS_ALLOW_MOCK=1` is deliberately set at build time.
 
 ```bash
 NEXT_PUBLIC_PRAXIS_PROVIDER=mock bun run dev
@@ -99,24 +100,22 @@ the vault ATA during setup.
 
 ## Deploy
 
-To put Praxis live for a demo (judges + testers) for **$0**, see
-[docs/DEPLOY.md](docs/DEPLOY.md). It covers two paths: a zero-config mock
-walkthrough on Vercel, and the full live API flow on Solana devnet with faucet
-SOL — both free.
+To put Praxis live for testers, see [docs/DEPLOY.md](docs/DEPLOY.md). The
+deployment path is API-backed; mock mode is a local development tool, not the
+production default.
 
 ## Production Gap
 
-This repo is a strong local/devnet MVP candidate. Managed state storage is now
-available — set `PRAXIS_STATE_BACKEND=postgres` with a `DATABASE_URL` (Neon or
-any Postgres) to persist threads/proposals/activity durably across instances;
-the filesystem backend remains the default for local/devnet. Owner/admin policy
-actions are already wallet-signed (above). Platform-level rate limiting (set
-`PRAXIS_RATE_LIMITER=redis` with Upstash/KV credentials) and structured logging
-with 5xx error reporting are available; the in-memory limiter is the default for
-local/single-instance. The agent session key can be moved behind a remote signer
-service (`PRAXIS_AGENT_SIGNER_URL`) so its private key never lives in the app —
-see `signer/` for a ~$0 deploy; the in-process `LocalKeypairSigner` is the
-default for local/devnet.
+This repo is a strong devnet MVP candidate. Managed state storage is available:
+set `PRAXIS_STATE_BACKEND=postgres` with a `DATABASE_URL` (Neon or any Postgres)
+to persist threads/proposals/activity durably across instances; the filesystem
+backend remains the default for local/devnet. Owner/admin policy actions are
+wallet-signed when a browser wallet is present. Cross-instance rate limiting is
+available with `PRAXIS_RATE_LIMITER=redis` and Upstash-compatible credentials;
+the in-memory limiter is only for local/single-instance use. The agent session
+key can be moved behind a remote signer service (`PRAXIS_AGENT_SIGNER_URL`) so
+its private key never lives in the app — see `signer/`; the in-process
+`LocalKeypairSigner` is the default for local/devnet only.
 
 In short: the seams for production (managed DB, wallet-signed owner actions,
 agent-key custody, cross-instance rate limiting, observability) are all in place

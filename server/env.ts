@@ -231,7 +231,7 @@ function parseKeypair(raw: string, name: string): Keypair {
 }
 
 function parseAddressBook(raw: string | undefined): AddressBookEntry[] {
-  if (!raw?.trim()) return DEFAULT_CONTACTS;
+  if (!raw?.trim()) return defaultAddressBook();
   const parsed = parseJsonArray<AddressBookEntry>(raw, "PRAXIS_ADDRESS_BOOK");
   return parsed.map((entry) => {
     const label = String(entry.label ?? "").trim().toLowerCase();
@@ -240,6 +240,13 @@ function parseAddressBook(raw: string | undefined): AddressBookEntry[] {
     if (!label || !name) throw new PraxisConfigError("address book entries require label, name, and address");
     return { label, name, address, note: entry.note ? String(entry.note) : undefined };
   });
+}
+
+function defaultAddressBook(): AddressBookEntry[] {
+  if (process.env.NODE_ENV === "production" && process.env.PRAXIS_ALLOW_DEMO_DATA !== "1") {
+    return [];
+  }
+  return DEFAULT_CONTACTS;
 }
 
 function parseTokens(raw: string | undefined): TokenInfo[] {

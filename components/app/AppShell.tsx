@@ -62,14 +62,18 @@ function ReadyAppShell() {
   const threads = useThreads();
   const activity = useActivity();
   const [view, setView] = useState<View>("chat");
-  const [activeThreadId, setActiveThreadId] = useState("t-welcome");
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const activeThreadId =
+    threads.find((thread) => thread.id === selectedThreadId)?.id ??
+    threads[0]?.id ??
+    "t-welcome";
 
   const activeThread = useThread(activeThreadId);
   const revoked = policy.paused || policy.agentAuthority === SYSTEM_PROGRAM;
   const rejectedCount = activity.filter((a) => a.result === "rejected").length;
 
   const selectThread = (id: string) => {
-    setActiveThreadId(id);
+    setSelectedThreadId(id);
     setView("chat");
   };
   const newThread = () => {
@@ -186,7 +190,7 @@ function ApiStateScreen({
         </p>
         {error && (
           <p className="mt-3 [font-family:var(--font-mono)] text-[11px] leading-[1.5] text-[var(--text-tertiary)]">
-            API mode intentionally does not fall back to mock state. Configure the live backend or use mock mode for a standalone walkthrough.
+            API mode intentionally does not fall back to mock state. Check the live backend configuration and wallet session.
           </p>
         )}
       </div>

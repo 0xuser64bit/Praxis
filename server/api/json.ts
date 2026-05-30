@@ -164,7 +164,7 @@ export function readPolicyPatch(value: unknown) {
   return {
     maxPerTx: patch.maxPerTx === undefined ? undefined : readBaseUnits(patch.maxPerTx, "patch.maxPerTx"),
     dailyLimit: patch.dailyLimit === undefined ? undefined : readBaseUnits(patch.dailyLimit, "patch.dailyLimit"),
-    expiryTs: patch.expiryTs === undefined ? undefined : readNumber(patch.expiryTs, "patch.expiryTs"),
+    expiryTs: patch.expiryTs === undefined ? undefined : readNonNegativeNumber(patch.expiryTs, "patch.expiryTs"),
     paused: patch.paused === undefined ? undefined : readBoolean(patch.paused, "patch.paused"),
   };
 }
@@ -186,6 +186,14 @@ export function readNumber(value: unknown, name: string): number {
     throw new PraxisInputError(`${name} must be a safe integer`);
   }
   return value;
+}
+
+export function readNonNegativeNumber(value: unknown, name: string): number {
+  const parsed = readNumber(value, name);
+  if (parsed < 0) {
+    throw new PraxisInputError(`${name} must be a non-negative safe integer`);
+  }
+  return parsed;
 }
 
 export function readBoolean(value: unknown, name: string): boolean {
@@ -240,7 +248,7 @@ export function readUnsignedOwnerTransaction(value: Record<string, unknown>): Un
   return {
     transaction: readString(value.transaction, "transaction", { maxLength: 8_192 }),
     blockhash: readString(value.blockhash, "blockhash", { maxLength: 128 }),
-    lastValidBlockHeight: readNumber(value.lastValidBlockHeight, "lastValidBlockHeight"),
+    lastValidBlockHeight: readNonNegativeNumber(value.lastValidBlockHeight, "lastValidBlockHeight"),
   };
 }
 

@@ -164,7 +164,7 @@ export function AppPreview() {
                 </div>
                 <div className="mt-2.5 flex items-center justify-between [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
                   <span>⌘K commands · ⌘/ help · ⇧⏎ newline</span>
-                  <span>claude-sonnet-4.6</span>
+                  <span>structured intent</span>
                 </div>
               </div>
             </main>

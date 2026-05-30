@@ -105,8 +105,12 @@ function verifyToken(token: string): SessionPayload | null {
   }
 }
 
-function hmac(value: string): string {
+export function signWithSessionSecret(value: string): string {
   return base64UrlEncode(createHmac("sha256", sessionSecret()).update(value).digest());
+}
+
+function hmac(value: string): string {
+  return signWithSessionSecret(value);
 }
 
 function sessionSecret(): string {

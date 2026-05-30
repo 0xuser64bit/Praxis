@@ -1,34 +1,30 @@
 # Praxis — $0 devnet "go live" runbook
 
-Get Praxis running for judges and a handful of testers (≈1–10 users, ≤100 best
-case) for **$0**. Everything below uses free tiers and devnet faucet SOL.
+Get Praxis running for a handful of testers (≈1–10 users, ≤100 best case) for
+**$0**. Everything below uses free tiers and devnet faucet SOL.
 
-There are two paths. Pick based on what you want to show:
+There are two paths, but only one deploy path:
 
 | Path | What it shows | Setup | Best for |
 |---|---|---|---|
-| **A. Mock on Vercel** | The full product walkthrough (all five money-shots) with no chain, no keys | ~5 min, 1 env var | **Judges self-serve.** Zero friction. |
-| **B. Live API on devnet** | Real Aegis enforcement on a real cluster | ~30 min | You demoing the real on-chain moat. |
+| **A. Local mock smoke test** | UI and policy-preview ergonomics with no chain, no keys | ~2 min, local only | Fast development checks |
+| **B. Live API on devnet** | Real Aegis enforcement on a real cluster | ~30 min | Shared tester/demo deployment |
 
-You can deploy **both** (two Vercel projects, or one project you reconfigure).
-Mock is the safe always-works demo; Live API is the proof it's real.
+Production builds default to API mode. Mock mode is deliberately local/dev-only
+unless `NEXT_PUBLIC_PRAXIS_ALLOW_MOCK=1` is set at build time.
 
 ---
 
-## Path A — Mock mode on Vercel (fastest $0)
+## Path A — Local mock smoke test
 
 The mock provider runs entirely in the browser. No RPC, no keypairs, no
-Anthropic, no database. The five §9 money-shots are all walkable.
+Anthropic, no database. Use it to verify UI flows before wiring live chain state.
 
-1. Push this repo to GitHub (if it isn't already).
-2. On [vercel.com](https://vercel.com) → **Add New → Project** → import the repo.
-   Framework auto-detects as Next.js; the build command is `next build`.
-3. Add **one** Environment Variable:
-   - `NEXT_PUBLIC_PRAXIS_PROVIDER` = `mock`
-4. Deploy. Open `https://<your-app>.vercel.app/app`.
+```bash
+NEXT_PUBLIC_PRAXIS_PROVIDER=mock bun run dev
+```
 
-That's it. **$0**, no secrets, resets cleanly on every load. Use Vercel Hobby
-(free, non-commercial — fine for a hackathon/demo).
+Open `http://localhost:3000/app`.
 
 ---
 
@@ -38,10 +34,8 @@ This runs the real `agent_transfer` flow through the deployed Aegis program on
 Solana **devnet** (free faucet SOL). The signed-in wallet is the policy owner.
 
 > **Single-owner caveat:** the policy PDA is derived from the signed-in wallet,
-> and there is no self-serve "initialize policy" UI yet (init is a script step
-> using a backend owner key). So the clean way to demo Live API is: **you**
-> bootstrap one owner wallet and sign in as that owner. Judges get the full
-> self-serve experience on **Path A (mock)**; you show Path B yourself.
+> and there is no self-serve "initialize policy" UI yet. Bootstrap one owner
+> wallet, then sign in as that owner.
 
 ### 0. Prerequisites (all free)
 
@@ -132,7 +126,7 @@ Open `http://localhost:3000/app`, connect Phantom (**set to devnet**, using the
 
 ### 5. Deploy Live API to Vercel
 
-Import the repo on Vercel (as in Path A) and set these Environment Variables.
+Import the repo on Vercel and set these Environment Variables.
 **Keys go in as values, not file paths** — Vercel has no writable key files:
 
 | Key | Value |
@@ -142,16 +136,16 @@ Import the repo on Vercel (as in Path A) and set these Environment Variables.
 | `AEGIS_PROGRAM_ID` | your program id |
 | `PRAXIS_SESSION_SECRET` | a random 32+ char string |
 | `PRAXIS_AGENT_KEYPAIR` | the **contents** of `keys/agent.json` (the JSON array) |
-| `PRAXIS_OWNER_KEYPAIR` | the contents of `keys/owner.json` |
+| `PRAXIS_OWNER_KEYPAIR` | local/devnet fallback only; omit when all owner actions are wallet-signed |
 | `PRAXIS_LOCAL_INTENT` | `1` |
-| `PRAXIS_STATE_BACKEND` | `fs` (ephemeral on Vercel) or `postgres` + `DATABASE_URL` (Neon free) |
+| `PRAXIS_STATE_BACKEND` | `postgres` |
+| `DATABASE_URL` | Neon or another Postgres-compatible URL |
 
 Deploy, open `/app`, connect the **owner** wallet on devnet.
 
-> On Vercel, `fs` state is per-instance and ephemeral — threads/proposals reset
-> between cold starts. Fine for a quick demo; for persistence add a free **Neon**
+> On Vercel, `fs` state is per-instance and ephemeral. Use a free **Neon**
 > database (Vercel Marketplace) and set `PRAXIS_STATE_BACKEND=postgres` +
-> `DATABASE_URL` (the schema self-creates). Still $0.
+> `DATABASE_URL`; the schema self-creates.
 
 ---
 
@@ -163,9 +157,9 @@ Deploy, open `/app`, connect the **owner** wallet on devnet.
 | Cluster | Solana **devnet** + faucet SOL | $0 |
 | RPC | devnet public, or Helius/QuickNode free tier | $0 |
 | Intent parsing | `PRAXIS_LOCAL_INTENT=1` | $0 |
-| State | `fs`, or Neon free tier | $0 |
-| Rate limiting | in-memory default | $0 |
-| Agent signing | `LocalKeypairSigner` default | $0 |
+| State | Neon free tier | $0 |
+| Rate limiting | Upstash Redis free tier, or in-memory for tiny single-instance tests | $0 |
+| Agent signing | Remote signer free VM, or local key only for devnet tests | $0 |
 
 **Total: $0.** The only things that ever cost money are optional: real Claude
 intent parsing (pennies), or running on **mainnet** (a few dollars of real SOL

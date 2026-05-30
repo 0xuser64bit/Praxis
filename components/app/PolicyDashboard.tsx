@@ -28,14 +28,14 @@ import { useAddressBook, usePolicy, useProvider } from "./ProviderContext";
 import { Card, Dot, Label } from "./ui";
 import { formatSol, formatUnits, percentOf, shortenAddress, toBaseUnits } from "./lib/units";
 import { useNow } from "./lib/useNow";
-import { effectiveSpentToday, effectiveTokenSpentToday } from "./mock/policy";
+import { effectiveSpentToday, effectiveTokenSpentToday } from "./lib/policyMath";
 import {
   QUICK_MINTS,
   TOKEN_ENVELOPE_MINTS,
   mintDecimals,
   mintLabel,
   programLabel,
-} from "./mock/labels";
+} from "./lib/tokenCatalog";
 
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 

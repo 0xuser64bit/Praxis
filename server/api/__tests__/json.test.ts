@@ -4,6 +4,7 @@ import {
   readAllowListKind,
   readBaseUnits,
   readJson,
+  readNonNegativeNumber,
   readNumber,
   readOwnerAction,
   readPolicyPatch,
@@ -64,6 +65,12 @@ describe("scalar readers", () => {
     expect(readNumber(5, "n")).toBe(5);
     expect(() => readNumber(1.5, "n")).toThrow(/safe integer/);
     expect(() => readNumber(Number.MAX_SAFE_INTEGER + 1, "n")).toThrow(/safe integer/);
+  });
+
+  test("readNonNegativeNumber rejects negative integers", () => {
+    expect(readNonNegativeNumber(0, "n")).toBe(0);
+    expect(readNonNegativeNumber(5, "n")).toBe(5);
+    expect(() => readNonNegativeNumber(-1, "n")).toThrow(/non-negative/);
   });
 
   test("readStringArray validates items and caps", () => {
@@ -137,6 +144,9 @@ describe("readUnsignedOwnerTransaction", () => {
     expect(() =>
       readUnsignedOwnerTransaction({ transaction: "AQID", blockhash: "abc", lastValidBlockHeight: 1.5 }),
     ).toThrow(/safe integer/);
+    expect(() =>
+      readUnsignedOwnerTransaction({ transaction: "AQID", blockhash: "abc", lastValidBlockHeight: -1 }),
+    ).toThrow(/non-negative/);
   });
 });
 

@@ -170,7 +170,7 @@ export class PraxisServerProvider implements PraxisProvider {
   async refreshOnChain(): Promise<void> {
     await this.refreshPolicy();
     await this.refreshActivity();
-    this.notify();
+    await this.commit();
   }
 
   // --- reads ---
@@ -192,7 +192,7 @@ export class PraxisServerProvider implements PraxisProvider {
     const id = preferredId ?? this.id("t");
     if (this.getThread(id)) return id;
     this.state.threads = [{ id, title: "New session", messages: [], updatedAt: nowSeconds() }, ...this.state.threads];
-    this.notify();
+    this.commitInBackground();
     return id;
   };
 
@@ -204,7 +204,7 @@ export class PraxisServerProvider implements PraxisProvider {
     thread.messages = [...thread.messages, { id: this.id("m"), role: "user", ts, text }];
     thread.updatedAt = ts;
     this.state.thinking = { ...this.state.thinking, [tid]: true };
-    this.notify();
+    this.commitInBackground();
 
     let blocks: AgentBlock[];
     let title: string | undefined;
@@ -227,7 +227,7 @@ export class PraxisServerProvider implements PraxisProvider {
     if (title && (thread.title === "New session" || thread.messages.length <= 2)) thread.title = title;
     thread.updatedAt = reply.ts;
     this.state.thinking = { ...this.state.thinking, [tid]: false };
-    this.notify();
+    await this.commit();
     return { threadId: tid };
   };
 
@@ -237,13 +237,13 @@ export class PraxisServerProvider implements PraxisProvider {
     if (proposal.state !== "pending") return;
 
     proposal.state = "signing";
-    this.notify();
+    this.commitInBackground();
 
     if (proposal.detail.kind === "swap") {
       proposal.state = "blocked";
       proposal.simulation = "agent_swap is a typed stub; Jupiter CPI is not implemented.";
       this.logSwapRejection(proposal);
-      this.notify();
+      await this.commit();
       return;
     }
 
@@ -278,14 +278,14 @@ export class PraxisServerProvider implements PraxisProvider {
     ];
 
     await this.refreshPolicy().catch(() => undefined);
-    this.notify();
+    await this.commit();
   };
 
   cancelProposal = async (proposalId: string): Promise<void> => {
     const proposal = this.state.proposals[proposalId];
     if (!proposal) return;
     proposal.state = "cancelled";
-    this.notify();
+    await this.commit();
   };
 
   // --- policy dashboard ---
@@ -311,7 +311,7 @@ export class PraxisServerProvider implements PraxisProvider {
     this.assertBackendOwnerSigningAvailable();
     const recipients = recipientAddresses.map((address) => validatePublicKey(address));
     await this.aegis.ensureConfiguredTokenAccounts(recipients);
-    this.notify();
+    await this.commit();
   };
 
   revokeAgent = async (): Promise<void> => {
@@ -630,23 +630,33 @@ export class PraxisServerProvider implements PraxisProvider {
   }
 
   private notify() {
-    this.persist();
     this.version++;
     for (const listener of this.listeners) listener();
   }
 
-  private persist() {
+  private async commit(): Promise<void> {
+    this.notify();
+    await this.persist();
+  }
+
+  private commitInBackground() {
+    this.notify();
+    void this.persist().catch((error) => {
+      logger.warn("praxis.state_persist_failed", errorFields(error));
+    });
+  }
+
+  async flushPersistence(): Promise<void> {
+    await this.persist();
+  }
+
+  private async persist(): Promise<void> {
     const state: StoredProviderState = {
       threads: this.state.threads,
       proposals: this.state.proposals,
       activity: this.state.activity,
     };
-    // Fire-and-forget: in-memory state is authoritative within the process; the
-    // repository is the durable mirror that catches up asynchronously. Failures
-    // are logged, never thrown into a request path.
-    void Promise.resolve(this.repository.save(this.ownerKey, state)).catch((error) => {
-      logger.warn("praxis.state_persist_failed", errorFields(error));
-    });
+    await this.repository.save(this.ownerKey, state);
   }
 }
 

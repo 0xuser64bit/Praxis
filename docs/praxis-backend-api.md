@@ -14,12 +14,13 @@ API mode uses wallet ownership as the user boundary.
 - All `/api/praxis/*` read and mutation routes require that session.
 - Every mutation route also requires a same-origin browser request when an
   `Origin` header is present.
-- Auth, read, mutation, and agent-send routes have process-local rate limits.
+- Auth, read, mutation, and agent-send routes have rate limits. Use
+  `PRAXIS_RATE_LIMITER=redis` for cross-instance enforcement.
 
 The signed-in wallet derives the live policy PDA and scopes the off-chain
 workspace. Backend owner-key routes are allowed only when `PRAXIS_OWNER_KEYPAIR`
-matches the signed-in wallet. Production should move owner/admin actions to
-wallet-signed transactions.
+matches the signed-in wallet; browser flows build wallet-signed owner/admin
+transactions so the backend does not need the owner private key.
 
 ## Routes
 
@@ -47,6 +48,8 @@ wallet-signed transactions.
 - `POST /api/praxis/rotate-agent`
 - `POST /api/praxis/add-to-allow-list` with `{ "kind": "programs" | "recipients" | "mints", "address": string }`
 - `POST /api/praxis/remove-from-allow-list` with the same body as add
+- `POST /api/praxis/owner/build` with a typed owner action; returns an unsigned transaction for the wallet
+- `POST /api/praxis/owner/submit` with the wallet-signed transaction and blockhash metadata
 
 Request bodies are capped at 64 KiB. `send.text` is capped at 2,000 characters,
 and client-supplied thread ids are capped at 128 characters.
@@ -58,7 +61,8 @@ Copy `.env.example` and fill in:
 - `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` for Messages API intent parsing.
 - `SOLANA_RPC_URL` for the target cluster.
 - `PRAXIS_SESSION_SECRET` for stable wallet sessions.
-- `PRAXIS_STATE_DIR` for local/devnet off-chain state persistence.
+- `PRAXIS_STATE_BACKEND=postgres` and `DATABASE_URL` for production state
+  persistence. Use `PRAXIS_STATE_DIR` only for local/devnet filesystem state.
 - `PRAXIS_AGENT_KEYPAIR_PATH` or `PRAXIS_AGENT_KEYPAIR` for the scoped agent signer.
 - `PRAXIS_NEXT_AGENT_KEYPAIR_PATH` or `PRAXIS_NEXT_AGENT_KEYPAIR` for `rotate-agent`; it must be different from the current agent key.
 - Optional `PRAXIS_OWNER_KEYPAIR_PATH` / `PRAXIS_OWNER_KEYPAIR` for local/devnet server-side policy admin routes. It must match the signed-in wallet.

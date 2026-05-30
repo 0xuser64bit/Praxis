@@ -23,8 +23,10 @@ const ENV_KEYS = [
   "PRAXIS_NEXT_AGENT_KEYPAIR",
   "PRAXIS_NEXT_AGENT_KEYPAIR_PATH",
   "PRAXIS_ADDRESS_BOOK",
+  "PRAXIS_ALLOW_DEMO_DATA",
   "PRAXIS_TOKENS",
   "SOLANA_COMMITMENT",
+  "NODE_ENV",
 ];
 
 let saved: Record<string, string | undefined>;
@@ -78,6 +80,16 @@ describe("getServerConfig", () => {
     process.env.PRAXIS_ADDRESS_BOOK = JSON.stringify([{ label: "x", name: "x", address: "bad" }]);
     resetConfigForTests();
     expect(() => getServerConfig()).toThrow();
+  });
+
+  test("does not load demo contacts by default in production", () => {
+    process.env.NODE_ENV = "production";
+    resetConfigForTests();
+    expect(getServerConfig().addressBook).toEqual([]);
+
+    process.env.PRAXIS_ALLOW_DEMO_DATA = "1";
+    resetConfigForTests();
+    expect(getServerConfig().addressBook.length).toBeGreaterThan(0);
   });
 
   test("rejects a token with out-of-range decimals", () => {

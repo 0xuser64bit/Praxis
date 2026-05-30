@@ -5,6 +5,8 @@ import { POST as signProposal } from "../sign-proposal/route";
 import { POST as updatePolicy } from "../update-policy/route";
 import { POST as authVerify } from "../auth/verify/route";
 import { GET as getPolicy } from "../get-policy/route";
+import { GET as getProposal } from "../get-proposal/route";
+import { GET as getThread } from "../get-thread/route";
 import { POST as sendRoute } from "../send/route";
 import { POST as ownerBuild } from "../owner/build/route";
 import { POST as ownerSubmit } from "../owner/submit/route";
@@ -119,6 +121,16 @@ describe("read auth gating", () => {
   test("read responses are marked no-store", async () => {
     const res = await getPolicy(makeRequest(`${ORIGIN}/api/praxis/get-policy`));
     expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  test("404 for an unknown proposal read", async () => {
+    const res = await getProposal(authed("/api/praxis/get-proposal?id=missing"));
+    expect(res.status).toBe(404);
+  });
+
+  test("404 for an unknown thread read", async () => {
+    const res = await getThread(authed("/api/praxis/get-thread?id=missing"));
+    expect(res.status).toBe(404);
   });
 });
 

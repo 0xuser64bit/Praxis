@@ -24,16 +24,16 @@ import {
 } from "react";
 
 import { MockPraxisProvider } from "./mock/mockProvider";
+import { resolveProviderMode } from "./providerMode";
 import { RemotePraxisProvider } from "./remoteProvider";
 
 const Ctx = createContext<PraxisProvider | null>(null);
 
 export function ProviderProvider({ children }: { children: ReactNode }) {
-  const [provider] = useState<PraxisProvider>(() =>
-    process.env.NEXT_PUBLIC_PRAXIS_PROVIDER === "api"
-      ? new RemotePraxisProvider()
-      : new MockPraxisProvider(),
-  );
+  const [provider] = useState<PraxisProvider>(() => {
+    const mode = resolveProviderMode();
+    return mode === "api" ? new RemotePraxisProvider() : new MockPraxisProvider();
+  });
   return <Ctx.Provider value={provider}>{children}</Ctx.Provider>;
 }
 

@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     const body = await readJson(request);
     const walletAddress = verifyWalletChallenge({
       address: readString(body.address, "address", { maxLength: 64 }),
-      nonce: readString(body.nonce, "nonce", { maxLength: 128 }),
+      nonce: readString(body.nonce, "nonce", { maxLength: 1024 }),
       signature: readString(body.signature, "signature", { maxLength: 128 }),
     }, request);
     return jsonOk(

@@ -223,7 +223,20 @@ export function readOwnerAction(value: unknown): OwnerAction {
   const action = value as Record<string, unknown>;
   switch (action.kind) {
     case "bootstrapPolicy":
-      return { kind: "bootstrapPolicy" };
+      return {
+        kind: "bootstrapPolicy",
+        fundLamports:
+          action.fundLamports === undefined
+            ? undefined
+            : readBaseUnits(action.fundLamports, "action.fundLamports"),
+      };
+    case "fundVault": {
+      const amount = readBaseUnits(action.amount, "action.amount");
+      if (amount <= 0n) {
+        throw new PraxisInputError("action.amount must be greater than zero");
+      }
+      return { kind: "fundVault", amount };
+    }
     case "revoke":
       return { kind: "revoke" };
     case "rotate":
@@ -242,7 +255,7 @@ export function readOwnerAction(value: unknown): OwnerAction {
       };
     }
     default:
-      throw new PraxisInputError("action.kind must be bootstrapPolicy, updatePolicy, allowList, revoke, or rotate");
+      throw new PraxisInputError("action.kind must be bootstrapPolicy, fundVault, updatePolicy, allowList, revoke, or rotate");
   }
 }
 

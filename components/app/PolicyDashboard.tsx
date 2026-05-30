@@ -183,7 +183,10 @@ export function PolicyDashboard() {
           </div>
         </Card>
 
-        <VaultCard policy={policy} />
+        <VaultCard
+          policy={policy}
+          onFund={(amount) => runMutation(() => provider.fundVault(amount), "Could not add funds to the vault.")}
+        />
       </div>
 
       {revokeOpen && (
@@ -572,31 +575,87 @@ function SessionCard({
 }
 
 // --- vault ---
-function VaultCard({ policy }: { policy: PolicyView }) {
+function VaultCard({
+  policy,
+  onFund,
+}: {
+  policy: PolicyView;
+  onFund: (amount: bigint) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const parsed = parseFundAmount(draft);
+
+  const submit = () => {
+    if (parsed === null) return;
+    onFund(parsed);
+    setDraft("");
+    setAdding(false);
+  };
+
   return (
-    <Card className="mt-4 flex items-center justify-between p-5">
-      <div className="flex items-center gap-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--bg-elevated)] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)]">
-          <IconWallet size={17} />
-        </span>
-        <div>
-          <Label>Agent vault</Label>
-          <div className="mt-1 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
-            {shortenAddress(policy.address, 6, 6)} · owner {shortenAddress(policy.owner)}
+    <Card className="mt-4 p-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--bg-elevated)] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)]">
+            <IconWallet size={17} />
+          </span>
+          <div>
+            <Label>Agent vault</Label>
+            <div className="mt-1 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
+              {shortenAddress(policy.address, 6, 6)} · owner {shortenAddress(policy.owner)}
+            </div>
           </div>
         </div>
-      </div>
-      <div className="text-right">
-        <div className="[font-family:var(--font-serif)] text-[26px] leading-none tracking-[-0.02em]">
-          {formatSol(policy.vaultBalance)}{" "}
-          <span className="text-[15px] text-[var(--text-tertiary)]">SOL</span>
+        <div className="text-right">
+          <div className="[font-family:var(--font-serif)] text-[26px] leading-none tracking-[-0.02em]">
+            {formatSol(policy.vaultBalance)}{" "}
+            <span className="text-[15px] text-[var(--text-tertiary)]">SOL</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAdding((value) => !value)}
+            className="mt-1.5 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)]"
+          >
+            <IconPlus size={12} /> Add funds
+          </button>
         </div>
-        <div className="mt-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
-          owner withdraw is unconstrained
-        </div>
       </div>
+
+      {adding && (
+        <div className="mt-4 flex items-center gap-2 [border-top:0.5px_solid_var(--border)] pt-4">
+          <div className="relative flex-1">
+            <input
+              autoFocus
+              inputMode="decimal"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && submit()}
+              placeholder="0.5"
+              className="h-9 w-full rounded-md bg-[var(--bg)] pl-3 pr-12 text-[13px] text-[var(--text-primary)] [border:0.5px_solid_var(--border)] outline-none focus:[border-color:var(--accent)]"
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-tertiary)]">
+              SOL
+            </span>
+          </div>
+          <Button onClick={submit} disabled={parsed === null}>
+            Deposit
+          </Button>
+        </div>
+      )}
     </Card>
   );
+}
+
+/** Parse a human SOL amount into lamports; null if blank/invalid/non-positive. */
+function parseFundAmount(value: string): bigint | null {
+  if (!value.trim()) return null;
+  try {
+    const lamports = toBaseUnits(value.trim(), 9);
+    return lamports > 0n ? lamports : null;
+  } catch {
+    return null;
+  }
 }
 
 // --- allow-list editor ---

@@ -64,7 +64,8 @@ import { formatSol, formatUnits, parseHumanUnits, SOL_DECIMALS } from "../units"
  * keypair (local/devnet fallback). Token setup actions stay on the keypair path.
  */
 export type OwnerAction =
-  | { kind: "bootstrapPolicy" }
+  | { kind: "bootstrapPolicy"; fundLamports?: bigint }
+  | { kind: "fundVault"; amount: bigint }
   | { kind: "updatePolicy"; patch: PolicyUpdate }
   | { kind: "allowList"; listKind: AllowListKind; address: string; mode: "add" | "remove" }
   | { kind: "revoke" }
@@ -548,8 +549,8 @@ export class AegisClient {
     return this.sendOwnerAction({ kind: "rotate" });
   }
 
-  async bootstrapPolicy(): Promise<string> {
-    return this.sendOwnerAction({ kind: "bootstrapPolicy" });
+  async bootstrapPolicy(fundLamports: bigint = BOOTSTRAP_VAULT_FUNDING): Promise<string> {
+    return this.sendOwnerAction({ kind: "bootstrapPolicy", fundLamports });
   }
 
   /**
@@ -591,8 +592,20 @@ export class AegisClient {
         allowedMints: verifiedMints,
         expiryTs: (await this.chainTime()) + BOOTSTRAP_POLICY_TTL_SECONDS,
       });
-      const fund = buildFundVaultIx({ ...addresses, owner: ownerPubkey }, BOOTSTRAP_VAULT_FUNDING);
-      return [initialize, fund];
+      const fundLamports = action.fundLamports ?? 0n;
+      if (fundLamports > 0n) {
+        const fund = buildFundVaultIx({ ...addresses, owner: ownerPubkey }, fundLamports);
+        return [initialize, fund];
+      }
+      return [initialize];
+    }
+
+    if (action.kind === "fundVault") {
+      if (action.amount <= 0n) {
+        throw new PraxisInputError("Fund amount must be greater than zero.");
+      }
+      const policy = this.policyForOwner(ownerPubkey);
+      return [buildFundVaultIx({ ...this.addresses({ policy }), owner: ownerPubkey }, action.amount)];
     }
 
     if (action.kind === "revoke") {

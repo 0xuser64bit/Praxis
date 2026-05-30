@@ -78,7 +78,10 @@ describe("buildUnsignedOwnerTransaction", () => {
       getBlockTime: async () => 1_700_000_000,
     }));
 
-    const draft = await client.buildUnsignedOwnerTransaction(wallet, { kind: "bootstrapPolicy" });
+    const draft = await client.buildUnsignedOwnerTransaction(wallet, {
+      kind: "bootstrapPolicy",
+      fundLamports: 1_000_000_000n,
+    });
     const tx = Transaction.from(Uint8Array.from(Buffer.from(draft.transaction, "base64")));
 
     expect(tx.feePayer?.equals(wallet)).toBe(true);
@@ -91,6 +94,40 @@ describe("buildUnsignedOwnerTransaction", () => {
     expect(embeddedAgent.equals(config.agentKeypair!.publicKey)).toBe(true);
     const fundedLamports = tx.instructions[1].data.readBigUInt64LE(8);
     expect(fundedLamports).toBe(1_000_000_000n);
+  });
+
+  test("bootstraps without a fund instruction when funding is omitted/zero", async () => {
+    const config = makeConfig({ policyAddress: undefined });
+    const wallet = config.ownerAddress!;
+    const client = new AegisClient(config, fakeConnection({
+      getAccountInfo: async () => null,
+      getSlot: async () => 1,
+      getBlockTime: async () => 1_700_000_000,
+    }));
+
+    const draft = await client.buildUnsignedOwnerTransaction(wallet, { kind: "bootstrapPolicy" });
+    const tx = Transaction.from(Uint8Array.from(Buffer.from(draft.transaction, "base64")));
+
+    // Just the initialize instruction — no vault funding.
+    expect(tx.instructions).toHaveLength(1);
+    expect(tx.feePayer?.equals(wallet)).toBe(true);
+  });
+
+  test("builds a standalone fundVault tx against the existing policy", async () => {
+    const config = makeConfig();
+    const wallet = config.ownerAddress!;
+    const client = new AegisClient(config, fakeConnection());
+
+    const draft = await client.buildUnsignedOwnerTransaction(wallet, {
+      kind: "fundVault",
+      amount: 250_000_000n,
+    });
+    const tx = Transaction.from(Uint8Array.from(Buffer.from(draft.transaction, "base64")));
+
+    expect(tx.instructions).toHaveLength(1);
+    expect(tx.feePayer?.equals(wallet)).toBe(true);
+    expect(tx.instructions[0].keys.some((key) => key.pubkey.equals(wallet) && key.isSigner)).toBe(true);
+    expect(tx.instructions[0].data.readBigUInt64LE(8)).toBe(250_000_000n);
   });
 
   test("refuses to rotate to the current agent key", async () => {

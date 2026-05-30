@@ -133,9 +133,30 @@ describe("readOwnerAction", () => {
     );
   });
 
+  test("parses bootstrapPolicy with optional funding (integer base-unit wire)", () => {
+    expect(readOwnerAction({ kind: "bootstrapPolicy" })).toEqual({
+      kind: "bootstrapPolicy",
+      fundLamports: undefined,
+    });
+    expect(readOwnerAction({ kind: "bootstrapPolicy", fundLamports: "1000000000" })).toEqual({
+      kind: "bootstrapPolicy",
+      fundLamports: 1_000_000_000n,
+    });
+  });
+
+  test("parses fundVault and rejects non-positive amounts", () => {
+    expect(readOwnerAction({ kind: "fundVault", amount: "500000000" })).toEqual({
+      kind: "fundVault",
+      amount: 500_000_000n,
+    });
+    expect(() => readOwnerAction({ kind: "fundVault", amount: "0" })).toThrow(
+      /greater than zero/,
+    );
+  });
+
   test("rejects an unknown kind and non-objects", () => {
     expect(() => readOwnerAction({ kind: "selfDestruct" })).toThrow(
-      /bootstrapPolicy, updatePolicy, allowList, revoke, or rotate/,
+      /bootstrapPolicy, fundVault, updatePolicy, allowList, revoke, or rotate/,
     );
     expect(() => readOwnerAction("revoke")).toThrow(/must be an object/);
   });

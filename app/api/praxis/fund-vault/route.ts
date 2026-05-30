@@ -6,9 +6,8 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   return withMutationProvider(request, async (provider) => {
     const body = await readJson(request);
-    const fundLamports =
-      body.fundLamports === undefined ? undefined : readBaseUnits(body.fundLamports, "fundLamports");
-    await provider.bootstrapPolicy(fundLamports);
+    const amount = readBaseUnits(body.amount, "amount");
+    await provider.fundVault(amount);
     return { ok: true };
   });
 }

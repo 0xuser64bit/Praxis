@@ -266,8 +266,23 @@ export class MockPraxisProvider implements PraxisProvider {
   }
 
   // --- policy (owner) ---
-  bootstrapPolicy = async (): Promise<void> => {
+  bootstrapPolicy = async (fundLamports: bigint = 0n): Promise<void> => {
     await delay(150);
+    if (fundLamports > 0n) {
+      this.state.policy = {
+        ...this.state.policy,
+        vaultBalance: this.state.policy.vaultBalance + fundLamports,
+      };
+    }
+    this.notify();
+  };
+
+  fundVault = async (amount: bigint): Promise<void> => {
+    await delay(200);
+    this.state.policy = {
+      ...this.state.policy,
+      vaultBalance: this.state.policy.vaultBalance + amount,
+    };
     this.notify();
   };
 

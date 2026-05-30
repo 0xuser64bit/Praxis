@@ -289,9 +289,15 @@ export class PraxisServerProvider implements PraxisProvider {
   };
 
   // --- policy dashboard ---
-  bootstrapPolicy = async (): Promise<void> => {
+  bootstrapPolicy = async (fundLamports?: bigint): Promise<void> => {
     this.assertBackendOwnerSigningAvailable();
-    await this.aegis.bootstrapPolicy();
+    await this.aegis.bootstrapPolicy(fundLamports);
+    await this.refreshOnChain();
+  };
+
+  fundVault = async (amount: bigint): Promise<void> => {
+    this.assertBackendOwnerSigningAvailable();
+    await this.aegis.fundVault(amount);
     await this.refreshOnChain();
   };
 

@@ -5,6 +5,7 @@ import {
   readJson,
   readString,
 } from "@/server/api/json";
+import { assertRateLimit } from "@/server/api/rateLimit";
 import { verifyWalletChallenge } from "@/server/auth/challenge";
 import { createSessionCookie } from "@/server/auth/session";
 
@@ -14,6 +15,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
+    assertRateLimit(request, { scope: "auth-verify", limit: 20, windowMs: 60_000 });
     const body = await readJson(request);
     const walletAddress = verifyWalletChallenge({
       address: readString(body.address, "address", { maxLength: 64 }),

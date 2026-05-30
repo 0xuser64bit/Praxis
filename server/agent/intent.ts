@@ -1,5 +1,6 @@
 import { PraxisConfigError, PraxisInputError } from "../errors";
 import type { PraxisServerConfig } from "../env";
+import { envTimeout, fetchWithTimeout } from "../api/timeout";
 
 export type ParsedIntent =
   | { outcome: "clarify"; question: string; options?: string[] }
@@ -92,32 +93,39 @@ export async function parseIntentWithClaude(text: string, config: PraxisServerCo
     throw new PraxisConfigError("ANTHROPIC_MODEL is required for intent parsing.");
   }
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": config.anthropicApiKey,
-      "anthropic-version": "2023-06-01",
+  const res = await fetchWithTimeout(
+    "https://api.anthropic.com/v1/messages",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": config.anthropicApiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: config.anthropicModel,
+        max_tokens: 700,
+        temperature: 0,
+        system: [
+          "You parse user text for Praxis, a Solana agent protected by Aegis.",
+          "Return exactly one tool call.",
+          "Supported actions: native SOL transfer, read-only token research, and swap_stub.",
+          "Swaps are not executable yet; emit swap_stub, never pretend agent_swap exists.",
+          "Never emit buy/sell/hold advice. Research is neutral data only.",
+          "Handle misspellings, shorthand, slang, and multiple steps in order.",
+          "If the amount, recipient, asset, token, or action is ambiguous, outcome must be clarify.",
+          "Never guess. One clarifying question is safer than one wrong transaction.",
+        ].join(" "),
+        tools: [intentTool],
+        tool_choice: { type: "tool", name: INTENT_TOOL_NAME },
+        messages: [{ role: "user", content: text }],
+      }),
     },
-    body: JSON.stringify({
-      model: config.anthropicModel,
-      max_tokens: 700,
-      temperature: 0,
-      system: [
-        "You parse user text for Praxis, a Solana agent protected by Aegis.",
-        "Return exactly one tool call.",
-        "Supported actions: native SOL transfer, read-only token research, and swap_stub.",
-        "Swaps are not executable yet; emit swap_stub, never pretend agent_swap exists.",
-        "Never emit buy/sell/hold advice. Research is neutral data only.",
-        "Handle misspellings, shorthand, slang, and multiple steps in order.",
-        "If the amount, recipient, asset, token, or action is ambiguous, outcome must be clarify.",
-        "Never guess. One clarifying question is safer than one wrong transaction.",
-      ].join(" "),
-      tools: [intentTool],
-      tool_choice: { type: "tool", name: INTENT_TOOL_NAME },
-      messages: [{ role: "user", content: text }],
-    }),
-  });
+    {
+      ms: envTimeout("PRAXIS_LLM_TIMEOUT_MS", 15_000),
+      label: "Anthropic intent parsing",
+    },
+  );
 
   if (!res.ok) {
     const body = await res.text();

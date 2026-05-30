@@ -7,7 +7,9 @@ import {
   PraxisConfigError,
   PraxisInputError,
   PraxisNotFoundError,
+  PraxisRateLimitError,
 } from "../errors";
+import { assertRateLimit } from "./rateLimit";
 
 export const routeRuntime = "nodejs";
 export const routeDynamic = "force-dynamic";
@@ -27,7 +29,9 @@ export function jsonError(error: unknown, init: ResponseInit = {}): Response {
       ? 503
       : error instanceof PraxisNotFoundError
         ? 404
-        : 500;
+        : error instanceof PraxisRateLimitError
+          ? 429
+          : 500;
 
   return Response.json(
     {
@@ -150,12 +154,26 @@ export function readAllowListKind(value: unknown) {
 }
 
 export function requireReadAuth(request: Request): PraxisSession {
-  return requireSession(request);
+  const session = requireSession(request);
+  assertRateLimit(request, {
+    scope: "read",
+    identity: session.walletAddress,
+    limit: 240,
+    windowMs: 60_000,
+  });
+  return session;
 }
 
 export function requireMutationAuth(request: Request): PraxisSession {
   assertSameOrigin(request);
-  return requireSession(request);
+  const session = requireSession(request);
+  assertRateLimit(request, {
+    scope: "mutation",
+    identity: session.walletAddress,
+    limit: 40,
+    windowMs: 60_000,
+  });
+  return session;
 }
 
 export function assertSameOrigin(request: Request) {

@@ -25,3 +25,10 @@ export class PraxisNotFoundError extends Error {
     this.name = "PraxisNotFoundError";
   }
 }
+
+export class PraxisRateLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PraxisRateLimitError";
+  }
+}

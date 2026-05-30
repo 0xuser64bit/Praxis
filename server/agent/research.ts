@@ -2,6 +2,7 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import type { ResearchData, ResearchMetric, TokenInfo } from "@praxis/shared";
 
 import type { PraxisServerConfig } from "../env";
+import { envTimeout, fetchWithTimeout, withTimeout } from "../api/timeout";
 import { formatBps } from "../units";
 
 interface DexScreenerPair {
@@ -24,9 +25,18 @@ export async function researchToken(
 ): Promise<ResearchData> {
   const token = resolveToken(tokenInput, config.tokens);
   const mint = new PublicKey(token.mint);
+  const rpcTimeout = envTimeout("PRAXIS_RPC_READ_TIMEOUT_MS", 8_000);
   const [largest, supply, indexer] = await Promise.all([
-    connection.getTokenLargestAccounts(mint, config.commitment),
-    connection.getTokenSupply(mint, config.commitment),
+    withTimeout(
+      connection.getTokenLargestAccounts(mint, config.commitment),
+      rpcTimeout,
+      "Solana largest token accounts lookup",
+    ),
+    withTimeout(
+      connection.getTokenSupply(mint, config.commitment),
+      rpcTimeout,
+      "Solana token supply lookup",
+    ),
     fetchIndexerPairs(token.mint, config.indexerUrl),
   ]);
 
@@ -102,7 +112,14 @@ async function fetchIndexerPairs(mint: string, indexerUrl: string | undefined): 
     ? indexerUrl.replace("{mint}", encodeURIComponent(mint))
     : `https://api.dexscreener.com/latest/dex/tokens/${mint}`;
 
-  const res = await fetch(url, { headers: { accept: "application/json" } });
+  const res = await fetchWithTimeout(
+    url,
+    { headers: { accept: "application/json" } },
+    {
+      ms: envTimeout("PRAXIS_INDEXER_TIMEOUT_MS", 4_000),
+      label: "Token indexer lookup",
+    },
+  );
   if (!res.ok) return [];
   const body = await res.json();
   return Array.isArray(body.pairs) ? body.pairs : [];

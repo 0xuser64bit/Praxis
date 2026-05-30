@@ -55,7 +55,7 @@ export const CAPABILITIES: Capability[] = [
     icon: IconChartLine,
     title: "Market research",
     description:
-      "On-chain volume, price action, holder concentration, sentiment. Data surfaced — never financial advice.",
+      "On-chain volume, price action, holder concentration, and liquidity context. Data surfaced — never financial advice.",
     tag: "Ships v0.1",
   },
   {
@@ -69,8 +69,8 @@ export const CAPABILITIES: Capability[] = [
     icon: IconBuildingBridge,
     title: "Cross-chain",
     description:
-      "Bridge to Base and Ethereum via deBridge and Wormhole. Routes compared, finality estimated.",
-    tag: "Q3 2026",
+      "Future bridge work must stay owner-signed or gain a real far-side enforcement story. It is not part of the agent path today.",
+    tag: "Later",
   },
   {
     icon: IconCommand,

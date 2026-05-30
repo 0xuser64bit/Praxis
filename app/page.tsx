@@ -15,7 +15,7 @@ import { UseCases } from "@/components/praxis/UseCases";
 export const metadata: Metadata = {
   title: "Praxis — A conversational agent for Solana",
   description:
-    "Praxis is a conversational agent for Solana. Send, swap, and research on-chain by writing what you want — not by hunting through menus, gas calculators, and twelve open tabs.",
+    "Praxis is a conversational agent for Solana. Send SOL, transfer configured tokens, preview policy, and research on-chain data by writing what you want.",
 };
 
 export default function Home() {

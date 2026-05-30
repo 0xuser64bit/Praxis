@@ -44,17 +44,18 @@ export const USE_CASES: UseCase[] = [
   {
     icon: IconBuildingBridge,
     prompt: "bridge 0.5 sol to base as eth",
-    title: { lead: "Bridge ", accent: "across chains." },
+    title: { lead: "Bridge ", accent: "later." },
     description:
-      "deBridge and Wormhole under the hood. Routes compared, finality times shown, gas estimated on both sides.",
+      "Cross-chain routing is intentionally outside v0.1. It belongs after wallet auth, durable state, and enforceable transfer flows are solid.",
+    tag: "— not in v0.1",
   },
   {
     icon: IconCalendarClock,
     prompt: "dca 100 usdc into sol weekly for 3 months",
-    title: { lead: "Automate, ", accent: "within limits." },
+    title: { lead: "Automate ", accent: "later." },
     description:
-      "Conditional, scheduled, or recurring actions. Always scoped — you grant exactly what the agent may do, nothing more.",
-    tag: "— Q2 2026",
+      "Scheduled actions need a reliable crank and the same Aegis envelope. They are a product direction, not a demo feature.",
+    tag: "— not in v0.1",
   },
   {
     icon: IconAddressBook,

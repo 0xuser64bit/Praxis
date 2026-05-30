@@ -16,6 +16,7 @@ import { formatUnits, percentOf } from "./lib/units";
 export function PolicyCheckBanner({ proposal }: { proposal: ActionProposal }) {
   const { check, detail } = proposal;
   const allowed = check.allowed;
+  const swapBlocked = detail.kind === "swap" && !allowed;
 
   const accent = allowed ? "var(--success)" : "var(--danger)";
   const tint = allowed ? "rgba(127, 176, 105, 0.09)" : "rgba(199, 91, 91, 0.10)";
@@ -36,14 +37,14 @@ export function PolicyCheckBanner({ proposal }: { proposal: ActionProposal }) {
             {allowed ? <IconShieldCheck size={16} /> : <IconShieldX size={16} />}
           </span>
           <div className="text-[14px] font-medium text-[var(--text-primary)]">
-            {allowed ? "Within your Aegis policy" : "Blocked by Aegis"}
+            {allowed ? "Within your Aegis policy" : swapBlocked ? "Swap not executable" : "Blocked by Aegis"}
           </div>
         </div>
         <span
           className="[font-family:var(--font-mono)] text-[10px] tracking-[0.14em] uppercase"
           style={{ color: accent }}
         >
-          {allowed ? "Allowed" : "Rejected"}
+          {allowed ? "Allowed" : swapBlocked ? "Stubbed" : "Rejected"}
         </span>
       </div>
 
@@ -97,7 +98,7 @@ function AllowedSummary({ proposal }: { proposal: ActionProposal }) {
   }
   return (
     <>
-      Verified mint, in your allow-list, and routed through an allowed program (Jupiter). The agent may sign it.
+      Verified mint, in your allow-list, and routed through an allowed program. This is only a policy preview until agent_swap exists.
     </>
   );
 }

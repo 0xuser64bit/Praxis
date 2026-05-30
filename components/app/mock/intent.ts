@@ -80,14 +80,14 @@ export function parse(text: string, ctx: ParseCtx): ParseResult {
   // --- greeting / help ---
   if (/^(hi|hey|hello|help|what can you do|gm)\b/.test(lower)) {
     return prose(
-      "I can **send SOL** to saved names, **propose swaps** through Jupiter, and pull " +
+      "I can **send SOL** or a configured SPL token to saved names, **preview swap policy**, and pull " +
         "**read-only research** on a token. Every send is checked against your Aegis policy " +
         "before you sign. Try one of the suggestions below.",
     );
   }
 
   return prose(
-    "I didn't catch an action there. I can send SOL, propose a swap, or research a token — " +
+    "I didn't catch an action there. I can send SOL or USDC, preview a swap, or research a token — " +
       "for example “send 0.5 sol to maya”, “swap 100 usdc for jup”, or “what's bonk doing this week”.",
   );
 }
@@ -218,7 +218,17 @@ function parseSwap(m: RegExpMatchArray, ctx: ParseCtx): ParseResult {
   }
   const estAmountOut = estimateOut(amountIn, assetIn, assetOut);
 
-  const check = checkSwapPolicy(state, assetOut, now);
+  const policyCheck = checkSwapPolicy(state, assetOut, now);
+  const check: PolicyCheckResult = policyCheck.allowed
+    ? {
+        allowed: false,
+        reason:
+          "Your Aegis policy would allow this route, but agent_swap is not built yet. Praxis will not sign a Jupiter swap it cannot enforce on-chain.",
+        spentToday: policyCheck.spentToday,
+        dailyLimit: policyCheck.dailyLimit,
+        remaining: policyCheck.remaining,
+      }
+    : policyCheck;
 
   const proposal: ActionProposal = {
     id: ctx.genId("p"),
@@ -231,39 +241,37 @@ function parseSwap(m: RegExpMatchArray, ctx: ParseCtx): ParseResult {
       route: `${assetIn.symbol} › Jupiter › ${assetOut.symbol}`,
       priceImpactBps: 18,
     },
-    networkFee: 5000n,
-    simulation: check.allowed ? "Will succeed" : "Would be rejected by policy",
+    networkFee: 0n,
+    simulation: policyCheck.allowed
+      ? "Swap preview only — agent_swap/Jupiter CPI is not implemented."
+      : "Would be rejected by policy",
     check,
-    state: check.allowed ? "pending" : "blocked",
-    sig: check.allowed ? undefined : failedSig(ctx),
+    state: "blocked",
   };
 
   const blocks: AgentBlock[] = [
     {
       type: "proposal",
-      text: check.allowed
-        ? `Best route found via Jupiter. ${formatUsd(amountIn, assetIn.decimals, assetIn.symbol)} in.`
+      text: policyCheck.allowed
+        ? `I can preview that route, but swaps are not signable in v0.1. ${formatUsd(amountIn, assetIn.decimals, assetIn.symbol)} in.`
         : `I found a route, but your policy blocks it.`,
       proposalId: proposal.id,
     },
   ];
 
-  const activity: ActivityEntry[] = check.allowed
-    ? []
-    : [
-        {
-          id: ctx.genId("a"),
-          kind: "swap",
-          label: `${assetIn.symbol} → ${assetOut.symbol}`,
-          asset: assetIn.symbol,
-          amount: amountIn,
-          decimals: assetIn.decimals,
-          result: "rejected",
-          reason: check.reason,
-          ts: now,
-          sig: proposal.sig,
-        },
-      ];
+  const activity: ActivityEntry[] = [
+    {
+      id: ctx.genId("a"),
+      kind: "swap",
+      label: `${assetIn.symbol} → ${assetOut.symbol}`,
+      asset: assetIn.symbol,
+      amount: amountIn,
+      decimals: assetIn.decimals,
+      result: "rejected",
+      reason: check.reason,
+      ts: now,
+    },
+  ];
 
   return {
     blocks,

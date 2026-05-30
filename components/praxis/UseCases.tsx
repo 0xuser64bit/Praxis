@@ -15,8 +15,9 @@ export function UseCases() {
           </h2>
           <p className="mt-7 max-w-[540px] text-[19px] leading-[1.55] text-[var(--text-secondary)]">
             Praxis is built around one input field. Whatever you&apos;d do on
-            Solana, you can ask for in a sentence — and Praxis turns it into a
-            verified, signable action.
+            Solana, you can ask for in a sentence — and Praxis turns supported
+            intents into signable actions, while blocking anything it cannot
+            enforce.
           </p>
         </div>
 

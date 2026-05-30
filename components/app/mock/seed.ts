@@ -143,7 +143,7 @@ export function createInitialState(): StoreState {
               type: "prose",
               text:
                 "I'm Praxis. Tell me what you want to do on Solana in plain language — " +
-                "send, swap, or research. Every action I propose is checked against your " +
+                "send, transfer configured tokens, preview swap policy, or research. Every action I propose is checked against your " +
                 "on-chain Aegis policy before you sign, and you can revoke me at any time " +
                 "from the Policy dashboard.",
             },
@@ -225,9 +225,10 @@ export function createInitialState(): StoreState {
       asset: "USDC",
       amount: toBaseUnits("50", 6),
       decimals: 6,
-      result: "allowed",
+      result: "rejected",
+      reason:
+        "Your Aegis policy would allow this route, but agent_swap is not built yet. Praxis will not sign a Jupiter swap it cannot enforce on-chain.",
       ts: now - 5 * HOUR,
-      sig: "5wQ8rT2mP6jH9X4aF7nK3sR2wYdHzXcUmAbQeD7oVkz",
     },
     {
       id: "a-seed-3",

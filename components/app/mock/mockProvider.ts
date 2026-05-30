@@ -206,31 +206,20 @@ export class MockPraxisProvider implements PraxisProvider {
       ];
     } else {
       const check = checkSwapPolicy(this.state, p.detail.assetOut, ts);
-      if (!check.allowed) {
-        p.check = check;
-        p.state = "blocked";
-        p.simulation = "Rejected by policy at signing";
-        p.sig = failedSig();
-        this.state.activity = [
-          {
-            id: this.genId("a"),
-            kind: "swap",
-            label: `${p.detail.assetIn.symbol} → ${p.detail.assetOut.symbol}`,
-            asset: p.detail.assetIn.symbol,
-            amount: p.detail.amountIn,
-            decimals: p.detail.assetIn.decimals,
-            result: "rejected",
-            reason: check.reason,
-            ts,
-            sig: p.sig,
-          },
-          ...this.state.activity,
-        ];
-        this.notify();
-        return;
-      }
-
-      p.check = check;
+      const reason = check.allowed
+        ? "Your Aegis policy would allow this route, but agent_swap is not built yet. Praxis will not sign a Jupiter swap it cannot enforce on-chain."
+        : check.reason;
+      p.check = {
+        allowed: false,
+        reason,
+        spentToday: check.spentToday,
+        dailyLimit: check.dailyLimit,
+        remaining: check.remaining,
+      };
+      p.state = "blocked";
+      p.simulation = check.allowed
+        ? "Swap preview only — agent_swap/Jupiter CPI is not implemented."
+        : "Rejected by policy at signing";
       this.state.activity = [
         {
           id: this.genId("a"),
@@ -239,12 +228,14 @@ export class MockPraxisProvider implements PraxisProvider {
           asset: p.detail.assetIn.symbol,
           amount: p.detail.amountIn,
           decimals: p.detail.assetIn.decimals,
-          result: "allowed",
+          result: "rejected",
+          reason,
           ts,
-          sig,
         },
         ...this.state.activity,
       ];
+      this.notify();
+      return;
     }
 
     p.sig = sig;

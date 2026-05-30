@@ -38,7 +38,12 @@ export function ProposalCard({
   if (!proposal) return null;
 
   const { from, to, meta } = describe(proposal.detail, proposal);
-  const status = STATUS[proposal.state];
+  const status = proposal.state === "blocked" && proposal.detail.kind === "swap"
+    ? SWAP_BLOCKED_STATUS
+    : STATUS[proposal.state];
+  const blockedMessage = proposal.detail.kind === "swap"
+    ? "Swaps are preview-only in v0.1. Nothing was signed."
+    : "The agent can't sign this — the chain would reject it.";
 
   return (
     <div className="mt-2 rounded-xl bg-[var(--bg)] px-6 py-[22px] [border:0.5px_solid_var(--border-strong)]">
@@ -145,7 +150,7 @@ export function ProposalCard({
         {proposal.state === "blocked" && (
           <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--bg-elevated)] px-3.5 py-3 [border:0.5px_solid_var(--border)]">
             <span className="text-[13px] text-[var(--text-secondary)]">
-              The agent can&rsquo;t sign this — the chain would reject it.
+              {blockedMessage}
             </span>
             {onOpenPolicy && (
               <Button size="sm" className="shrink-0" onClick={onOpenPolicy}>
@@ -173,6 +178,7 @@ const STATUS: Record<ActionProposal["state"], { label: string; color: string; ti
   blocked: { label: "Blocked by Aegis", color: "var(--danger)", tint: "rgba(199,91,91,0.16)" },
   cancelled: { label: "Cancelled", color: "var(--text-tertiary)", tint: "var(--bg-elevated)" },
 };
+const SWAP_BLOCKED_STATUS = { label: "Preview only", color: "var(--danger)", tint: "rgba(199,91,91,0.16)" };
 
 function FlowCol({ flow }: { flow: Flow }) {
   const sizeClass = flow.compact ? "text-[28px]" : "text-[36px]";

@@ -20,8 +20,9 @@ export function AppPreview() {
             you <em>actually</em> trade.
           </h2>
           <p className="mt-7 max-w-[540px] text-[19px] leading-[1.55] text-[var(--text-secondary)]">
-            One conversation per intent. Every action ends in a signable
-            preview. No surprises, no hidden steps, no &ldquo;trust me.&rdquo;
+            One conversation per intent. Supported actions end in a policy
+            verdict before signing; unsupported routes stay blocked. No
+            surprises, no hidden steps, no &ldquo;trust me.&rdquo;
           </p>
         </div>
 
@@ -80,11 +81,11 @@ export function AppPreview() {
                   </div>
                   <div className="mb-[22px] flex items-center gap-3 [font-family:var(--font-mono)] text-[14px]">
                     <span className="text-[var(--accent)]">›</span>
-                    <span>swap 50 usdc for sol</span>
+                    <span>send 100 usdc to maya</span>
                   </div>
                   <Receipt meta="3vK2…X9aF · confirmed in 0.5s · slot 311,482,871">
-                    Swapped <strong>50.00 USDC</strong> →{" "}
-                    <strong>0.268 SOL</strong>
+                    Sent <strong>100.00 USDC</strong> to{" "}
+                    <strong>Maya Patel</strong>
                   </Receipt>
                 </div>
 

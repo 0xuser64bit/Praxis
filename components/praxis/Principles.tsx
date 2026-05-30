@@ -31,7 +31,7 @@ const PRINCIPLES: Principle[] = [
   {
     mark: "v.",
     title: { lead: "We will not ", accent: "hide the fees." },
-    body: 'Network fees, swap fees, our fees — all surfaced before you sign. No hidden spreads. No "convenience markups." A small, predictable fee on swaps funds the product. That\'s it.',
+    body: 'Network fees and product fees must be surfaced before you sign. No hidden spreads, no "convenience markups," and no pretend swap execution path until the program can enforce it.',
   },
 ];
 

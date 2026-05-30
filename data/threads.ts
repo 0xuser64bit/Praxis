@@ -13,16 +13,16 @@ export const THREAD_GROUPS: ThreadGroup[] = [
     label: "Today",
     items: [
       { label: "Send to Maya", active: true },
-      { label: "Swap to JUP" },
+      { label: "Swap preview" },
       { label: "Bonk check-in" },
     ],
   },
   {
     label: "Yesterday",
     items: [
-      { label: "DCA setup · pending" },
+      { label: "USDC transfer" },
       { label: "Stake check" },
-      { label: "Bridge to Base" },
+      { label: "Policy review" },
     ],
   },
   {

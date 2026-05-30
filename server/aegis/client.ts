@@ -27,7 +27,9 @@ import {
   buildAgentTransferSplIx,
   buildConfigureTokenIx,
   buildCreateAssociatedTokenAccountIdempotentIx,
+  buildClosePolicyIx,
   buildFundVaultIx,
+  buildWithdrawVaultIx,
   buildInitializePolicyIx,
   buildRevokeAgentIx,
   buildRotateAgentIx,
@@ -64,7 +66,10 @@ import { formatSol, formatUnits, parseHumanUnits, SOL_DECIMALS } from "../units"
  * keypair (local/devnet fallback). Token setup actions stay on the keypair path.
  */
 export type OwnerAction =
-  | { kind: "bootstrapPolicy" }
+  | { kind: "bootstrapPolicy"; fundLamports?: bigint }
+  | { kind: "fundVault"; amount: bigint }
+  | { kind: "withdrawVault"; amount: bigint }
+  | { kind: "closePolicy" }
   | { kind: "updatePolicy"; patch: PolicyUpdate }
   | { kind: "allowList"; listKind: AllowListKind; address: string; mode: "add" | "remove" }
   | { kind: "revoke" }
@@ -532,6 +537,41 @@ export class AegisClient {
     return this.sendOwnerTransaction([ix], owner);
   }
 
+  async withdrawVault(amount: bigint): Promise<string> {
+    const owner = requireOwnerKeypair(this.config);
+    const policy = this.policyForOwner(owner.publicKey);
+    const ix = buildWithdrawVaultIx({ ...this.addresses({ policy }), owner: owner.publicKey }, amount);
+    return this.sendOwnerTransaction([ix], owner);
+  }
+
+  async closePolicy(): Promise<string> {
+    const owner = requireOwnerKeypair(this.config);
+    await this.assertVaultTokensCleared();
+    const policy = this.policyForOwner(owner.publicKey);
+    const ix = buildClosePolicyIx({ ...this.addresses({ policy }), owner: owner.publicKey });
+    return this.sendOwnerTransaction([ix], owner);
+  }
+
+  /**
+   * Phase-1 teardown is SOL-only. If a token envelope is configured and its
+   * vault token account still holds a balance, refuse to close so the tokens
+   * are never silently stranded (token sweep is a follow-up). SPL token account
+   * layout: amount is a u64 LE at byte offset 64.
+   */
+  private async assertVaultTokensCleared(): Promise<void> {
+    const policy = await this.getPolicy();
+    if (policy.tokenMint === PublicKey.default.toBase58()) return;
+    const vault = findVaultPda(new PublicKey(policy.address), this.config.programId);
+    const vaultTokenAccount = findAssociatedTokenAddress(vault, new PublicKey(policy.tokenMint));
+    const info = await this.conn.getAccountInfo(vaultTokenAccount, this.config.commitment);
+    const balance = info ? info.data.readBigUInt64LE(64) : 0n;
+    if (balance > 0n) {
+      throw new PraxisInputError(
+        "Move your SPL tokens out of the vault before deleting your agent (SOL-only teardown for now).",
+      );
+    }
+  }
+
   async updatePolicy(patch: PolicyUpdate): Promise<string> {
     return this.sendOwnerAction({ kind: "updatePolicy", patch });
   }
@@ -548,8 +588,8 @@ export class AegisClient {
     return this.sendOwnerAction({ kind: "rotate" });
   }
 
-  async bootstrapPolicy(): Promise<string> {
-    return this.sendOwnerAction({ kind: "bootstrapPolicy" });
+  async bootstrapPolicy(fundLamports: bigint = BOOTSTRAP_VAULT_FUNDING): Promise<string> {
+    return this.sendOwnerAction({ kind: "bootstrapPolicy", fundLamports });
   }
 
   /**
@@ -591,8 +631,34 @@ export class AegisClient {
         allowedMints: verifiedMints,
         expiryTs: (await this.chainTime()) + BOOTSTRAP_POLICY_TTL_SECONDS,
       });
-      const fund = buildFundVaultIx({ ...addresses, owner: ownerPubkey }, BOOTSTRAP_VAULT_FUNDING);
-      return [initialize, fund];
+      const fundLamports = action.fundLamports ?? 0n;
+      if (fundLamports > 0n) {
+        const fund = buildFundVaultIx({ ...addresses, owner: ownerPubkey }, fundLamports);
+        return [initialize, fund];
+      }
+      return [initialize];
+    }
+
+    if (action.kind === "fundVault") {
+      if (action.amount <= 0n) {
+        throw new PraxisInputError("Fund amount must be greater than zero.");
+      }
+      const policy = this.policyForOwner(ownerPubkey);
+      return [buildFundVaultIx({ ...this.addresses({ policy }), owner: ownerPubkey }, action.amount)];
+    }
+
+    if (action.kind === "withdrawVault") {
+      if (action.amount <= 0n) {
+        throw new PraxisInputError("Withdraw amount must be greater than zero.");
+      }
+      const policy = this.policyForOwner(ownerPubkey);
+      return [buildWithdrawVaultIx({ ...this.addresses({ policy }), owner: ownerPubkey }, action.amount)];
+    }
+
+    if (action.kind === "closePolicy") {
+      await this.assertVaultTokensCleared();
+      const policy = this.policyForOwner(ownerPubkey);
+      return [buildClosePolicyIx({ ...this.addresses({ policy }), owner: ownerPubkey })];
     }
 
     if (action.kind === "revoke") {

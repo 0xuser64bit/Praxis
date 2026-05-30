@@ -37,6 +37,7 @@ export const SEEDS = {
 export const INSTRUCTION_DISCRIMINATOR = {
   agentTransfer: instructionDiscriminator("agent_transfer"),
   agentTransferSpl: instructionDiscriminator("agent_transfer_spl"),
+  closePolicy: instructionDiscriminator("close_policy"),
   configureToken: instructionDiscriminator("configure_token"),
   fundVault: instructionDiscriminator("fund_vault"),
   initializePolicy: instructionDiscriminator("initialize_policy"),

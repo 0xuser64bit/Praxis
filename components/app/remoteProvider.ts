@@ -17,7 +17,10 @@ import { getOwnerWalletSigner } from "./lib/walletSigner";
 
 /** Client mirror of the server's owner-action request shape (validated server-side). */
 type OwnerActionRequest =
-  | { kind: "bootstrapPolicy" }
+  | { kind: "bootstrapPolicy"; fundLamports: bigint }
+  | { kind: "fundVault"; amount: bigint }
+  | { kind: "withdrawVault"; amount: bigint }
+  | { kind: "closePolicy" }
   | { kind: "updatePolicy"; patch: PolicyUpdate }
   | { kind: "allowList"; listKind: AllowListKind; address: string; mode: "add" | "remove" }
   | { kind: "revoke" }
@@ -107,10 +110,34 @@ export class RemotePraxisProvider implements PraxisProvider {
     await this.refreshAll();
   };
 
-  bootstrapPolicy = async (): Promise<void> => {
+  bootstrapPolicy = async (fundLamports: bigint = 0n): Promise<void> => {
     await this.ownerAction(
-      { kind: "bootstrapPolicy" },
-      () => this.post("/api/praxis/bootstrap-policy", {}),
+      { kind: "bootstrapPolicy", fundLamports },
+      () => this.post("/api/praxis/bootstrap-policy", { fundLamports }),
+    );
+    await this.refreshAll();
+  };
+
+  fundVault = async (amount: bigint): Promise<void> => {
+    await this.ownerAction(
+      { kind: "fundVault", amount },
+      () => this.post("/api/praxis/fund-vault", { amount }),
+    );
+    await this.refreshAll();
+  };
+
+  withdrawVault = async (amount: bigint): Promise<void> => {
+    await this.ownerAction(
+      { kind: "withdrawVault", amount },
+      () => this.post("/api/praxis/withdraw-vault", { amount }),
+    );
+    await this.refreshAll();
+  };
+
+  deleteAgent = async (): Promise<void> => {
+    await this.ownerAction(
+      { kind: "closePolicy" },
+      () => this.post("/api/praxis/delete-agent", {}),
     );
     await this.refreshAll();
   };
@@ -233,14 +260,17 @@ export class RemotePraxisProvider implements PraxisProvider {
   }
 
   private async mutate<T>(fn: () => Promise<T>): Promise<T> {
-    try {
-      const result = await fn();
+    const result = await fn();
+    // Only promote the connection to "ready" once a policy is actually loaded.
+    // A successful bootstrap submit resolves BEFORE the follow-up refreshAll()
+    // has fetched the freshly-created policy; flipping to "ready" here would
+    // render ReadyAppShell (which calls getPolicy()) and throw "policy has not
+    // loaded yet". refreshAll() is the authority on load state in that window.
+    if (this.state.policy) {
       this.state = { ...this.state, connection: { mode: "api", phase: "ready" } };
       this.notify();
-      return result;
-    } catch (error) {
-      throw error;
     }
+    return result;
   }
 
   private setConnectionError(error: unknown) {

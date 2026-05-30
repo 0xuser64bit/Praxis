@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  jsonError,
   readAllowListKind,
   readBaseUnits,
   readJson,
@@ -14,6 +15,7 @@ import {
   readUnsignedOwnerTransaction,
   assertSameOrigin,
 } from "../json";
+import { PraxisConfigError, PraxisInputError } from "../../errors";
 import { makeRequest } from "../../testing/fixtures";
 
 const URL = "https://praxis.test/api/praxis/send";
@@ -133,9 +135,44 @@ describe("readOwnerAction", () => {
     );
   });
 
+  test("parses bootstrapPolicy with optional funding (integer base-unit wire)", () => {
+    expect(readOwnerAction({ kind: "bootstrapPolicy" })).toEqual({
+      kind: "bootstrapPolicy",
+      fundLamports: undefined,
+    });
+    expect(readOwnerAction({ kind: "bootstrapPolicy", fundLamports: "1000000000" })).toEqual({
+      kind: "bootstrapPolicy",
+      fundLamports: 1_000_000_000n,
+    });
+  });
+
+  test("parses fundVault and rejects non-positive amounts", () => {
+    expect(readOwnerAction({ kind: "fundVault", amount: "500000000" })).toEqual({
+      kind: "fundVault",
+      amount: 500_000_000n,
+    });
+    expect(() => readOwnerAction({ kind: "fundVault", amount: "0" })).toThrow(
+      /greater than zero/,
+    );
+  });
+
+  test("parses withdrawVault and rejects non-positive amounts", () => {
+    expect(readOwnerAction({ kind: "withdrawVault", amount: "750000000" })).toEqual({
+      kind: "withdrawVault",
+      amount: 750_000_000n,
+    });
+    expect(() => readOwnerAction({ kind: "withdrawVault", amount: "0" })).toThrow(
+      /greater than zero/,
+    );
+  });
+
+  test("parses closePolicy (no args)", () => {
+    expect(readOwnerAction({ kind: "closePolicy" })).toEqual({ kind: "closePolicy" });
+  });
+
   test("rejects an unknown kind and non-objects", () => {
     expect(() => readOwnerAction({ kind: "selfDestruct" })).toThrow(
-      /bootstrapPolicy, updatePolicy, allowList, revoke, or rotate/,
+      /bootstrapPolicy, fundVault, withdrawVault, closePolicy, updatePolicy, allowList, revoke, or rotate/,
     );
     expect(() => readOwnerAction("revoke")).toThrow(/must be an object/);
   });
@@ -167,5 +204,24 @@ describe("assertSameOrigin", () => {
 
   test("rejects a cross-origin request", () => {
     expect(() => assertSameOrigin(makeRequest(URL, { origin: "https://evil.test" }))).toThrow(/Cross-origin/);
+  });
+});
+
+describe("jsonError", () => {
+  test("does not leak env var names from config (503) errors", async () => {
+    const res = jsonError(new PraxisConfigError("PRAXIS_SESSION_SECRET is required in production API mode."));
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: string; type: string };
+    expect(body.error).not.toContain("PRAXIS_");
+    expect(body.error).toMatch(/configuration issue/i);
+    // The error type is still useful to the client without leaking internals.
+    expect(body.type).toBe("PraxisConfigError");
+  });
+
+  test("preserves user-actionable 4xx messages", async () => {
+    const res = jsonError(new PraxisInputError("amount must be a positive number"));
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("amount must be a positive number");
   });
 });

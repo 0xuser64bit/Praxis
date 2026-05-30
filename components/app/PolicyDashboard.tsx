@@ -10,16 +10,19 @@
 import type { AllowListKind, PolicyView, TokenEnvelopeConfig } from "@praxis/shared";
 import { remaining as calcRemaining } from "@praxis/shared";
 import {
+  IconAlertTriangle,
+  IconArrowUp,
   IconCheck,
   IconKey,
   IconPencil,
   IconPlus,
   IconRefresh,
   IconShieldX,
+  IconTrash,
   IconWallet,
   IconX,
 } from "@tabler/icons-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { Button } from "@/components/praxis/Button";
 
@@ -45,6 +48,7 @@ export function PolicyDashboard() {
   const addressBook = useAddressBook();
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"overview" | "advanced">("overview");
   const now = useNow();
   const revoked = policy.paused || policy.agentAuthority === SYSTEM_PROGRAM;
   const runMutation = (action: () => Promise<void>, fallback: string) => {
@@ -113,83 +117,197 @@ export function PolicyDashboard() {
           </div>
         )}
 
-        <SpendCard policy={policy} now={now} />
-
-        <div className="mt-4 grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
-          <CapsCard
-            policy={policy}
-            onSave={(patch) => {
-              runMutation(() => provider.updatePolicy(patch), "Policy update failed.");
-            }}
-          />
-          <SessionCard
-            policy={policy}
-            revoked={revoked}
-            now={now}
-            onRotate={() => {
-              runMutation(() => provider.rotateAgent(), "Rotate failed.");
-            }}
-            onUpdateExpiry={(expiryTs) => {
-              runMutation(() => provider.updatePolicy({ expiryTs }), "Expiry update failed.");
-            }}
-          />
+        <div className="mb-5 inline-flex rounded-lg bg-[var(--bg-elevated)] p-0.5 [border:0.5px_solid_var(--border)]">
+          <TabButton active={tab === "overview"} onClick={() => setTab("overview")}>
+            Overview
+          </TabButton>
+          <TabButton active={tab === "advanced"} onClick={() => setTab("advanced")}>
+            Advanced
+          </TabButton>
         </div>
 
-        <TokenEnvelopeCard
-          policy={policy}
-          now={now}
-          onConfigure={(config) => {
-            runMutation(() => provider.configureToken(config), "Token configuration failed.");
-          }}
-          onPrepareAccounts={() => {
-            runMutation(
-              () => provider.prepareTokenAccounts(addressBook.map((entry) => entry.address)),
-              "Token account setup failed.",
-            );
-          }}
-        />
+        {tab === "overview" ? (
+          <>
+            <VaultCard
+              policy={policy}
+              onFund={(amount) => runMutation(() => provider.fundVault(amount), "Could not add funds to the vault.")}
+              onWithdraw={(amount) => runMutation(() => provider.withdrawVault(amount), "Could not withdraw from the vault.")}
+            />
 
-        <Card className="mt-4 p-5">
-          <Label className="mb-4">Allow-lists</Label>
-          <div className="flex flex-col gap-5">
-            <AllowList
-              kind="programs"
-              title="Programs"
-              hint="Only these programs may be invoked"
-              addresses={policy.allowedPrograms}
-              labeler={programLabel}
-              onAdd={addToAllowList}
-              onRemove={removeFromAllowList}
-            />
-            <AllowList
-              kind="mints"
-              title="Verified mints"
-              hint="The agent may only route into these mints"
-              addresses={policy.allowedMints}
-              labeler={mintLabel}
-              quickAdd={QUICK_MINTS}
-              onAdd={addToAllowList}
-              onRemove={removeFromAllowList}
-            />
-            <AllowList
-              kind="recipients"
-              title="Recipients"
-              hint="Empty means any recipient is allowed"
-              addresses={policy.allowedRecipients}
-              emptyMeansAny
-              onAdd={addToAllowList}
-              onRemove={removeFromAllowList}
-            />
-          </div>
-        </Card>
+            <SpendCard policy={policy} now={now} />
 
-        <VaultCard policy={policy} />
+            <div className="mt-4">
+              <SessionCard policy={policy} revoked={revoked} now={now} showActions={false} />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
+              <CapsCard
+                policy={policy}
+                onSave={(patch) => {
+                  runMutation(() => provider.updatePolicy(patch), "Policy update failed.");
+                }}
+              />
+              <SessionCard
+                policy={policy}
+                revoked={revoked}
+                now={now}
+                onRotate={() => {
+                  runMutation(() => provider.rotateAgent(), "Rotate failed.");
+                }}
+                onUpdateExpiry={(expiryTs) => {
+                  runMutation(() => provider.updatePolicy({ expiryTs }), "Expiry update failed.");
+                }}
+              />
+            </div>
+
+            <TokenEnvelopeCard
+              policy={policy}
+              now={now}
+              onConfigure={(config) => {
+                runMutation(() => provider.configureToken(config), "Token configuration failed.");
+              }}
+              onPrepareAccounts={() => {
+                runMutation(
+                  () => provider.prepareTokenAccounts(addressBook.map((entry) => entry.address)),
+                  "Token account setup failed.",
+                );
+              }}
+            />
+
+            <Card className="mt-4 p-5">
+              <Label className="mb-4">Allow-lists</Label>
+              <div className="flex flex-col gap-5">
+                <AllowList
+                  kind="programs"
+                  title="Programs"
+                  hint="Only these programs may be invoked"
+                  addresses={policy.allowedPrograms}
+                  labeler={programLabel}
+                  onAdd={addToAllowList}
+                  onRemove={removeFromAllowList}
+                />
+                <AllowList
+                  kind="mints"
+                  title="Verified mints"
+                  hint="The agent may only route into these mints"
+                  addresses={policy.allowedMints}
+                  labeler={mintLabel}
+                  quickAdd={QUICK_MINTS}
+                  onAdd={addToAllowList}
+                  onRemove={removeFromAllowList}
+                />
+                <AllowList
+                  kind="recipients"
+                  title="Recipients"
+                  hint="Empty means any recipient is allowed"
+                  addresses={policy.allowedRecipients}
+                  emptyMeansAny
+                  onAdd={addToAllowList}
+                  onRemove={removeFromAllowList}
+                />
+              </div>
+            </Card>
+
+            <DangerZone
+              policy={policy}
+              onDelete={() => runMutation(() => provider.deleteAgent(), "Could not delete the agent.")}
+            />
+          </>
+        )}
+
       </div>
 
       {revokeOpen && (
         <RevokeDialog onConfirm={() => provider.revokeAgent()} onClose={() => setRevokeOpen(false)} />
       )}
     </div>
+  );
+}
+
+// --- danger zone (delete agent) ---
+function DangerZone({
+  policy,
+  onDelete,
+}: {
+  policy: PolicyView;
+  onDelete: () => void;
+}) {
+  const [confirm, setConfirm] = useState("");
+  const tokenConfigured = policy.tokenMint !== SYSTEM_PROGRAM;
+  const armed = confirm.trim().toUpperCase() === "DELETE";
+
+  return (
+    <div className="mt-4 rounded-xl bg-[rgba(199,91,91,0.05)] p-5 [border:0.5px_solid_rgba(199,91,91,0.4)]">
+      <div className="flex items-center gap-2">
+        <IconAlertTriangle size={16} className="text-[var(--danger)]" />
+        <Label className="text-[var(--danger)]">Danger zone</Label>
+      </div>
+
+      <p className="mt-3 text-[13px] leading-[1.55] text-[var(--text-secondary)]">
+        <span className="font-medium text-[var(--text-primary)]">Delete agent &amp; close vault.</span>{" "}
+        Returns your vault balance ({formatSol(policy.vaultBalance)} SOL) plus the
+        account rent (~0.022 SOL) to your wallet, and wipes this policy on-chain.
+        This <span className="font-medium">cannot be undone</span> — you can set up
+        a fresh agent afterward.
+      </p>
+
+      {tokenConfigured && (
+        <div className="mt-3 rounded-md bg-[rgba(199,91,91,0.10)] p-3 text-[12px] leading-[1.5] text-[var(--danger)]">
+          You have an SPL token envelope configured. If the vault still holds
+          tokens, move them out first — SOL-only teardown for now; the delete
+          will be refused while tokens remain.
+        </div>
+      )}
+
+      <div className="mt-4 flex items-center gap-2">
+        <input
+          value={confirm}
+          onChange={(event) => setConfirm(event.target.value)}
+          placeholder="Type DELETE to confirm"
+          className="h-9 flex-1 rounded-md bg-[var(--bg)] px-3 text-[13px] text-[var(--text-primary)] [border:0.5px_solid_var(--border)] outline-none focus:[border-color:var(--danger)]"
+        />
+        <button
+          type="button"
+          disabled={!armed}
+          onClick={() => {
+            onDelete();
+            setConfirm("");
+          }}
+          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md px-4 text-[13px] font-medium text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.4)] [transition:background_0.15s] hover:bg-[rgba(199,91,91,0.12)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <IconTrash size={15} />
+          Delete agent
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- tabs ---
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={`rounded-[7px] px-3.5 py-1.5 text-[12.5px] font-medium [transition:background_0.15s,color_0.15s] ${
+        active
+          ? "bg-[var(--bg-card)] text-[var(--text-primary)] [box-shadow:0_1px_2px_rgba(0,0,0,0.18)]"
+          : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -514,27 +632,31 @@ function SessionCard({
   now,
   onRotate,
   onUpdateExpiry,
+  showActions = true,
 }: {
   policy: PolicyView;
   revoked: boolean;
   now: number;
-  onRotate: () => void;
-  onUpdateExpiry: (expiryTs: number) => void;
+  onRotate?: () => void;
+  onUpdateExpiry?: (expiryTs: number) => void;
+  showActions?: boolean;
 }) {
-  const extendSevenDays = () => onUpdateExpiry(now + 7 * 86400);
+  const extendSevenDays = () => onUpdateExpiry?.(now + 7 * 86400);
 
   return (
     <Card className="p-5">
       <div className="mb-4 flex items-center justify-between">
         <Label>Session key</Label>
-        <button
-          type="button"
-          onClick={onRotate}
-          className="inline-flex items-center gap-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [transition:color_0.15s] hover:text-[var(--text-primary)]"
-        >
-          <IconRefresh size={12} />
-          rotate
-        </button>
+        {showActions && onRotate && (
+          <button
+            type="button"
+            onClick={onRotate}
+            className="inline-flex items-center gap-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [transition:color_0.15s] hover:text-[var(--text-primary)]"
+          >
+            <IconRefresh size={12} />
+            rotate
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-2.5">
@@ -558,13 +680,15 @@ function SessionCard({
           <span className="[font-family:var(--font-mono)] text-[var(--text-primary)]">
             {formatExpiry(policy.expiryTs, now)}
           </span>
-          <button
-            type="button"
-            onClick={extendSevenDays}
-            className="rounded-md px-2 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)]"
-          >
-            extend 7d
-          </button>
+          {showActions && onUpdateExpiry && (
+            <button
+              type="button"
+              onClick={extendSevenDays}
+              className="rounded-md px-2 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)]"
+            >
+              extend 7d
+            </button>
+          )}
         </div>
       </div>
     </Card>
@@ -572,31 +696,128 @@ function SessionCard({
 }
 
 // --- vault ---
-function VaultCard({ policy }: { policy: PolicyView }) {
+function VaultCard({
+  policy,
+  onFund,
+  onWithdraw,
+}: {
+  policy: PolicyView;
+  onFund: (amount: bigint) => void;
+  onWithdraw: (amount: bigint) => void;
+}) {
+  const [mode, setMode] = useState<"fund" | "withdraw" | null>(null);
+  const [draft, setDraft] = useState("");
+  const parsed = parseFundAmount(draft);
+  const overBalance = mode === "withdraw" && parsed !== null && parsed > policy.vaultBalance;
+  const valid = parsed !== null && !overBalance;
+
+  const open = (next: "fund" | "withdraw") => {
+    setMode((current) => (current === next ? null : next));
+    setDraft("");
+  };
+
+  const submit = () => {
+    if (!valid || parsed === null || mode === null) return;
+    (mode === "fund" ? onFund : onWithdraw)(parsed);
+    setDraft("");
+    setMode(null);
+  };
+
   return (
-    <Card className="mt-4 flex items-center justify-between p-5">
-      <div className="flex items-center gap-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--bg-elevated)] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)]">
-          <IconWallet size={17} />
-        </span>
-        <div>
-          <Label>Agent vault</Label>
-          <div className="mt-1 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
-            {shortenAddress(policy.address, 6, 6)} · owner {shortenAddress(policy.owner)}
+    <Card className="p-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--bg-elevated)] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)]">
+            <IconWallet size={17} />
+          </span>
+          <div>
+            <Label>Agent vault</Label>
+            <div className="mt-1 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
+              {shortenAddress(policy.address, 6, 6)} · owner {shortenAddress(policy.owner)}
+            </div>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="[font-family:var(--font-serif)] text-[26px] leading-none tracking-[-0.02em]">
+            {formatSol(policy.vaultBalance)}{" "}
+            <span className="text-[15px] text-[var(--text-tertiary)]">SOL</span>
+          </div>
+          <div className="mt-1.5 flex justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => open("fund")}
+              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] ${
+                mode === "fund" ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]"
+              }`}
+            >
+              <IconPlus size={12} /> Add funds
+            </button>
+            <button
+              type="button"
+              onClick={() => open("withdraw")}
+              disabled={policy.vaultBalance === 0n}
+              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40 ${
+                mode === "withdraw" ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]"
+              }`}
+            >
+              <IconArrowUp size={12} /> Withdraw
+            </button>
           </div>
         </div>
       </div>
-      <div className="text-right">
-        <div className="[font-family:var(--font-serif)] text-[26px] leading-none tracking-[-0.02em]">
-          {formatSol(policy.vaultBalance)}{" "}
-          <span className="text-[15px] text-[var(--text-tertiary)]">SOL</span>
+
+      {mode && (
+        <div className="mt-4 [border-top:0.5px_solid_var(--border)] pt-4">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                autoFocus
+                inputMode="decimal"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && submit()}
+                placeholder={mode === "withdraw" ? formatSol(policy.vaultBalance) : "0.5"}
+                className="h-9 w-full rounded-md bg-[var(--bg)] pl-3 pr-12 text-[13px] text-[var(--text-primary)] [border:0.5px_solid_var(--border)] outline-none focus:[border-color:var(--accent)]"
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-tertiary)]">
+                SOL
+              </span>
+            </div>
+            {mode === "withdraw" && (
+              <button
+                type="button"
+                onClick={() => setDraft(formatSol(policy.vaultBalance))}
+                className="h-9 rounded-md px-2 text-[11px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:text-[var(--accent)]"
+              >
+                Max
+              </button>
+            )}
+            <Button onClick={submit} disabled={!valid}>
+              {mode === "fund" ? "Deposit" : "Withdraw"}
+            </Button>
+          </div>
+          <p className="mt-2 text-[11px] leading-[1.5] text-[var(--text-tertiary)]">
+            {overBalance
+              ? "Amount exceeds the vault balance."
+              : mode === "fund"
+                ? "Moves SOL from your wallet into the agent vault."
+                : "Returns SOL from the vault to your wallet. Owner-only — no policy limits apply."}
+          </p>
         </div>
-        <div className="mt-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
-          owner withdraw is unconstrained
-        </div>
-      </div>
+      )}
     </Card>
   );
+}
+
+/** Parse a human SOL amount into lamports; null if blank/invalid/non-positive. */
+function parseFundAmount(value: string): bigint | null {
+  if (!value.trim()) return null;
+  try {
+    const lamports = toBaseUnits(value.trim(), 9);
+    return lamports > 0n ? lamports : null;
+  } catch {
+    return null;
+  }
 }
 
 // --- allow-list editor ---

@@ -103,7 +103,7 @@ function resolveToken(input: string, tokens: TokenInfo[]): TokenInfo {
       verified: false,
     };
   } catch {
-    throw new Error(`Unknown token "${input}". Add it to PRAXIS_TOKENS or use a mint address.`);
+    throw new Error(`Unknown token "${input}". Try a mint address instead.`);
   }
 }
 

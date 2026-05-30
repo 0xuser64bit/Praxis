@@ -266,8 +266,41 @@ export class MockPraxisProvider implements PraxisProvider {
   }
 
   // --- policy (owner) ---
-  bootstrapPolicy = async (): Promise<void> => {
+  bootstrapPolicy = async (fundLamports: bigint = 0n): Promise<void> => {
     await delay(150);
+    if (fundLamports > 0n) {
+      this.state.policy = {
+        ...this.state.policy,
+        vaultBalance: this.state.policy.vaultBalance + fundLamports,
+      };
+    }
+    this.notify();
+  };
+
+  fundVault = async (amount: bigint): Promise<void> => {
+    await delay(200);
+    this.state.policy = {
+      ...this.state.policy,
+      vaultBalance: this.state.policy.vaultBalance + amount,
+    };
+    this.notify();
+  };
+
+  withdrawVault = async (amount: bigint): Promise<void> => {
+    await delay(200);
+    const next = this.state.policy.vaultBalance - amount;
+    this.state.policy = {
+      ...this.state.policy,
+      vaultBalance: next > 0n ? next : 0n,
+    };
+    this.notify();
+  };
+
+  // Mock mode has no onboarding screen to return to, so teardown just drains
+  // the vault (the closest faithful representation of "deleted").
+  deleteAgent = async (): Promise<void> => {
+    await delay(250);
+    this.state.policy = { ...this.state.policy, vaultBalance: 0n };
     this.notify();
   };
 

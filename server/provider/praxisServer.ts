@@ -289,10 +289,31 @@ export class PraxisServerProvider implements PraxisProvider {
   };
 
   // --- policy dashboard ---
-  bootstrapPolicy = async (): Promise<void> => {
+  bootstrapPolicy = async (fundLamports?: bigint): Promise<void> => {
     this.assertBackendOwnerSigningAvailable();
-    await this.aegis.bootstrapPolicy();
+    await this.aegis.bootstrapPolicy(fundLamports);
     await this.refreshOnChain();
+  };
+
+  fundVault = async (amount: bigint): Promise<void> => {
+    this.assertBackendOwnerSigningAvailable();
+    await this.aegis.fundVault(amount);
+    await this.refreshOnChain();
+  };
+
+  withdrawVault = async (amount: bigint): Promise<void> => {
+    this.assertBackendOwnerSigningAvailable();
+    await this.aegis.withdrawVault(amount);
+    await this.refreshOnChain();
+  };
+
+  deleteAgent = async (): Promise<void> => {
+    this.assertBackendOwnerSigningAvailable();
+    await this.aegis.closePolicy();
+    // The policy account is gone now; drop the cached view so reads 404 and the
+    // app returns to onboarding rather than serving a stale policy.
+    this.state.policy = undefined;
+    await this.commit();
   };
 
   updatePolicy = async (patch: PolicyUpdate): Promise<void> => {
@@ -346,7 +367,19 @@ export class PraxisServerProvider implements PraxisProvider {
   submitOwnerAction = async (input: UnsignedOwnerTransaction): Promise<{ signature: string }> => {
     const owner = this.requireOwnerWallet();
     const signature = await this.aegis.submitSignedTransaction(input, { expectedFeePayer: owner });
-    await this.refreshOnChain();
+    try {
+      await this.refreshOnChain();
+    } catch (error) {
+      // A closePolicy (delete agent) teardown removes the policy account, so the
+      // post-submit refresh 404s. That's success — clear the cached policy so
+      // subsequent reads 404 and the app returns to onboarding.
+      if (error instanceof PraxisNotFoundError) {
+        this.state.policy = undefined;
+        await this.commit();
+      } else {
+        throw error;
+      }
+    }
     return { signature };
   };
 

@@ -27,7 +27,10 @@ behavior as shipped.
 - Wallet-scoped API providers behind a `StateRepository` seam, with a
   filesystem backend (local/devnet) and a managed Postgres/Neon backend
   (`PRAXIS_STATE_BACKEND=postgres`) for durable threads, proposals, and activity.
-- Process-local rate limits and external-call timeouts.
+- External-call timeouts and a swappable rate limiter (process-local memory by
+  default, cross-instance Redis/Upstash when configured).
+- Structured JSON logging and an error-reporting seam; unexpected 5xx responses
+  are reported for alerting.
 - SPL associated token account setup route, UI action, and script.
 - Historical mint snapshots in allowed on-chain action records.
 
@@ -72,7 +75,9 @@ process-local storage or backend owner key custody.
 ### Phase 3: Reliability And Auditability
 
 1. Index failed transaction logs that emit `AgentActionRejected`.
-2. Add platform-level rate limits, logging, and alerts.
+2. ~~Add platform-level rate limits, logging, and alerts.~~ Done — structured
+   JSON logging, an error-reporting seam (5xx reported for alerting), and a
+   Redis/Upstash-backed cross-instance rate limiter behind a `RateLimiter` seam.
 3. Add Playwright coverage for the core UI flows.
 4. ~~Add API route tests around auth/session and setup flows.~~ Done — a bun-test
    suite covers auth/session, the wallet challenge, request validation, rate

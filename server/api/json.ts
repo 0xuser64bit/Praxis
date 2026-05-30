@@ -1,6 +1,7 @@
 import { parseUnits } from "@praxis/shared";
 
 import type { OwnerAction, UnsignedOwnerTransaction } from "../aegis/client";
+import { errorFields, logger, reportError } from "../observability/logger";
 import {
   getPraxisServerProvider,
   type PraxisServerProvider,
@@ -37,6 +38,15 @@ export function jsonError(error: unknown, init: ResponseInit = {}): Response {
           ? 429
           : 500;
 
+  // Unexpected (5xx) failures are reported for alerting; expected 4xx client
+  // errors are not, to keep the signal clean. 503s are config problems worth a
+  // warning but not an error page.
+  if (status >= 500 && status !== 503) {
+    reportError(error, { httpStatus: status });
+  } else if (status === 503) {
+    logger.warn("praxis.config_error", errorFields(error));
+  }
+
   return Response.json(
     {
       error: error instanceof Error ? error.message : "Unexpected Praxis backend error",
@@ -63,7 +73,7 @@ export async function withReadProvider<T>(
   fn: (provider: PraxisServerProvider, session: PraxisSession) => Promise<T> | T,
 ): Promise<Response> {
   try {
-    const session = requireReadAuth(request);
+    const session = await requireReadAuth(request);
     const provider = await getPraxisServerProvider(session.walletAddress);
     return jsonOk(await fn(provider, session));
   } catch (error) {
@@ -76,7 +86,7 @@ export async function withMutationProvider<T>(
   fn: (provider: PraxisServerProvider, session: PraxisSession) => Promise<T> | T,
 ): Promise<Response> {
   try {
-    const session = requireMutationAuth(request);
+    const session = await requireMutationAuth(request);
     const provider = await getPraxisServerProvider(session.walletAddress);
     return jsonOk(await fn(provider, session));
   } catch (error) {
@@ -234,9 +244,9 @@ export function readUnsignedOwnerTransaction(value: Record<string, unknown>): Un
   };
 }
 
-export function requireReadAuth(request: Request): PraxisSession {
+export async function requireReadAuth(request: Request): Promise<PraxisSession> {
   const session = requireSession(request);
-  assertRateLimit(request, {
+  await assertRateLimit(request, {
     scope: "read",
     identity: session.walletAddress,
     limit: 240,
@@ -245,10 +255,10 @@ export function requireReadAuth(request: Request): PraxisSession {
   return session;
 }
 
-export function requireMutationAuth(request: Request): PraxisSession {
+export async function requireMutationAuth(request: Request): Promise<PraxisSession> {
   assertSameOrigin(request);
   const session = requireSession(request);
-  assertRateLimit(request, {
+  await assertRateLimit(request, {
     scope: "mutation",
     identity: session.walletAddress,
     limit: 40,

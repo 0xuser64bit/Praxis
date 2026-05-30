@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   return withMutationProvider(request, async (provider, session) => {
-    assertRateLimit(request, {
+    await assertRateLimit(request, {
       scope: "agent-send",
       identity: session.walletAddress,
       limit: 10,

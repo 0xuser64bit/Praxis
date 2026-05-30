@@ -19,11 +19,12 @@ export async function fetchWithTimeout(
   input: Parameters<typeof fetch>[0],
   init: Parameters<typeof fetch>[1] = {},
   opts: { ms: number; label: string },
+  fetchImpl: typeof fetch = fetch,
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.ms);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    return await fetchImpl(input, { ...init, signal: controller.signal });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error(`${opts.label} timed out after ${opts.ms}ms`);

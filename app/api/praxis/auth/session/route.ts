@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    assertRateLimit(request, { scope: "auth-session", limit: 120, windowMs: 60_000 });
+    await assertRateLimit(request, { scope: "auth-session", limit: 120, windowMs: 60_000 });
     const session = readSession(request);
     return jsonOk({
       authenticated: Boolean(session),
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 export async function DELETE(request: Request) {
   try {
     assertSameOrigin(request);
-    assertRateLimit(request, { scope: "auth-logout", limit: 20, windowMs: 60_000 });
+    await assertRateLimit(request, { scope: "auth-logout", limit: 20, windowMs: 60_000 });
     requireSession(request);
     return jsonOk(
       { authenticated: false },

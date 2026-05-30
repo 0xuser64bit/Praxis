@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
-    assertRateLimit(request, { scope: "auth-challenge", limit: 20, windowMs: 60_000 });
+    await assertRateLimit(request, { scope: "auth-challenge", limit: 20, windowMs: 60_000 });
     const body = await readJson(request);
     const address = readString(body.address, "address", { maxLength: 64 });
     return jsonOk(createWalletChallenge(address, request));

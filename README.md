@@ -103,6 +103,8 @@ This repo is a strong local/devnet MVP candidate. Managed state storage is now
 available — set `PRAXIS_STATE_BACKEND=postgres` with a `DATABASE_URL` (Neon or
 any Postgres) to persist threads/proposals/activity durably across instances;
 the filesystem backend remains the default for local/devnet. Owner/admin policy
-actions are already wallet-signed (above). Before production, also put the agent
-session key in a real key-management boundary and add platform-level rate
-limiting and monitoring.
+actions are already wallet-signed (above). Platform-level rate limiting (set
+`PRAXIS_RATE_LIMITER=redis` with Upstash/KV credentials) and structured logging
+with 5xx error reporting are available; the in-memory limiter is the default for
+local/single-instance. The main remaining production step is putting the agent
+session key in a real key-management boundary (HSM/KMS) instead of an env/file.

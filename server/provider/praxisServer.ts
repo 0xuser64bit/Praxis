@@ -41,6 +41,7 @@ import { PraxisConfigError, PraxisNotFoundError } from "../errors";
 import { parseHumanUnits, SOL_DECIMALS } from "../units";
 import { getStateRepository, type StateRepository } from "./stateRepository";
 import type { StoredProviderState } from "./stateSerialization";
+import { errorFields, logger } from "../observability/logger";
 
 interface StoreState {
   threads: Thread[];
@@ -644,7 +645,7 @@ export class PraxisServerProvider implements PraxisProvider {
     // repository is the durable mirror that catches up asynchronously. Failures
     // are logged, never thrown into a request path.
     void Promise.resolve(this.repository.save(this.ownerKey, state)).catch((error) => {
-      console.warn("Praxis state persistence failed", error);
+      logger.warn("praxis.state_persist_failed", errorFields(error));
     });
   }
 }

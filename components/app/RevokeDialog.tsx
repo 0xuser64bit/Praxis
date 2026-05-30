@@ -61,19 +61,19 @@ export function RevokeDialog({
           </Button>
           <button
             type="button"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            setError(null);
-            try {
-              await onConfirm();
-              onClose();
-            } catch (err) {
-              setError(err instanceof Error ? err.message : "Revoke failed.");
-            } finally {
-              setBusy(false);
-            }
-          }}
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await onConfirm();
+                onClose();
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Revoke failed.");
+              } finally {
+                setBusy(false);
+              }
+            }}
             className="flex flex-1 items-center justify-center gap-2 rounded-lg py-[11px] text-[14px] font-medium text-white [transition:opacity_0.15s] disabled:opacity-60"
             style={{ background: "var(--danger)" }}
           >

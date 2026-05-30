@@ -182,7 +182,6 @@ export class RemotePraxisProvider implements PraxisProvider {
       this.notify();
       return result;
     } catch (error) {
-      this.setConnectionError(error);
       throw error;
     }
   }

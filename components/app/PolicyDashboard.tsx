@@ -43,8 +43,21 @@ export function PolicyDashboard() {
   const policy = usePolicy();
   const provider = useProvider();
   const [revokeOpen, setRevokeOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const now = useNow();
   const revoked = policy.paused || policy.agentAuthority === SYSTEM_PROGRAM;
+  const runMutation = (action: () => Promise<void>, fallback: string) => {
+    setError(null);
+    void action().catch((err) => {
+      setError(messageFromError(err, fallback));
+    });
+  };
+  const addToAllowList = (kind: AllowListKind, address: string) => {
+    runMutation(() => provider.addToAllowList(kind, address), "Allow-list update failed.");
+  };
+  const removeFromAllowList = (kind: AllowListKind, address: string) => {
+    runMutation(() => provider.removeFromAllowList(kind, address), "Allow-list update failed.");
+  };
 
   return (
     <div className="flex-1 overflow-y-auto px-8 py-7 max-[760px]:px-5">
@@ -64,7 +77,7 @@ export function PolicyDashboard() {
               variant="primary"
               className="shrink-0"
               onClick={() => {
-                void provider.rotateAgent().catch(() => undefined);
+                runMutation(() => provider.rotateAgent(), "Re-enable failed.");
               }}
             >
               <IconRefresh size={15} />
@@ -89,7 +102,13 @@ export function PolicyDashboard() {
             style={{ background: "rgba(199,91,91,0.10)", border: "0.5px solid rgba(199,91,91,0.3)" }}
           >
             <Dot color="var(--danger)" />
-            Agent revoked — the session key is zeroed on-chain. Any agent action fails until you re-enable.
+            Agent revoked — the session key is zeroed on-chain. Rotate in a fresh key before re-enabling.
+          </div>
+        )}
+
+        {error && (
+          <div className="mb-5 rounded-xl bg-[rgba(199,91,91,0.10)] px-4 py-3 text-[13px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]">
+            {error}
           </div>
         )}
 
@@ -99,7 +118,7 @@ export function PolicyDashboard() {
           <CapsCard
             policy={policy}
             onSave={(patch) => {
-              void provider.updatePolicy(patch).catch(() => undefined);
+              runMutation(() => provider.updatePolicy(patch), "Policy update failed.");
             }}
           />
           <SessionCard
@@ -107,10 +126,10 @@ export function PolicyDashboard() {
             revoked={revoked}
             now={now}
             onRotate={() => {
-              void provider.rotateAgent().catch(() => undefined);
+              runMutation(() => provider.rotateAgent(), "Rotate failed.");
             }}
             onUpdateExpiry={(expiryTs) => {
-              void provider.updatePolicy({ expiryTs }).catch(() => undefined);
+              runMutation(() => provider.updatePolicy({ expiryTs }), "Expiry update failed.");
             }}
           />
         </div>
@@ -119,7 +138,7 @@ export function PolicyDashboard() {
           policy={policy}
           now={now}
           onConfigure={(config) => {
-            void provider.configureToken(config).catch(() => undefined);
+            runMutation(() => provider.configureToken(config), "Token configuration failed.");
           }}
         />
 
@@ -132,6 +151,8 @@ export function PolicyDashboard() {
               hint="Only these programs may be invoked"
               addresses={policy.allowedPrograms}
               labeler={programLabel}
+              onAdd={addToAllowList}
+              onRemove={removeFromAllowList}
             />
             <AllowList
               kind="mints"
@@ -140,6 +161,8 @@ export function PolicyDashboard() {
               addresses={policy.allowedMints}
               labeler={mintLabel}
               quickAdd={QUICK_MINTS}
+              onAdd={addToAllowList}
+              onRemove={removeFromAllowList}
             />
             <AllowList
               kind="recipients"
@@ -147,6 +170,8 @@ export function PolicyDashboard() {
               hint="Empty means any recipient is allowed"
               addresses={policy.allowedRecipients}
               emptyMeansAny
+              onAdd={addToAllowList}
+              onRemove={removeFromAllowList}
             />
           </div>
         </Card>
@@ -566,6 +591,8 @@ function AllowList({
   labeler,
   quickAdd,
   emptyMeansAny,
+  onAdd,
+  onRemove,
 }: {
   kind: AllowListKind;
   title: string;
@@ -574,8 +601,9 @@ function AllowList({
   labeler?: (a: string) => string | null;
   quickAdd?: { label: string; address: string }[];
   emptyMeansAny?: boolean;
+  onAdd: (kind: AllowListKind, address: string) => void;
+  onRemove: (kind: AllowListKind, address: string) => void;
 }) {
-  const provider = useProvider();
   const book = useAddressBook();
   const [draft, setDraft] = useState("");
 
@@ -594,7 +622,7 @@ function AllowList({
 
   const add = (address: string) => {
     if (!address.trim()) return;
-    void provider.addToAllowList(kind, address.trim()).catch(() => undefined);
+    onAdd(kind, address.trim());
     setDraft("");
   };
 
@@ -631,7 +659,7 @@ function AllowList({
                 type="button"
                 aria-label={`Remove ${name ?? a}`}
                 onClick={() => {
-                  void provider.removeFromAllowList(kind, a).catch(() => undefined);
+                  onRemove(kind, a);
                 }}
                 className="flex h-4 w-4 items-center justify-center rounded-full text-[var(--text-tertiary)] hover:bg-[var(--bg-card)] hover:text-[var(--danger)]"
               >
@@ -689,4 +717,8 @@ function formatExpiry(expiryTs: number, now: number): string {
   if (days >= 1) return `in ${days}d ${hours}h`;
   const mins = Math.floor((secs % 3600) / 60);
   return `in ${hours}h ${mins}m`;
+}
+
+function messageFromError(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }

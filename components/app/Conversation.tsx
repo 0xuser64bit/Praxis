@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Composer } from "./Composer";
 import { MessageItem } from "./MessageItem";
@@ -16,6 +16,7 @@ export function Conversation({
   const provider = useProvider();
   const thread = useThread(threadId);
   const thinking = useThinking(threadId);
+  const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const messageCount = thread?.messages.length ?? 0;
@@ -27,7 +28,10 @@ export function Conversation({
   if (!thread) return null;
 
   const onSend = (text: string) => {
-    void provider.send(threadId, text).catch(() => undefined);
+    setError(null);
+    void provider.send(threadId, text).catch((err) => {
+      setError(messageFromError(err, "Message failed."));
+    });
   };
 
   return (
@@ -47,9 +51,18 @@ export function Conversation({
         </div>
       </div>
 
+      {error && (
+        <div className="mx-6 mb-3 rounded-lg bg-[rgba(199,91,91,0.10)] px-3 py-2 text-[12px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]">
+          {error}
+        </div>
+      )}
       <Composer onSend={onSend} disabled={thinking} showSuggestions={messageCount <= 1} />
     </div>
   );
+}
+
+function messageFromError(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
 function Thinking() {

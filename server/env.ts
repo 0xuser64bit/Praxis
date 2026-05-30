@@ -153,6 +153,15 @@ export function requireOwnerKeypair(config = getServerConfig()): Keypair {
   return config.ownerKeypair;
 }
 
+export function requireNextAgentKeypair(config = getServerConfig()): Keypair {
+  if (!config.nextAgentKeypair) {
+    throw new PraxisConfigError(
+      "Rotate requires PRAXIS_NEXT_AGENT_KEYPAIR or PRAXIS_NEXT_AGENT_KEYPAIR_PATH. Refusing to re-enable the current agent key by default.",
+    );
+  }
+  return config.nextAgentKeypair;
+}
+
 export function validatePublicKey(value: string, name = "address"): PublicKey {
   try {
     return new PublicKey(value);

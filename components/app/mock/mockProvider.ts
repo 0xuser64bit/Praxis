@@ -301,7 +301,7 @@ export class MockPraxisProvider implements PraxisProvider {
 
   rotateAgent = async (): Promise<void> => {
     await delay(SIGN_MS);
-    this.state.policy = { ...this.state.policy, paused: false, agentAuthority: ADDR.agent };
+    this.state.policy = { ...this.state.policy, paused: false, agentAuthority: ADDR.nextAgent };
     this.notify();
   };
 

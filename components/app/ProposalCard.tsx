@@ -14,7 +14,7 @@ import {
   IconExternalLink,
   IconShieldCog,
 } from "@tabler/icons-react";
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/praxis/Button";
 import { Eyebrow } from "@/components/praxis/Eyebrow";
@@ -35,6 +35,7 @@ export function ProposalCard({
 }) {
   const proposal = useProposal(proposalId);
   const provider = useProvider();
+  const [error, setError] = useState<string | null>(null);
   if (!proposal) return null;
 
   const { from, to, meta } = describe(proposal.detail, proposal);
@@ -44,6 +45,12 @@ export function ProposalCard({
   const blockedMessage = proposal.detail.kind === "swap"
     ? "Swaps are preview-only in v0.1. Nothing was signed."
     : "The agent can't sign this — the chain would reject it.";
+  const runAction = (action: () => Promise<void>, fallback: string) => {
+    setError(null);
+    void action().catch((err) => {
+      setError(messageFromError(err, fallback));
+    });
+  };
 
   return (
     <div className="mt-2 rounded-xl bg-[var(--bg)] px-6 py-[22px] [border:0.5px_solid_var(--border-strong)]">
@@ -99,7 +106,7 @@ export function ProposalCard({
               variant="primary"
               className="flex-1 justify-center px-3.5 py-[11px]"
               onClick={() => {
-                void provider.signProposal(proposal.id).catch(() => undefined);
+                runAction(() => provider.signProposal(proposal.id), "Signing failed.");
               }}
             >
               Confirm &amp; sign
@@ -108,7 +115,7 @@ export function ProposalCard({
             <Button
               className="flex-1 justify-center px-3.5 py-[11px]"
               onClick={() => {
-                void provider.cancelProposal(proposal.id).catch(() => undefined);
+                runAction(() => provider.cancelProposal(proposal.id), "Cancel failed.");
               }}
             >
               Cancel
@@ -164,6 +171,12 @@ export function ProposalCard({
         {proposal.state === "cancelled" && (
           <div className="rounded-lg bg-[var(--bg-elevated)] px-3.5 py-3 text-[13px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)]">
             Cancelled — nothing was signed.
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-3 rounded-lg bg-[rgba(199,91,91,0.10)] px-3 py-2 text-[12px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]">
+            {error}
           </div>
         )}
       </div>
@@ -245,4 +258,8 @@ function describe(
       { label: "Simulation", value: proposal.simulation, ok: proposal.check.allowed },
     ],
   };
+}
+
+function messageFromError(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }

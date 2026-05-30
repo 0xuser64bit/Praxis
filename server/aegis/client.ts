@@ -28,6 +28,7 @@ import { findActionLogPda, findAssociatedTokenAddress, findPolicyPda, findVaultP
 import {
   getServerConfig,
   requireAgentKeypair,
+  requireNextAgentKeypair,
   requireOwnerKeypair,
   requirePolicyAddress,
   validatePublicKey,
@@ -425,9 +426,15 @@ export class AegisClient {
 
   async rotateAgent(): Promise<string> {
     const owner = requireOwnerKeypair(this.config);
-    const nextAgent = this.config.nextAgentKeypair?.publicKey ?? requireAgentKeypair(this.config).publicKey;
+    const nextAgentKeypair = requireNextAgentKeypair(this.config);
+    const currentAgent = this.config.agentKeypair?.publicKey;
+    if (currentAgent?.equals(nextAgentKeypair.publicKey)) {
+      throw new PraxisConfigError(
+        "PRAXIS_NEXT_AGENT_KEYPAIR must be different from PRAXIS_AGENT_KEYPAIR before rotating the agent.",
+      );
+    }
     const policy = this.policyForOwner(owner.publicKey);
-    const ix = buildRotateAgentIx({ ...this.addresses({ policy }), owner: owner.publicKey }, nextAgent);
+    const ix = buildRotateAgentIx({ ...this.addresses({ policy }), owner: owner.publicKey }, nextAgentKeypair.publicKey);
     return this.sendOwnerTransaction([ix], owner);
   }
 

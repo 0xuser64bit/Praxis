@@ -24,6 +24,7 @@ import { toBaseUnits } from "../lib/units";
 export const ADDR = {
   owner: "7xKpR9vN3sT5wY8dFgH6jL4zXcUmAbQeD7oVBgh2",
   agent: "AgSESknKey4PraxizDemoAgentAuthrztn9nbXyZ7q",
+  nextAgent: "AgSESNextKey4PraxizDemoRotateAuth9nbXyZ7",
   policy: "PoLicE7Praxiz9Aegis2DemoPDAvw8sk3mTnqKqpZ4",
   vault: "VauLt7Praxiz9Aegis2DemoPDAxw9tk4nUmrKpqWz2",
   system: "11111111111111111111111111111111",

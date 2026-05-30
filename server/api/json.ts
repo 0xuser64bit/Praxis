@@ -1,7 +1,7 @@
 import { parseUnits } from "@praxis/shared";
-import { timingSafeEqual } from "node:crypto";
 
 import { getPraxisServerProvider } from "../provider/praxisServer";
+import { requireSession, type PraxisSession } from "../auth/session";
 import {
   PraxisAuthError,
   PraxisConfigError,
@@ -12,14 +12,13 @@ import {
 export const routeRuntime = "nodejs";
 export const routeDynamic = "force-dynamic";
 const U64_MAX = 2n ** 64n - 1n;
-const DEMO_TOKEN_HEADER = "x-praxis-demo-token";
 const MAX_JSON_BODY_BYTES = 64 * 1024;
 
-export function jsonOk(value: unknown = { ok: true }): Response {
-  return Response.json(toWire(value), { headers: noStoreHeaders() });
+export function jsonOk(value: unknown = { ok: true }, init: ResponseInit = {}): Response {
+  return Response.json(toWire(value), { ...init, headers: withNoStore(init.headers) });
 }
 
-export function jsonError(error: unknown): Response {
+export function jsonError(error: unknown, init: ResponseInit = {}): Response {
   const status = error instanceof PraxisAuthError
     ? 401
     : error instanceof PraxisInputError
@@ -35,13 +34,16 @@ export function jsonError(error: unknown): Response {
       error: error instanceof Error ? error.message : "Unexpected Praxis backend error",
       type: error instanceof Error ? error.name : "Error",
     },
-    { status, headers: noStoreHeaders() },
+    { ...init, status, headers: withNoStore(init.headers) },
   );
 }
 
-export async function withProvider<T>(fn: (provider: ReturnType<typeof getPraxisServerProvider>) => Promise<T> | T): Promise<Response> {
+export async function withProvider<T>(
+  session: PraxisSession,
+  fn: (provider: ReturnType<typeof getPraxisServerProvider>) => Promise<T> | T,
+): Promise<Response> {
   try {
-    const provider = getPraxisServerProvider();
+    const provider = getPraxisServerProvider(session.walletAddress);
     return jsonOk(await fn(provider));
   } catch (error) {
     return jsonError(error);
@@ -147,22 +149,16 @@ export function readAllowListKind(value: unknown) {
   throw new PraxisInputError("kind must be programs, recipients, or mints");
 }
 
-export function requireMutationAuth(request: Request) {
-  const configured = process.env.PRAXIS_DEMO_MUTATION_TOKEN?.trim();
-  if (!configured) {
-    throw new PraxisAuthError(
-      "Praxis API mutations are disabled. Set PRAXIS_DEMO_MUTATION_TOKEN for local demos, or add wallet/session auth for production.",
-    );
-  }
-
-  assertSameOrigin(request);
-  const presented = request.headers.get(DEMO_TOKEN_HEADER)?.trim() ?? "";
-  if (!safeEqual(presented, configured)) {
-    throw new PraxisAuthError("Missing or invalid Praxis demo mutation token.");
-  }
+export function requireReadAuth(request: Request): PraxisSession {
+  return requireSession(request);
 }
 
-function assertSameOrigin(request: Request) {
+export function requireMutationAuth(request: Request): PraxisSession {
+  assertSameOrigin(request);
+  return requireSession(request);
+}
+
+export function assertSameOrigin(request: Request) {
   const origin = request.headers.get("origin");
   if (!origin) return;
   const expected = new URL(request.url).origin;
@@ -171,15 +167,10 @@ function assertSameOrigin(request: Request) {
   }
 }
 
-function safeEqual(a: string, b: string): boolean {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
-}
-
-function noStoreHeaders(): HeadersInit {
-  return { "cache-control": "no-store" };
+function withNoStore(headers: ResponseInit["headers"]): Headers {
+  const out = new Headers(headers);
+  out.set("cache-control", "no-store");
+  return out;
 }
 
 function toWire(value: unknown): unknown {

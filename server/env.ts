@@ -126,6 +126,17 @@ export function getServerConfig(): PraxisServerConfig {
   return cachedConfig;
 }
 
+export function configForWalletOwner(
+  ownerAddress: PublicKey,
+  base: PraxisServerConfig = getServerConfig(),
+): PraxisServerConfig {
+  return {
+    ...base,
+    ownerAddress,
+    policyAddress: findPolicyPda(ownerAddress, base.programId),
+  };
+}
+
 export function requirePolicyAddress(config = getServerConfig()): PublicKey {
   if (!config.policyAddress) {
     throw new PraxisConfigError(

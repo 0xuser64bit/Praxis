@@ -3,13 +3,16 @@
 import {
   IconAlertTriangle,
   IconHistory,
+  IconLogout,
   IconMessages,
   IconShieldLock,
+  IconWallet,
 } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { ActivityLog } from "./ActivityLog";
 import { AppSidebar } from "./AppSidebar";
+import { useAuthSession } from "./AuthGate";
 import { Conversation } from "./Conversation";
 import { PolicyDashboard } from "./PolicyDashboard";
 import {
@@ -53,6 +56,7 @@ export function AppShell() {
 }
 
 function ReadyAppShell() {
+  const auth = useAuthSession();
   const provider = useProvider();
   const policy = usePolicy();
   const threads = useThreads();
@@ -105,6 +109,19 @@ function ReadyAppShell() {
           </div>
 
           <div className="flex shrink-0 items-center gap-2.5">
+            {auth && (
+              <button
+                type="button"
+                onClick={() => void auth.signOut()}
+                className="flex h-7 items-center gap-1.5 rounded-md bg-[var(--bg-card)] px-2 text-[12px] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)] [transition:color_0.15s,border-color_0.15s] hover:text-[var(--text-primary)] hover:[border-color:var(--border-strong)]"
+                aria-label="Sign out"
+                title="Sign out"
+              >
+                <IconWallet size={14} />
+                <span className="max-[520px]:hidden">{shortAddress(auth.walletAddress)}</span>
+                <IconLogout size={13} className="text-[var(--text-tertiary)]" />
+              </button>
+            )}
             <Pill>
               <Dot color={revoked ? "var(--danger)" : "var(--success)"} pulse={!revoked} />
               {revoked ? "Agent revoked" : "Agent live"}
@@ -128,6 +145,10 @@ function ReadyAppShell() {
       </main>
     </div>
   );
+}
+
+function shortAddress(address: string): string {
+  return `${address.slice(0, 4)}...${address.slice(-4)}`;
 }
 
 function ApiStateScreen({

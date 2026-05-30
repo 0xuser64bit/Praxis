@@ -10,8 +10,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  return withProvider(async (provider) => {
-    requireMutationAuth(request);
+  const session = requireMutationAuth(request);
+  return withProvider(session, async (provider) => {
     const body = await readJson(request);
     const kind = readAllowListKind(body.kind);
     const address = readString(body.address, "address");

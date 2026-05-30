@@ -27,8 +27,13 @@ import {
 } from "../agent/intent";
 import { researchToken } from "../agent/research";
 import { getConnection } from "../aegis/client";
-import { getServerConfig, validatePublicKey, type PraxisServerConfig } from "../env";
-import { PraxisNotFoundError } from "../errors";
+import {
+  configForWalletOwner,
+  getServerConfig,
+  validatePublicKey,
+  type PraxisServerConfig,
+} from "../env";
+import { PraxisConfigError, PraxisNotFoundError } from "../errors";
 import { parseHumanUnits, SOL_DECIMALS } from "../units";
 
 interface StoreState {
@@ -42,14 +47,24 @@ interface StoreState {
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 
 let singleton: PraxisServerProvider | undefined;
+const providersByWallet = new Map<string, PraxisServerProvider>();
 
-export function getPraxisServerProvider(): PraxisServerProvider {
+export function getPraxisServerProvider(walletAddress?: string): PraxisServerProvider {
+  if (walletAddress) {
+    const normalized = validatePublicKey(walletAddress, "walletAddress").toBase58();
+    const existing = providersByWallet.get(normalized);
+    if (existing) return existing;
+    const provider = new PraxisServerProvider(configForWalletOwner(new PublicKey(normalized)));
+    providersByWallet.set(normalized, provider);
+    return provider;
+  }
   if (!singleton) singleton = new PraxisServerProvider();
   return singleton;
 }
 
 export function resetPraxisServerProviderForTests() {
   singleton = undefined;
+  providersByWallet.clear();
 }
 
 export class PraxisServerProvider implements PraxisProvider {
@@ -233,11 +248,13 @@ export class PraxisServerProvider implements PraxisProvider {
 
   // --- policy dashboard ---
   updatePolicy = async (patch: PolicyUpdate): Promise<void> => {
+    this.assertBackendOwnerSigningAvailable();
     await this.aegis.updatePolicy(patch);
     await this.refreshOnChain();
   };
 
   configureToken = async (config: TokenEnvelopeConfig): Promise<void> => {
+    this.assertBackendOwnerSigningAvailable();
     validatePublicKey(config.tokenMint);
     await this.aegis.configureToken({
       tokenMint: config.tokenMint,
@@ -248,22 +265,26 @@ export class PraxisServerProvider implements PraxisProvider {
   };
 
   revokeAgent = async (): Promise<void> => {
+    this.assertBackendOwnerSigningAvailable();
     await this.aegis.revokeAgent();
     await this.refreshOnChain();
   };
 
   rotateAgent = async (): Promise<void> => {
+    this.assertBackendOwnerSigningAvailable();
     await this.aegis.rotateAgent();
     await this.refreshOnChain();
   };
 
   addToAllowList = async (kind: AllowListKind, address: string): Promise<void> => {
+    this.assertBackendOwnerSigningAvailable();
     validatePublicKey(address);
     await this.aegis.updateAllowList(kind, address, "add");
     await this.refreshOnChain();
   };
 
   removeFromAllowList = async (kind: AllowListKind, address: string): Promise<void> => {
+    this.assertBackendOwnerSigningAvailable();
     validatePublicKey(address);
     await this.aegis.updateAllowList(kind, address, "remove");
     await this.refreshOnChain();
@@ -518,6 +539,19 @@ export class PraxisServerProvider implements PraxisProvider {
 
   private id(prefix: string): string {
     return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  private assertBackendOwnerSigningAvailable() {
+    if (
+      this.config.ownerAddress
+      && this.config.ownerKeypair
+      && this.config.ownerKeypair.publicKey.equals(this.config.ownerAddress)
+    ) {
+      return;
+    }
+    throw new PraxisConfigError(
+      "This owner action needs wallet-signed transactions. The current API can only submit owner transactions when PRAXIS_OWNER_KEYPAIR matches the signed-in wallet.",
+    );
   }
 
   private notify() {

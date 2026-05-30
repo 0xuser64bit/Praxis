@@ -4,8 +4,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  return withProvider(async (provider) => {
-    requireMutationAuth(request);
+  const session = requireMutationAuth(request);
+  return withProvider(session, async (provider) => {
     await provider.revokeAgent();
     return { ok: true };
   });

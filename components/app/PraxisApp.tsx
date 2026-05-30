@@ -1,6 +1,7 @@
 "use client";
 
 import { AppShell } from "./AppShell";
+import { ApiAuthGate } from "./AuthGate";
 import { ProviderProvider } from "./ProviderContext";
 import { useIsClient } from "./lib/useNow";
 
@@ -24,9 +25,15 @@ export function PraxisApp() {
     );
   }
 
-  return (
+  const app = (
     <ProviderProvider>
       <AppShell />
     </ProviderProvider>
   );
+
+  if (process.env.NEXT_PUBLIC_PRAXIS_PROVIDER === "api") {
+    return <ApiAuthGate>{app}</ApiAuthGate>;
+  }
+
+  return app;
 }

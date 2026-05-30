@@ -6,6 +6,8 @@ import { DEFAULT_AEGIS_PROGRAM_ID } from "../constants";
 import { findPolicyPda } from "../pdas";
 import { PraxisConfigError } from "../../errors";
 import { DEFAULT_TOKENS, type PraxisServerConfig } from "../../env";
+import type { AgentSigner } from "../../agent/agentSigner";
+import { encodePolicyAccount, policyFixture } from "../../testing/fixtures";
 
 const BLOCKHASH = Keypair.generate().publicKey.toBase58(); // valid 32-byte base58
 
@@ -74,6 +76,37 @@ describe("buildUnsignedOwnerTransaction", () => {
     await expect(
       client.buildUnsignedOwnerTransaction(config.ownerAddress!, { kind: "rotate" }),
     ).rejects.toBeInstanceOf(PraxisConfigError);
+  });
+});
+
+describe("execute uses the AgentSigner", () => {
+  test("executeAgentTransfer invokes the injected signer and confirms", async () => {
+    const agent = Keypair.generate();
+    let signCalls = 0;
+    const signer: AgentSigner = {
+      publicKey: agent.publicKey,
+      async signTransaction(tx) {
+        signCalls += 1;
+        tx.sign(agent);
+        return tx;
+      },
+    };
+
+    const config = makeConfig({ agentKeypair: undefined }); // signer is injected, no local key
+    const policyData = encodePolicyAccount(policyFixture({ address: config.policyAddress!.toBase58() }));
+    const conn = fakeConnection({
+      getAccountInfo: async () => ({ data: policyData, owner: DEFAULT_AEGIS_PROGRAM_ID, lamports: 1, executable: false }),
+      getBalance: async () => 100_000_000_000,
+      getSlot: async () => 1,
+      getBlockTime: async () => Math.floor(Date.now() / 1000),
+      getTransaction: async () => ({ meta: { logMessages: [] } }),
+    });
+    const client = new AegisClient(config, conn, signer);
+
+    const result = await client.executeAgentTransfer(Keypair.generate().publicKey, 1_000_000n);
+    expect(signCalls).toBe(1);
+    expect(result.status).toBe("confirmed");
+    expect(result.sig).toBe("owner-sig");
   });
 });
 

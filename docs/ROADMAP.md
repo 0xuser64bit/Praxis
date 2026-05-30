@@ -31,6 +31,11 @@ behavior as shipped.
   default, cross-instance Redis/Upstash when configured).
 - Structured JSON logging and an error-reporting seam; unexpected 5xx responses
   are reported for alerting.
+- Agent-key custody behind an `AgentSigner` seam: in-process `LocalKeypairSigner`
+  (default) or a remote signer service (`PRAXIS_AGENT_SIGNER_URL`) that holds the
+  agent key out of the app. Includes a minimal reference signer service
+  (`signer/`) deployable for ~$0. Execute-only signing; production refuses a raw
+  in-process key unless explicitly opted in.
 - SPL associated token account setup route, UI action, and script.
 - Historical mint snapshots in allowed on-chain action records.
 

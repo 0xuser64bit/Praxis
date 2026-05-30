@@ -106,5 +106,11 @@ the filesystem backend remains the default for local/devnet. Owner/admin policy
 actions are already wallet-signed (above). Platform-level rate limiting (set
 `PRAXIS_RATE_LIMITER=redis` with Upstash/KV credentials) and structured logging
 with 5xx error reporting are available; the in-memory limiter is the default for
-local/single-instance. The main remaining production step is putting the agent
-session key in a real key-management boundary (HSM/KMS) instead of an env/file.
+local/single-instance. The agent session key can be moved behind a remote signer
+service (`PRAXIS_AGENT_SIGNER_URL`) so its private key never lives in the app —
+see `signer/` for a ~$0 deploy; the in-process `LocalKeypairSigner` is the
+default for local/devnet.
+
+In short: the seams for production (managed DB, wallet-signed owner actions,
+agent-key custody, cross-instance rate limiting, observability) are all in place
+and switch on by configuration; local/devnet runs entirely on free defaults.

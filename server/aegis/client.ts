@@ -5,6 +5,7 @@ import {
   SendTransactionError,
   Transaction,
   TransactionInstruction,
+  VersionedTransaction,
 } from "@solana/web3.js";
 import type { AllowListKind, PolicyUpdate, PolicyView } from "@praxis/shared";
 
@@ -29,13 +30,16 @@ import {
 import { findActionLogPda, findAssociatedTokenAddress, findPolicyPda, findVaultPda } from "./pdas";
 import {
   getServerConfig,
-  requireAgentKeypair,
-  requireNextAgentKeypair,
   requireOwnerKeypair,
   requirePolicyAddress,
   validatePublicKey,
   type PraxisServerConfig,
 } from "../env";
+import {
+  requireAgentSigner,
+  resolveNextAgentPublicKey,
+  type AgentSigner,
+} from "../agent/agentSigner";
 import { PraxisConfigError, PraxisNotFoundError } from "../errors";
 import {
   checkFromAegisReason,
@@ -104,10 +108,36 @@ export function getConnection(config = getServerConfig()): Connection {
 }
 
 export class AegisClient {
+  private cachedAgentSigner?: AgentSigner;
+
   constructor(
     private readonly config: PraxisServerConfig = getServerConfig(),
     private readonly conn: Connection = getConnection(config),
-  ) {}
+    agentSigner?: AgentSigner,
+  ) {
+    this.cachedAgentSigner = agentSigner;
+  }
+
+  /** The configured agent signer (local keypair or remote custody), resolved once. */
+  private agentSigner(): AgentSigner {
+    if (!this.cachedAgentSigner) {
+      this.cachedAgentSigner = requireAgentSigner(this.config.agentKeypair);
+    }
+    return this.cachedAgentSigner;
+  }
+
+  /**
+   * Simulate without a real agent signature (execute-only signing). The on-chain
+   * policy checks read the agent account, not its signature, so the verdict is
+   * faithful — and remote custody avoids a signer round-trip per preview.
+   */
+  private async simulateUnsigned(tx: Transaction) {
+    const versioned = new VersionedTransaction(tx.compileMessage());
+    return this.conn.simulateTransaction(versioned, {
+      sigVerify: false,
+      replaceRecentBlockhash: true,
+    });
+  }
 
   async getPolicy(): Promise<PolicyView> {
     const policyAddress = requirePolicyAddress(this.config);
@@ -133,15 +163,14 @@ export class AegisClient {
   }
 
   async simulateAgentTransfer(recipient: PublicKey, amount: bigint): Promise<TransferSimulation> {
-    const agent = requireAgentKeypair(this.config);
+    const signer = this.agentSigner();
     const policy = await this.getPolicy();
     const now = await this.chainTime();
     const mirrored = checkTransferPolicy(policy, amount, recipient.toBase58(), now);
-    const ix = await this.agentTransferIx(agent.publicKey, recipient, amount);
-    const { tx } = await this.buildTransaction([ix], agent.publicKey);
-    tx.sign(agent);
+    const ix = await this.agentTransferIx(signer.publicKey, recipient, amount);
+    const { tx } = await this.buildTransaction([ix], signer.publicKey);
 
-    const sim = await this.conn.simulateTransaction(tx);
+    const sim = await this.simulateUnsigned(tx);
 
     const logs = sim.value.logs ?? [];
     const fee = await this.estimateFee(tx);
@@ -190,12 +219,12 @@ export class AegisClient {
     amount: bigint,
     opts: { skipPreflight?: boolean } = {},
   ): Promise<TransferExecution> {
-    const agent = requireAgentKeypair(this.config);
+    const signer = this.agentSigner();
     const policy = await this.getPolicy();
     const now = await this.chainTime();
-    const ix = await this.agentTransferIx(agent.publicKey, recipient, amount);
-    const { tx, latestBlockhash } = await this.buildTransaction([ix], agent.publicKey);
-    tx.sign(agent);
+    const ix = await this.agentTransferIx(signer.publicKey, recipient, amount);
+    const { tx, latestBlockhash } = await this.buildTransaction([ix], signer.publicKey);
+    await signer.signTransaction(tx);
 
     try {
       const sig = await this.conn.sendRawTransaction(tx.serialize(), {
@@ -251,16 +280,15 @@ export class AegisClient {
     token: TokenInfo,
     amount: bigint,
   ): Promise<TransferSimulation> {
-    const agent = requireAgentKeypair(this.config);
+    const signer = this.agentSigner();
     const policy = await this.getPolicy();
     const now = await this.chainTime();
     const recipientAddress = recipient.toBase58();
     const mirrored = checkTokenTransferPolicy(policy, token, amount, recipientAddress, now);
-    const ix = await this.agentTransferSplIx(agent.publicKey, recipient, token, amount);
-    const { tx } = await this.buildTransaction([ix], agent.publicKey);
-    tx.sign(agent);
+    const ix = await this.agentTransferSplIx(signer.publicKey, recipient, token, amount);
+    const { tx } = await this.buildTransaction([ix], signer.publicKey);
 
-    const sim = await this.conn.simulateTransaction(tx);
+    const sim = await this.simulateUnsigned(tx);
     const logs = sim.value.logs ?? [];
     const fee = await this.estimateFee(tx);
     const customCode = extractCustomErrorCode(sim.value.err, logs);
@@ -305,12 +333,12 @@ export class AegisClient {
     amount: bigint,
     opts: { skipPreflight?: boolean } = {},
   ): Promise<TransferExecution> {
-    const agent = requireAgentKeypair(this.config);
+    const signer = this.agentSigner();
     const policy = await this.getPolicy();
     const now = await this.chainTime();
-    const ix = await this.agentTransferSplIx(agent.publicKey, recipient, token, amount);
-    const { tx, latestBlockhash } = await this.buildTransaction([ix], agent.publicKey);
-    tx.sign(agent);
+    const ix = await this.agentTransferSplIx(signer.publicKey, recipient, token, amount);
+    const { tx, latestBlockhash } = await this.buildTransaction([ix], signer.publicKey);
+    await signer.signTransaction(tx);
 
     const tokenRemaining = (): bigint =>
       policy.tokenDailyLimit > policy.tokenSpentToday ? policy.tokenDailyLimit - policy.tokenSpentToday : 0n;
@@ -473,12 +501,11 @@ export class AegisClient {
     expiryTs: number;
   }): Promise<string> {
     const owner = requireOwnerKeypair(this.config);
-    const agent = requireAgentKeypair(this.config);
     const policy = findPolicyPda(owner.publicKey, this.config.programId);
     const addresses = {
       ...this.addresses({ policy }),
       owner: owner.publicKey,
-      agentAuthority: agent.publicKey,
+      agentAuthority: this.agentSigner().publicKey,
     };
     const ix = buildInitializePolicyIx(addresses, args);
     return this.sendOwnerTransaction([ix], owner);
@@ -522,10 +549,15 @@ export class AegisClient {
     }
 
     if (action.kind === "rotate") {
-      const nextAgent = requireNextAgentKeypair(this.config).publicKey;
-      if (this.config.agentKeypair?.publicKey.equals(nextAgent)) {
+      const nextAgent = resolveNextAgentPublicKey(this.config.nextAgentKeypair);
+      if (!nextAgent) {
         throw new PraxisConfigError(
-          "PRAXIS_NEXT_AGENT_KEYPAIR must be different from PRAXIS_AGENT_KEYPAIR before rotating the agent.",
+          "Rotate requires the next agent key: set PRAXIS_NEXT_AGENT_PUBLIC_KEY (remote custody) or PRAXIS_NEXT_AGENT_KEYPAIR / PRAXIS_NEXT_AGENT_KEYPAIR_PATH.",
+        );
+      }
+      if (this.agentSigner().publicKey.equals(nextAgent)) {
+        throw new PraxisConfigError(
+          "The next agent key must be different from the current agent key before rotating.",
         );
       }
       const policy = this.policyForOwner(ownerPubkey);

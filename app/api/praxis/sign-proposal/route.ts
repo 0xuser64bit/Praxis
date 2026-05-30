@@ -1,11 +1,10 @@
-import { readJson, readString, requireMutationAuth, withProvider } from "@/server/api/json";
+import { readJson, readString, withMutationProvider } from "@/server/api/json";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const session = requireMutationAuth(request);
-  return withProvider(session, async (provider) => {
+  return withMutationProvider(request, async (provider) => {
     const body = await readJson(request);
     const proposalId = readString(body.proposalId, "proposalId");
     await provider.signProposal(proposalId);

@@ -54,6 +54,32 @@ export async function withProvider<T>(
   }
 }
 
+export async function withReadProvider<T>(
+  request: Request,
+  fn: (provider: ReturnType<typeof getPraxisServerProvider>, session: PraxisSession) => Promise<T> | T,
+): Promise<Response> {
+  try {
+    const session = requireReadAuth(request);
+    const provider = getPraxisServerProvider(session.walletAddress);
+    return jsonOk(await fn(provider, session));
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
+export async function withMutationProvider<T>(
+  request: Request,
+  fn: (provider: ReturnType<typeof getPraxisServerProvider>, session: PraxisSession) => Promise<T> | T,
+): Promise<Response> {
+  try {
+    const session = requireMutationAuth(request);
+    const provider = getPraxisServerProvider(session.walletAddress);
+    return jsonOk(await fn(provider, session));
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
 export async function withApi<T>(fn: () => Promise<T> | T): Promise<Response> {
   try {
     return jsonOk(await fn());

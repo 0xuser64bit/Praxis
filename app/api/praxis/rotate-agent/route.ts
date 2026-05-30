@@ -1,11 +1,10 @@
-import { requireMutationAuth, withProvider } from "@/server/api/json";
+import { withMutationProvider } from "@/server/api/json";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const session = requireMutationAuth(request);
-  return withProvider(session, async (provider) => {
+  return withMutationProvider(request, async (provider) => {
     await provider.rotateAgent();
     return { ok: true };
   });

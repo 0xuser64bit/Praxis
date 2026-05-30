@@ -1,11 +1,10 @@
-import { readJson, readNullableString, requireMutationAuth, withProvider } from "@/server/api/json";
+import { readJson, readNullableString, withMutationProvider } from "@/server/api/json";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const session = requireMutationAuth(request);
-  return withProvider(session, async (provider) => {
+  return withMutationProvider(request, async (provider) => {
     const body = await readJson(request);
     const preferred = readNullableString(body.threadId, "threadId", { maxLength: 128 }) ?? undefined;
     return { threadId: provider.newThread(preferred) };

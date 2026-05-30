@@ -6,6 +6,8 @@ import { POST as updatePolicy } from "../update-policy/route";
 import { POST as authVerify } from "../auth/verify/route";
 import { GET as getPolicy } from "../get-policy/route";
 import { POST as sendRoute } from "../send/route";
+import { POST as ownerBuild } from "../owner/build/route";
+import { POST as ownerSubmit } from "../owner/submit/route";
 import { createSessionCookie } from "@/server/auth/session";
 import { makeRequest } from "@/server/testing/fixtures";
 
@@ -75,6 +77,35 @@ describe("mutation auth gating", () => {
 
   test("400 on an oversized send payload", async () => {
     const res = await sendRoute(authed("/api/praxis/send", { text: "x".repeat(2_001) }));
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("wallet-signed owner routes", () => {
+  test("owner/build: 401 without a session", async () => {
+    const res = await ownerBuild(
+      makeRequest(`${ORIGIN}/api/praxis/owner/build`, { origin: ORIGIN, body: { action: { kind: "revoke" } } }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test("owner/build: 400 on an invalid action with a valid session", async () => {
+    const res = await ownerBuild(authed("/api/praxis/owner/build", { action: { kind: "wat" } }));
+    expect(res.status).toBe(400);
+  });
+
+  test("owner/submit: 401 without a session", async () => {
+    const res = await ownerSubmit(
+      makeRequest(`${ORIGIN}/api/praxis/owner/submit`, {
+        origin: ORIGIN,
+        body: { transaction: "AQID", blockhash: "h", lastValidBlockHeight: 1 },
+      }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test("owner/submit: 400 on a missing transaction with a valid session", async () => {
+    const res = await ownerSubmit(authed("/api/praxis/owner/submit", { blockhash: "h", lastValidBlockHeight: 1 }));
     expect(res.status).toBe(400);
   });
 });

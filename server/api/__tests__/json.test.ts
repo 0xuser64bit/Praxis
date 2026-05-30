@@ -5,10 +5,12 @@ import {
   readBaseUnits,
   readJson,
   readNumber,
+  readOwnerAction,
   readPolicyPatch,
   readString,
   readStringArray,
   readTokenEnvelopeConfig,
+  readUnsignedOwnerTransaction,
   assertSameOrigin,
 } from "../json";
 import { makeRequest } from "../../testing/fixtures";
@@ -92,6 +94,49 @@ describe("scalar readers", () => {
       readTokenEnvelopeConfig({ tokenMint: "M", tokenMaxPerTx: "5", tokenDailyLimit: "50" }),
     ).toEqual({ tokenMint: "M", tokenMaxPerTx: 5n, tokenDailyLimit: 50n });
     expect(() => readTokenEnvelopeConfig({ tokenMint: "M", tokenMaxPerTx: "5" })).toThrow();
+  });
+});
+
+describe("readOwnerAction", () => {
+  test("accepts revoke and rotate", () => {
+    expect(readOwnerAction({ kind: "revoke" })).toEqual({ kind: "revoke" });
+    expect(readOwnerAction({ kind: "rotate" })).toEqual({ kind: "rotate" });
+  });
+
+  test("parses an updatePolicy patch", () => {
+    expect(readOwnerAction({ kind: "updatePolicy", patch: { maxPerTx: "10", paused: true } })).toEqual({
+      kind: "updatePolicy",
+      patch: { maxPerTx: 10n, dailyLimit: undefined, expiryTs: undefined, paused: true },
+    });
+  });
+
+  test("parses an allowList action and validates the mode", () => {
+    expect(readOwnerAction({ kind: "allowList", listKind: "mints", address: "Mint11111", mode: "add" })).toEqual({
+      kind: "allowList",
+      listKind: "mints",
+      address: "Mint11111",
+      mode: "add",
+    });
+    expect(() => readOwnerAction({ kind: "allowList", listKind: "mints", address: "x", mode: "nope" })).toThrow(
+      /add or remove/,
+    );
+  });
+
+  test("rejects an unknown kind and non-objects", () => {
+    expect(() => readOwnerAction({ kind: "selfDestruct" })).toThrow(/updatePolicy, allowList, revoke, or rotate/);
+    expect(() => readOwnerAction("revoke")).toThrow(/must be an object/);
+  });
+});
+
+describe("readUnsignedOwnerTransaction", () => {
+  test("requires transaction, blockhash, and a numeric lastValidBlockHeight", () => {
+    expect(
+      readUnsignedOwnerTransaction({ transaction: "AQID", blockhash: "abc", lastValidBlockHeight: 99 }),
+    ).toEqual({ transaction: "AQID", blockhash: "abc", lastValidBlockHeight: 99 });
+    expect(() => readUnsignedOwnerTransaction({ transaction: "AQID", blockhash: "abc" })).toThrow();
+    expect(() =>
+      readUnsignedOwnerTransaction({ transaction: "AQID", blockhash: "abc", lastValidBlockHeight: 1.5 }),
+    ).toThrow(/safe integer/);
   });
 });
 

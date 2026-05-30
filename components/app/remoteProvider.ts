@@ -13,6 +13,21 @@ import type {
   TokenEnvelopeConfig,
 } from "@praxis/shared";
 
+import { getOwnerWalletSigner } from "./lib/walletSigner";
+
+/** Client mirror of the server's owner-action request shape (validated server-side). */
+type OwnerActionRequest =
+  | { kind: "updatePolicy"; patch: PolicyUpdate }
+  | { kind: "allowList"; listKind: AllowListKind; address: string; mode: "add" | "remove" }
+  | { kind: "revoke" }
+  | { kind: "rotate" };
+
+interface OwnerActionDraft {
+  transaction: string;
+  blockhash: string;
+  lastValidBlockHeight: number;
+}
+
 interface RemoteStoreState {
   threads: Thread[];
   proposals: Record<string, ActionProposal>;
@@ -92,7 +107,10 @@ export class RemotePraxisProvider implements PraxisProvider {
   };
 
   updatePolicy = async (patch: PolicyUpdate): Promise<void> => {
-    await this.mutate(() => this.post("/api/praxis/update-policy", { patch: toWire(patch) }));
+    await this.ownerAction(
+      { kind: "updatePolicy", patch },
+      () => this.post("/api/praxis/update-policy", { patch: toWire(patch) }),
+    );
     await this.refreshAll();
   };
 
@@ -107,24 +125,53 @@ export class RemotePraxisProvider implements PraxisProvider {
   };
 
   revokeAgent = async (): Promise<void> => {
-    await this.mutate(() => this.post("/api/praxis/revoke-agent", {}));
+    await this.ownerAction({ kind: "revoke" }, () => this.post("/api/praxis/revoke-agent", {}));
     await this.refreshAll();
   };
 
   rotateAgent = async (): Promise<void> => {
-    await this.mutate(() => this.post("/api/praxis/rotate-agent", {}));
+    await this.ownerAction({ kind: "rotate" }, () => this.post("/api/praxis/rotate-agent", {}));
     await this.refreshAll();
   };
 
   addToAllowList = async (kind: AllowListKind, address: string): Promise<void> => {
-    await this.mutate(() => this.post("/api/praxis/add-to-allow-list", { kind, address }));
+    await this.ownerAction(
+      { kind: "allowList", listKind: kind, address, mode: "add" },
+      () => this.post("/api/praxis/add-to-allow-list", { kind, address }),
+    );
     await this.refreshAll();
   };
 
   removeFromAllowList = async (kind: AllowListKind, address: string): Promise<void> => {
-    await this.mutate(() => this.post("/api/praxis/remove-from-allow-list", { kind, address }));
+    await this.ownerAction(
+      { kind: "allowList", listKind: kind, address, mode: "remove" },
+      () => this.post("/api/praxis/remove-from-allow-list", { kind, address }),
+    );
     await this.refreshAll();
   };
+
+  /**
+   * Run an owner action. When a signing wallet is present, build the unsigned
+   * transaction server-side, sign it in the wallet, and submit it — the backend
+   * never holds the owner key. Otherwise fall back to the backend-keypair route
+   * (local/devnet), which 503s if no backend owner key is configured.
+   */
+  private async ownerAction(action: OwnerActionRequest, legacy: () => Promise<unknown>): Promise<void> {
+    const signer = getOwnerWalletSigner();
+    if (!signer) {
+      await this.mutate(legacy);
+      return;
+    }
+    const draft = await this.post<OwnerActionDraft>("/api/praxis/owner/build", { action });
+    const transaction = await signer.signTransaction(draft.transaction);
+    await this.mutate(() =>
+      this.post("/api/praxis/owner/submit", {
+        transaction,
+        blockhash: draft.blockhash,
+        lastValidBlockHeight: draft.lastValidBlockHeight,
+      }),
+    );
+  }
 
   private async refreshAll() {
     try {

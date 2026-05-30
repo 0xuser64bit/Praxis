@@ -41,13 +41,18 @@ scopes the off-chain workspace state. Copy `.env.example`, then configure:
 - `PRAXIS_AGENT_KEYPAIR_PATH` or `PRAXIS_AGENT_KEYPAIR`
 - `PRAXIS_NEXT_AGENT_KEYPAIR_PATH` or `PRAXIS_NEXT_AGENT_KEYPAIR` for
   rotate/re-enable; it must be different from the current agent key
-- `PRAXIS_OWNER_KEYPAIR_PATH` only for local/devnet owner/admin routes; it must
-  match the wallet you sign in with
+- `PRAXIS_OWNER_KEYPAIR_PATH` is optional and only for the local/devnet
+  backend-keypair fallback (and scripts); it must match the wallet you sign in
+  with
 - `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`, unless using `PRAXIS_LOCAL_INTENT=1`
 
-Server-side owner key custody is still a local/devnet convenience. Production
-owner/admin actions should be wallet-signed transactions, not backend keypair
-transactions.
+Owner/admin policy actions (update caps/expiry/pause, allow-lists, revoke,
+rotate) are **wallet-signed** when a signing wallet is present: the server builds
+an unsigned transaction, the wallet signs it, and the server submits it — the
+backend never holds the owner key. The backend owner keypair remains only as a
+local/devnet fallback when no browser wallet can sign (and for scripts). Token
+envelope setup/funding still uses the backend keypair and stays a local/devnet
+convenience.
 
 ```bash
 bun run dev
@@ -97,7 +102,7 @@ the vault ATA during setup.
 This repo is a strong local/devnet MVP candidate. Managed state storage is now
 available — set `PRAXIS_STATE_BACKEND=postgres` with a `DATABASE_URL` (Neon or
 any Postgres) to persist threads/proposals/activity durably across instances;
-the filesystem backend remains the default for local/devnet. Before production,
-also move owner/admin actions to wallet-signed transactions, put the agent key
-in a real key-management boundary, and add platform-level rate limiting and
-monitoring.
+the filesystem backend remains the default for local/devnet. Owner/admin policy
+actions are already wallet-signed (above). Before production, also put the agent
+session key in a real key-management boundary and add platform-level rate
+limiting and monitoring.

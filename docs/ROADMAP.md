@@ -20,6 +20,10 @@ behavior as shipped.
 - Swap intents parsed as policy previews only. They are always blocked because
   `agent_swap` and Jupiter CPI are not implemented.
 - Wallet signed-message sessions for API mode.
+- Wallet-signed owner/admin policy actions (update caps/expiry/pause,
+  allow-lists, revoke, rotate): the server builds an unsigned transaction the
+  wallet signs and the server submits, with a backend-keypair fallback for
+  local/devnet and scripts.
 - Wallet-scoped API providers behind a `StateRepository` seam, with a
   filesystem backend (local/devnet) and a managed Postgres/Neon backend
   (`PRAXIS_STATE_BACKEND=postgres`) for durable threads, proposals, and activity.
@@ -31,7 +35,8 @@ behavior as shipped.
 
 - Durable user/profile records (the managed Postgres backend persists
   threads/proposals/activity per wallet; there is no separate users table yet).
-- Wallet-signed owner/admin transactions.
+- Wallet-signed SPL token envelope setup and vault funding (policy admin
+  actions are already wallet-signed; token setup still uses the backend keypair).
 - Managed SPL vault funding UX.
 - Durable rejected-action indexing. The on-chain action log stores allowed
   actions; rejected actions exist as failed transaction logs or session state.
@@ -56,8 +61,9 @@ depend on hand-created token accounts.
 1. ~~Replace filesystem state with a managed database.~~ Done — a
    `StateRepository` seam ships filesystem (local) and Postgres/Neon (managed)
    backends, switched by `PRAXIS_STATE_BACKEND`.
-2. Move owner/admin authority to wallet-signed transactions or a clearly
-   authorized backend custody model.
+2. ~~Move owner/admin authority to wallet-signed transactions or a clearly
+   authorized backend custody model.~~ Done for policy actions (update, allow
+   lists, revoke, rotate). Remaining: wallet-signed token envelope setup/funding.
 3. Add durable user/profile records if email or team features become necessary.
 
 Expected outcome: multiple real users can use the app without relying on

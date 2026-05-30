@@ -46,6 +46,25 @@ import {
 import type { ActionLogEntry, PolicyCheckResult, TokenInfo } from "@praxis/shared";
 import { formatSol, formatUnits } from "../units";
 
+/**
+ * An owner/admin policy action. Built server-side as an unsigned transaction the
+ * owner WALLET signs (production custody), or sent directly by the backend owner
+ * keypair (local/devnet fallback). Token setup actions stay on the keypair path.
+ */
+export type OwnerAction =
+  | { kind: "updatePolicy"; patch: PolicyUpdate }
+  | { kind: "allowList"; listKind: AllowListKind; address: string; mode: "add" | "remove" }
+  | { kind: "revoke" }
+  | { kind: "rotate" };
+
+/** A serialized unsigned owner transaction plus the blockhash to confirm it. */
+export interface UnsignedOwnerTransaction {
+  /** base64-encoded, unsigned legacy transaction with feePayer = owner wallet. */
+  transaction: string;
+  blockhash: string;
+  lastValidBlockHeight: number;
+}
+
 export interface TransferSimulation {
   check: PolicyCheckResult;
   simulation: string;
@@ -473,62 +492,127 @@ export class AegisClient {
   }
 
   async updatePolicy(patch: PolicyUpdate): Promise<string> {
-    const owner = requireOwnerKeypair(this.config);
-    const current = await this.getPolicy();
-    const policy = new PublicKey(current.address);
-    const ix = buildUpdatePolicyIx({ ...this.addresses({ policy }), owner: owner.publicKey }, {
-      maxPerTx: patch.maxPerTx ?? current.maxPerTx,
-      dailyLimit: patch.dailyLimit ?? current.dailyLimit,
-      allowedPrograms: current.allowedPrograms,
-      allowedRecipients: current.allowedRecipients,
-      allowedMints: current.allowedMints,
-      expiryTs: patch.expiryTs ?? current.expiryTs,
-      paused: patch.paused ?? current.paused,
-    });
-    return this.sendOwnerTransaction([ix], owner);
+    return this.sendOwnerAction({ kind: "updatePolicy", patch });
   }
 
   async updateAllowList(kind: AllowListKind, address: string, mode: "add" | "remove"): Promise<string> {
-    const owner = requireOwnerKeypair(this.config);
-    const current = await this.getPolicy();
-    const normalizedAddress = validatePublicKey(address).toBase58();
-    const field = kind === "programs" ? "allowedPrograms" : kind === "recipients" ? "allowedRecipients" : "allowedMints";
-    const next = new Set(current[field]);
-    if (mode === "add") next.add(normalizedAddress);
-    else next.delete(normalizedAddress);
-
-    const policy = new PublicKey(current.address);
-    const ix = buildUpdatePolicyIx({ ...this.addresses({ policy }), owner: owner.publicKey }, {
-      maxPerTx: current.maxPerTx,
-      dailyLimit: current.dailyLimit,
-      allowedPrograms: field === "allowedPrograms" ? [...next] : current.allowedPrograms,
-      allowedRecipients: field === "allowedRecipients" ? [...next] : current.allowedRecipients,
-      allowedMints: field === "allowedMints" ? [...next] : current.allowedMints,
-      expiryTs: current.expiryTs,
-      paused: current.paused,
-    });
-    return this.sendOwnerTransaction([ix], owner);
+    return this.sendOwnerAction({ kind: "allowList", listKind: kind, address, mode });
   }
 
   async revokeAgent(): Promise<string> {
-    const owner = requireOwnerKeypair(this.config);
-    const policy = this.policyForOwner(owner.publicKey);
-    const ix = buildRevokeAgentIx({ ...this.addresses({ policy }), owner: owner.publicKey });
-    return this.sendOwnerTransaction([ix], owner);
+    return this.sendOwnerAction({ kind: "revoke" });
   }
 
   async rotateAgent(): Promise<string> {
-    const owner = requireOwnerKeypair(this.config);
-    const nextAgentKeypair = requireNextAgentKeypair(this.config);
-    const currentAgent = this.config.agentKeypair?.publicKey;
-    if (currentAgent?.equals(nextAgentKeypair.publicKey)) {
-      throw new PraxisConfigError(
-        "PRAXIS_NEXT_AGENT_KEYPAIR must be different from PRAXIS_AGENT_KEYPAIR before rotating the agent.",
-      );
+    return this.sendOwnerAction({ kind: "rotate" });
+  }
+
+  /**
+   * Build the instruction(s) for an owner action against an explicit owner
+   * public key (the signed-in WALLET in production, or the backend owner keypair
+   * for the local/devnet path). The owner is the sole signer for all of these.
+   */
+  async ownerActionInstructions(
+    ownerPubkey: PublicKey,
+    action: OwnerAction,
+  ): Promise<TransactionInstruction[]> {
+    if (action.kind === "revoke") {
+      const policy = this.policyForOwner(ownerPubkey);
+      return [buildRevokeAgentIx({ ...this.addresses({ policy }), owner: ownerPubkey })];
     }
-    const policy = this.policyForOwner(owner.publicKey);
-    const ix = buildRotateAgentIx({ ...this.addresses({ policy }), owner: owner.publicKey }, nextAgentKeypair.publicKey);
-    return this.sendOwnerTransaction([ix], owner);
+
+    if (action.kind === "rotate") {
+      const nextAgent = requireNextAgentKeypair(this.config).publicKey;
+      if (this.config.agentKeypair?.publicKey.equals(nextAgent)) {
+        throw new PraxisConfigError(
+          "PRAXIS_NEXT_AGENT_KEYPAIR must be different from PRAXIS_AGENT_KEYPAIR before rotating the agent.",
+        );
+      }
+      const policy = this.policyForOwner(ownerPubkey);
+      return [buildRotateAgentIx({ ...this.addresses({ policy }), owner: ownerPubkey }, nextAgent)];
+    }
+
+    const current = await this.getPolicy();
+    const policy = new PublicKey(current.address);
+    const base = {
+      maxPerTx: current.maxPerTx,
+      dailyLimit: current.dailyLimit,
+      allowedPrograms: current.allowedPrograms,
+      allowedRecipients: current.allowedRecipients,
+      allowedMints: current.allowedMints,
+      expiryTs: current.expiryTs,
+      paused: current.paused,
+    };
+
+    if (action.kind === "updatePolicy") {
+      return [
+        buildUpdatePolicyIx({ ...this.addresses({ policy }), owner: ownerPubkey }, {
+          ...base,
+          maxPerTx: action.patch.maxPerTx ?? current.maxPerTx,
+          dailyLimit: action.patch.dailyLimit ?? current.dailyLimit,
+          expiryTs: action.patch.expiryTs ?? current.expiryTs,
+          paused: action.patch.paused ?? current.paused,
+        }),
+      ];
+    }
+
+    const normalizedAddress = validatePublicKey(action.address).toBase58();
+    const field =
+      action.listKind === "programs"
+        ? "allowedPrograms"
+        : action.listKind === "recipients"
+          ? "allowedRecipients"
+          : "allowedMints";
+    const next = new Set(current[field]);
+    if (action.mode === "add") next.add(normalizedAddress);
+    else next.delete(normalizedAddress);
+
+    return [
+      buildUpdatePolicyIx({ ...this.addresses({ policy }), owner: ownerPubkey }, {
+        ...base,
+        allowedPrograms: field === "allowedPrograms" ? [...next] : current.allowedPrograms,
+        allowedRecipients: field === "allowedRecipients" ? [...next] : current.allowedRecipients,
+        allowedMints: field === "allowedMints" ? [...next] : current.allowedMints,
+      }),
+    ];
+  }
+
+  /** Build an UNSIGNED owner transaction for the wallet to sign (production custody). */
+  async buildUnsignedOwnerTransaction(
+    ownerPubkey: PublicKey,
+    action: OwnerAction,
+  ): Promise<UnsignedOwnerTransaction> {
+    const instructions = await this.ownerActionInstructions(ownerPubkey, action);
+    const { tx, latestBlockhash } = await this.buildTransaction(instructions, ownerPubkey);
+    return {
+      transaction: tx
+        .serialize({ requireAllSignatures: false, verifySignatures: false })
+        .toString("base64"),
+      blockhash: latestBlockhash.blockhash,
+      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+    };
+  }
+
+  /** Submit a wallet-signed owner transaction and wait for confirmation. */
+  async submitSignedTransaction(input: UnsignedOwnerTransaction): Promise<string> {
+    const raw = Buffer.from(input.transaction, "base64");
+    const sig = await this.conn.sendRawTransaction(raw, {
+      preflightCommitment: this.config.commitment,
+    });
+    const confirmation = await this.conn.confirmTransaction(
+      { signature: sig, blockhash: input.blockhash, lastValidBlockHeight: input.lastValidBlockHeight },
+      this.config.commitment,
+    );
+    if (confirmation.value.err) {
+      throw new Error(`owner transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+    }
+    return sig;
+  }
+
+  private async sendOwnerAction(action: OwnerAction): Promise<string> {
+    const owner = requireOwnerKeypair(this.config);
+    const instructions = await this.ownerActionInstructions(owner.publicKey, action);
+    return this.sendOwnerTransaction(instructions, owner);
   }
 
   private async agentTransferIx(

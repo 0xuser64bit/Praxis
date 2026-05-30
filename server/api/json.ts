@@ -1,5 +1,6 @@
 import { parseUnits } from "@praxis/shared";
 
+import type { OwnerAction, UnsignedOwnerTransaction } from "../aegis/client";
 import {
   getPraxisServerProvider,
   type PraxisServerProvider,
@@ -195,6 +196,42 @@ export function readBaseUnits(value: unknown, name: string): bigint {
 export function readAllowListKind(value: unknown) {
   if (value === "programs" || value === "recipients" || value === "mints") return value;
   throw new PraxisInputError("kind must be programs, recipients, or mints");
+}
+
+export function readOwnerAction(value: unknown): OwnerAction {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new PraxisInputError("action must be an object");
+  }
+  const action = value as Record<string, unknown>;
+  switch (action.kind) {
+    case "revoke":
+      return { kind: "revoke" };
+    case "rotate":
+      return { kind: "rotate" };
+    case "updatePolicy":
+      return { kind: "updatePolicy", patch: readPolicyPatch(action.patch) };
+    case "allowList": {
+      if (action.mode !== "add" && action.mode !== "remove") {
+        throw new PraxisInputError("action.mode must be add or remove");
+      }
+      return {
+        kind: "allowList",
+        listKind: readAllowListKind(action.listKind),
+        address: readString(action.address, "action.address", { maxLength: 64 }),
+        mode: action.mode,
+      };
+    }
+    default:
+      throw new PraxisInputError("action.kind must be updatePolicy, allowList, revoke, or rotate");
+  }
+}
+
+export function readUnsignedOwnerTransaction(value: Record<string, unknown>): UnsignedOwnerTransaction {
+  return {
+    transaction: readString(value.transaction, "transaction", { maxLength: 8_192 }),
+    blockhash: readString(value.blockhash, "blockhash", { maxLength: 128 }),
+    lastValidBlockHeight: readNumber(value.lastValidBlockHeight, "lastValidBlockHeight"),
+  };
 }
 
 export function requireReadAuth(request: Request): PraxisSession {

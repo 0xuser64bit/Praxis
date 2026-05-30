@@ -15,7 +15,11 @@ import {
   type TokenInfo,
 } from "@praxis/shared";
 
-import { AegisClient } from "../aegis/client";
+import {
+  AegisClient,
+  type OwnerAction,
+  type UnsignedOwnerTransaction,
+} from "../aegis/client";
 import { JUPITER_PROGRAM_ID } from "../aegis/constants";
 import { AddressBook } from "../agent/addressBook";
 import { checkSwapPolicy } from "../agent/policy";
@@ -321,6 +325,24 @@ export class PraxisServerProvider implements PraxisProvider {
     await this.refreshOnChain();
   };
 
+  /**
+   * Build an UNSIGNED owner-action transaction for the signed-in wallet to sign.
+   * This is the production custody path: the backend never holds the owner key;
+   * the owner's wallet is the sole signer. The on-chain `has_one = owner`
+   * constraint binds the transaction to this session's wallet PDA.
+   */
+  buildOwnerAction = async (action: OwnerAction): Promise<UnsignedOwnerTransaction> => {
+    return this.aegis.buildUnsignedOwnerTransaction(this.requireOwnerWallet(), action);
+  };
+
+  /** Submit a wallet-signed owner transaction, then refresh on-chain state. */
+  submitOwnerAction = async (input: UnsignedOwnerTransaction): Promise<{ signature: string }> => {
+    this.requireOwnerWallet();
+    const signature = await this.aegis.submitSignedTransaction(input);
+    await this.refreshOnChain();
+    return { signature };
+  };
+
   addToAllowList = async (kind: AllowListKind, address: string): Promise<void> => {
     this.assertBackendOwnerSigningAvailable();
     validatePublicKey(address);
@@ -584,6 +606,13 @@ export class PraxisServerProvider implements PraxisProvider {
 
   private id(prefix: string): string {
     return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  private requireOwnerWallet(): PublicKey {
+    if (!this.config.ownerAddress) {
+      throw new PraxisConfigError("No owner wallet is associated with this session.");
+    }
+    return this.config.ownerAddress;
   }
 
   private assertBackendOwnerSigningAvailable() {

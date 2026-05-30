@@ -47,9 +47,19 @@ export function jsonError(error: unknown, init: ResponseInit = {}): Response {
     logger.warn("praxis.config_error", errorFields(error));
   }
 
+  // Config (503) failures frequently name internal env vars in their message.
+  // That detail is for operators (already logged above), not end users — return
+  // a generic, non-leaky note to the client instead.
+  const clientMessage =
+    status === 503
+      ? "Praxis is temporarily unavailable due to a server configuration issue. Please try again shortly."
+      : error instanceof Error
+        ? error.message
+        : "Unexpected Praxis backend error";
+
   return Response.json(
     {
-      error: error instanceof Error ? error.message : "Unexpected Praxis backend error",
+      error: clientMessage,
       type: error instanceof Error ? error.name : "Error",
     },
     { ...init, status, headers: withNoStore(init.headers) },
@@ -237,6 +247,13 @@ export function readOwnerAction(value: unknown): OwnerAction {
       }
       return { kind: "fundVault", amount };
     }
+    case "withdrawVault": {
+      const amount = readBaseUnits(action.amount, "action.amount");
+      if (amount <= 0n) {
+        throw new PraxisInputError("action.amount must be greater than zero");
+      }
+      return { kind: "withdrawVault", amount };
+    }
     case "revoke":
       return { kind: "revoke" };
     case "rotate":
@@ -255,7 +272,7 @@ export function readOwnerAction(value: unknown): OwnerAction {
       };
     }
     default:
-      throw new PraxisInputError("action.kind must be bootstrapPolicy, fundVault, updatePolicy, allowList, revoke, or rotate");
+      throw new PraxisInputError("action.kind must be bootstrapPolicy, fundVault, withdrawVault, updatePolicy, allowList, revoke, or rotate");
   }
 }
 

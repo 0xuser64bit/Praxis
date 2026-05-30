@@ -264,6 +264,8 @@ export interface PraxisProvider {
   bootstrapPolicy(fundLamports?: BaseUnits): Promise<void>;
   /** Deposit SOL from the owner wallet into the policy's vault. */
   fundVault(amount: BaseUnits): Promise<void>;
+  /** Withdraw SOL from the policy's vault back to the owner wallet (owner-only, uncapped). */
+  withdrawVault(amount: BaseUnits): Promise<void>;
   updatePolicy(patch: PolicyUpdate): Promise<void>;
   /** Configure the SPL-token envelope (mint + token caps). */
   configureToken(config: TokenEnvelopeConfig): Promise<void>;

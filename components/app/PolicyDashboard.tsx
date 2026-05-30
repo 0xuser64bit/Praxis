@@ -10,6 +10,7 @@
 import type { AllowListKind, PolicyView, TokenEnvelopeConfig } from "@praxis/shared";
 import { remaining as calcRemaining } from "@praxis/shared";
 import {
+  IconArrowUp,
   IconCheck,
   IconKey,
   IconPencil,
@@ -113,6 +114,12 @@ export function PolicyDashboard() {
           </div>
         )}
 
+        <VaultCard
+          policy={policy}
+          onFund={(amount) => runMutation(() => provider.fundVault(amount), "Could not add funds to the vault.")}
+          onWithdraw={(amount) => runMutation(() => provider.withdrawVault(amount), "Could not withdraw from the vault.")}
+        />
+
         <SpendCard policy={policy} now={now} />
 
         <div className="mt-4 grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
@@ -183,10 +190,6 @@ export function PolicyDashboard() {
           </div>
         </Card>
 
-        <VaultCard
-          policy={policy}
-          onFund={(amount) => runMutation(() => provider.fundVault(amount), "Could not add funds to the vault.")}
-        />
       </div>
 
       {revokeOpen && (
@@ -578,23 +581,32 @@ function SessionCard({
 function VaultCard({
   policy,
   onFund,
+  onWithdraw,
 }: {
   policy: PolicyView;
   onFund: (amount: bigint) => void;
+  onWithdraw: (amount: bigint) => void;
 }) {
-  const [adding, setAdding] = useState(false);
+  const [mode, setMode] = useState<"fund" | "withdraw" | null>(null);
   const [draft, setDraft] = useState("");
   const parsed = parseFundAmount(draft);
+  const overBalance = mode === "withdraw" && parsed !== null && parsed > policy.vaultBalance;
+  const valid = parsed !== null && !overBalance;
+
+  const open = (next: "fund" | "withdraw") => {
+    setMode((current) => (current === next ? null : next));
+    setDraft("");
+  };
 
   const submit = () => {
-    if (parsed === null) return;
-    onFund(parsed);
+    if (!valid || parsed === null || mode === null) return;
+    (mode === "fund" ? onFund : onWithdraw)(parsed);
     setDraft("");
-    setAdding(false);
+    setMode(null);
   };
 
   return (
-    <Card className="mt-4 p-5">
+    <Card className="p-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--bg-elevated)] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)]">
@@ -612,35 +624,67 @@ function VaultCard({
             {formatSol(policy.vaultBalance)}{" "}
             <span className="text-[15px] text-[var(--text-tertiary)]">SOL</span>
           </div>
-          <button
-            type="button"
-            onClick={() => setAdding((value) => !value)}
-            className="mt-1.5 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)]"
-          >
-            <IconPlus size={12} /> Add funds
-          </button>
+          <div className="mt-1.5 flex justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => open("fund")}
+              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] ${
+                mode === "fund" ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]"
+              }`}
+            >
+              <IconPlus size={12} /> Add funds
+            </button>
+            <button
+              type="button"
+              onClick={() => open("withdraw")}
+              disabled={policy.vaultBalance === 0n}
+              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40 ${
+                mode === "withdraw" ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]"
+              }`}
+            >
+              <IconArrowUp size={12} /> Withdraw
+            </button>
+          </div>
         </div>
       </div>
 
-      {adding && (
-        <div className="mt-4 flex items-center gap-2 [border-top:0.5px_solid_var(--border)] pt-4">
-          <div className="relative flex-1">
-            <input
-              autoFocus
-              inputMode="decimal"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && submit()}
-              placeholder="0.5"
-              className="h-9 w-full rounded-md bg-[var(--bg)] pl-3 pr-12 text-[13px] text-[var(--text-primary)] [border:0.5px_solid_var(--border)] outline-none focus:[border-color:var(--accent)]"
-            />
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-tertiary)]">
-              SOL
-            </span>
+      {mode && (
+        <div className="mt-4 [border-top:0.5px_solid_var(--border)] pt-4">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                autoFocus
+                inputMode="decimal"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && submit()}
+                placeholder={mode === "withdraw" ? formatSol(policy.vaultBalance) : "0.5"}
+                className="h-9 w-full rounded-md bg-[var(--bg)] pl-3 pr-12 text-[13px] text-[var(--text-primary)] [border:0.5px_solid_var(--border)] outline-none focus:[border-color:var(--accent)]"
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-tertiary)]">
+                SOL
+              </span>
+            </div>
+            {mode === "withdraw" && (
+              <button
+                type="button"
+                onClick={() => setDraft(formatSol(policy.vaultBalance))}
+                className="h-9 rounded-md px-2 text-[11px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:text-[var(--accent)]"
+              >
+                Max
+              </button>
+            )}
+            <Button onClick={submit} disabled={!valid}>
+              {mode === "fund" ? "Deposit" : "Withdraw"}
+            </Button>
           </div>
-          <Button onClick={submit} disabled={parsed === null}>
-            Deposit
-          </Button>
+          <p className="mt-2 text-[11px] leading-[1.5] text-[var(--text-tertiary)]">
+            {overBalance
+              ? "Amount exceeds the vault balance."
+              : mode === "fund"
+                ? "Moves SOL from your wallet into the agent vault."
+                : "Returns SOL from the vault to your wallet. Owner-only — no policy limits apply."}
+          </p>
         </div>
       )}
     </Card>

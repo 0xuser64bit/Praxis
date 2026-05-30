@@ -286,6 +286,16 @@ export class MockPraxisProvider implements PraxisProvider {
     this.notify();
   };
 
+  withdrawVault = async (amount: bigint): Promise<void> => {
+    await delay(200);
+    const next = this.state.policy.vaultBalance - amount;
+    this.state.policy = {
+      ...this.state.policy,
+      vaultBalance: next > 0n ? next : 0n,
+    };
+    this.notify();
+  };
+
   updatePolicy = async (patch: PolicyUpdate): Promise<void> => {
     await delay(250);
     this.state.policy = {

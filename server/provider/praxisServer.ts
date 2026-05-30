@@ -301,6 +301,12 @@ export class PraxisServerProvider implements PraxisProvider {
     await this.refreshOnChain();
   };
 
+  withdrawVault = async (amount: bigint): Promise<void> => {
+    this.assertBackendOwnerSigningAvailable();
+    await this.aegis.withdrawVault(amount);
+    await this.refreshOnChain();
+  };
+
   updatePolicy = async (patch: PolicyUpdate): Promise<void> => {
     this.assertBackendOwnerSigningAvailable();
     await this.aegis.updatePolicy(patch);

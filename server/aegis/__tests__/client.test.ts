@@ -130,6 +130,23 @@ describe("buildUnsignedOwnerTransaction", () => {
     expect(tx.instructions[0].data.readBigUInt64LE(8)).toBe(250_000_000n);
   });
 
+  test("builds a standalone withdrawVault tx against the existing policy", async () => {
+    const config = makeConfig();
+    const wallet = config.ownerAddress!;
+    const client = new AegisClient(config, fakeConnection());
+
+    const draft = await client.buildUnsignedOwnerTransaction(wallet, {
+      kind: "withdrawVault",
+      amount: 125_000_000n,
+    });
+    const tx = Transaction.from(Uint8Array.from(Buffer.from(draft.transaction, "base64")));
+
+    expect(tx.instructions).toHaveLength(1);
+    expect(tx.feePayer?.equals(wallet)).toBe(true);
+    expect(tx.instructions[0].keys.some((key) => key.pubkey.equals(wallet) && key.isSigner)).toBe(true);
+    expect(tx.instructions[0].data.readBigUInt64LE(8)).toBe(125_000_000n);
+  });
+
   test("refuses to rotate to the current agent key", async () => {
     const agent = Keypair.generate();
     const config = makeConfig({ agentKeypair: agent, nextAgentKeypair: agent });

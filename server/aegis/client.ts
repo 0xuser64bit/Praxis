@@ -28,6 +28,7 @@ import {
   buildConfigureTokenIx,
   buildCreateAssociatedTokenAccountIdempotentIx,
   buildFundVaultIx,
+  buildWithdrawVaultIx,
   buildInitializePolicyIx,
   buildRevokeAgentIx,
   buildRotateAgentIx,
@@ -66,6 +67,7 @@ import { formatSol, formatUnits, parseHumanUnits, SOL_DECIMALS } from "../units"
 export type OwnerAction =
   | { kind: "bootstrapPolicy"; fundLamports?: bigint }
   | { kind: "fundVault"; amount: bigint }
+  | { kind: "withdrawVault"; amount: bigint }
   | { kind: "updatePolicy"; patch: PolicyUpdate }
   | { kind: "allowList"; listKind: AllowListKind; address: string; mode: "add" | "remove" }
   | { kind: "revoke" }
@@ -533,6 +535,13 @@ export class AegisClient {
     return this.sendOwnerTransaction([ix], owner);
   }
 
+  async withdrawVault(amount: bigint): Promise<string> {
+    const owner = requireOwnerKeypair(this.config);
+    const policy = this.policyForOwner(owner.publicKey);
+    const ix = buildWithdrawVaultIx({ ...this.addresses({ policy }), owner: owner.publicKey }, amount);
+    return this.sendOwnerTransaction([ix], owner);
+  }
+
   async updatePolicy(patch: PolicyUpdate): Promise<string> {
     return this.sendOwnerAction({ kind: "updatePolicy", patch });
   }
@@ -606,6 +615,14 @@ export class AegisClient {
       }
       const policy = this.policyForOwner(ownerPubkey);
       return [buildFundVaultIx({ ...this.addresses({ policy }), owner: ownerPubkey }, action.amount)];
+    }
+
+    if (action.kind === "withdrawVault") {
+      if (action.amount <= 0n) {
+        throw new PraxisInputError("Withdraw amount must be greater than zero.");
+      }
+      const policy = this.policyForOwner(ownerPubkey);
+      return [buildWithdrawVaultIx({ ...this.addresses({ policy }), owner: ownerPubkey }, action.amount)];
     }
 
     if (action.kind === "revoke") {

@@ -18,6 +18,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "litesvm",
+ "solana-account",
  "solana-clock",
  "solana-instruction",
  "solana-keypair",

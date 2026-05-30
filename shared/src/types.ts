@@ -22,9 +22,12 @@ export type BaseUnits = bigint;
 // Values are the on-chain u8 discriminants; keep them in sync.
 // ---------------------------------------------------------------------------
 
-/** The kind of action the agent proposed/executed. Phase 1: transfer only. */
+/** The kind of action the agent proposed/executed. */
 export enum ActionKind {
+  /** Native SOL transfer (`agent_transfer`). */
   Transfer = 0,
+  /** SPL-token transfer (`agent_transfer_spl`). */
+  TransferSpl = 1,
 }
 
 /**
@@ -40,6 +43,8 @@ export enum RejectReason {
   OverDaily = 4,
   RecipientNotAllowed = 5,
   Overflow = 6,
+  /** SPL path: the transfer's mint is not the policy's configured `token_mint`. */
+  MintNotAllowed = 7,
 }
 
 /** Human-readable labels for {@link RejectReason}, for previews and the log UI. */
@@ -51,6 +56,7 @@ export const REJECT_REASON_LABEL: Record<RejectReason, string> = {
   [RejectReason.OverDaily]: "exceeds the remaining daily limit",
   [RejectReason.RecipientNotAllowed]: "recipient is not in the allow-list",
   [RejectReason.Overflow]: "arithmetic overflow",
+  [RejectReason.MintNotAllowed]: "mint is not the policy's configured token mint",
 };
 
 // ---------------------------------------------------------------------------
@@ -100,6 +106,21 @@ export interface PolicyView {
   paused: boolean;
   /** Live vault balance in base units (lamports), fetched alongside the policy. */
   vaultBalance: BaseUnits;
+
+  // --- Dedicated SPL-token envelope (separate asset; its own caps/counter) ---
+  /**
+   * The single SPL mint the agent may move via `agent_transfer_spl`.
+   * `11111…1111` (default) means SPL transfers are not configured/disabled.
+   * Enforced on-chain: a token transfer's mint MUST equal this.
+   */
+  tokenMint: Address;
+  /** Per-tx cap in the TOKEN's base units (not lamports). */
+  tokenMaxPerTx: BaseUnits;
+  /** Rolling daily cap in the token's base units. */
+  tokenDailyLimit: BaseUnits;
+  tokenSpentToday: BaseUnits;
+  /** Unix seconds; start of the token's rolling 24h window. */
+  tokenDayStartTs: number;
 }
 
 // ---------------------------------------------------------------------------

@@ -67,6 +67,14 @@ pub fn handler(
     policy.paused = false;
     policy.bump = ctx.bumps.policy;
 
+    // SPL token transfers start DISABLED. The owner enables a single token
+    // envelope (mint + its own caps) later via `configure_token`.
+    policy.token_mint = Pubkey::default();
+    policy.token_max_per_tx = 0;
+    policy.token_daily_limit = 0;
+    policy.token_spent_today = 0;
+    policy.token_day_start_ts = now;
+
     let log = &mut ctx.accounts.action_log;
     log.policy = policy.key();
     log.head = 0;

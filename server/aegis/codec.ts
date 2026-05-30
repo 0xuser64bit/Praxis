@@ -10,6 +10,7 @@ import {
   ACCOUNT_DISCRIMINATOR,
   ACTION_LOG_CAP,
   KIND_TRANSFER,
+  KIND_TRANSFER_SPL,
   RESULT_ALLOWED,
   RESULT_REJECTED,
 } from "./constants";
@@ -92,6 +93,26 @@ export function decodePolicyAccount(
     expiryTs: c.i64(),
     paused: c.u8() !== 0,
     vaultBalance,
+    // `bump` then the appended SPL-token envelope (see PolicyAccount in state.rs).
+    ...readTokenEnvelope(c),
+  };
+}
+
+/** Read `bump` + the appended SPL-token envelope fields, in struct order. */
+function readTokenEnvelope(c: Cursor): {
+  tokenMint: string;
+  tokenMaxPerTx: bigint;
+  tokenDailyLimit: bigint;
+  tokenSpentToday: bigint;
+  tokenDayStartTs: number;
+} {
+  c.u8(); // bump (declared before the token fields; not surfaced in PolicyView)
+  return {
+    tokenMint: c.pubkey(),
+    tokenMaxPerTx: c.u64(),
+    tokenDailyLimit: c.u64(),
+    tokenSpentToday: c.u64(),
+    tokenDayStartTs: c.i64(),
   };
 }
 
@@ -104,13 +125,19 @@ function decodeRecord(c: Cursor): ActionLogEntry {
   const ts = c.i64();
 
   return {
-    kind: kind === KIND_TRANSFER ? ActionKind.Transfer : kind,
+    kind: decodeKind(kind),
     amount,
     target,
     result: result === RESULT_ALLOWED ? "allowed" : "rejected",
     reasonCode: result === RESULT_REJECTED ? (reason as RejectReason) : undefined,
     ts,
   };
+}
+
+function decodeKind(kind: number): ActionKind {
+  if (kind === KIND_TRANSFER) return ActionKind.Transfer;
+  if (kind === KIND_TRANSFER_SPL) return ActionKind.TransferSpl;
+  return kind as ActionKind;
 }
 
 export function decodeActionLog(data: Buffer): ActionLogEntry[] {

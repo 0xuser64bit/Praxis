@@ -35,4 +35,12 @@ pub enum AegisError {
     InsufficientVaultBalance, // 6011
     #[msg("Agent authority cannot be the default public key")]
     InvalidAgentAuthority, // 6012
+
+    // --- agent_transfer_spl (token envelope) ---
+    #[msg("Transfer mint is not the policy's configured token mint")]
+    MintNotAllowed, // 6013
+    #[msg("SPL token transfers are not configured for this policy")]
+    SplNotConfigured, // 6014
+    #[msg("Account is not a valid SPL token account for the configured mint")]
+    InvalidTokenAccount, // 6015
 }

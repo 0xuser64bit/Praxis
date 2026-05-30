@@ -1,8 +1,10 @@
 use crate::constants::*;
 use anchor_lang::prelude::*;
 
-/// Action kind discriminants (stored as `u8`). Phase 1: transfer only.
+/// Action kind discriminants (stored as `u8`).
+/// `KIND_TRANSFER` = native SOL; `KIND_TRANSFER_SPL` = an SPL-token transfer.
 pub const KIND_TRANSFER: u8 = 0;
+pub const KIND_TRANSFER_SPL: u8 = 1;
 
 /// Result discriminants for `ActionRecord.result`.
 pub const RESULT_REJECTED: u8 = 0;
@@ -20,6 +22,9 @@ pub enum RejectReason {
     OverDaily = 4,
     RecipientNotAllowed = 5,
     Overflow = 6,
+    /// The token transfer's mint is not the policy's configured `token_mint`
+    /// (the on-chain mint allow-list, single-mint form). SPL path only.
+    MintNotAllowed = 7,
 }
 
 impl RejectReason {
@@ -56,6 +61,27 @@ pub struct PolicyAccount {
     pub expiry_ts: i64,
     pub paused: bool,
     pub bump: u8,
+
+    // --- Dedicated SPL-token envelope ---
+    //
+    // A token transfer (`agent_transfer_spl`) is a different asset than the SOL
+    // vault, with different decimals and value, so it CANNOT share the SOL
+    // `spent_today`/`daily_limit` counter — mixing 6-dp USDC base units into a
+    // 9-dp lamports cap is meaningless. It gets its own envelope, tracked
+    // independently. Appended after `bump` so the existing serialized layout
+    // (and the TS codec offsets) is unchanged.
+    /// The single SPL mint the agent may move via `agent_transfer_spl`.
+    /// `Pubkey::default()` == SPL transfers disabled (not configured). Enforced
+    /// on-chain: a token transfer's mint MUST equal this — the on-chain mint
+    /// allow-list, single-mint form. Set via `configure_token` (owner-only).
+    pub token_mint: Pubkey,
+    /// Per-tx cap in the token's own base units.
+    pub token_max_per_tx: u64,
+    /// Rolling daily cap in the token's own base units.
+    pub token_daily_limit: u64,
+    pub token_spent_today: u64,
+    /// Unix seconds; start of the current rolling 24h window for the token.
+    pub token_day_start_ts: i64,
 }
 
 /// One audited action. Fixed-size so it lives in the ring buffer below.

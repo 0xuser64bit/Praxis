@@ -261,5 +261,8 @@ function isMoneyKey(key: string): boolean {
     "spentToday",
     "remaining",
     "vaultBalance",
+    "tokenMaxPerTx",
+    "tokenDailyLimit",
+    "tokenSpentToday",
   ].includes(key);
 }

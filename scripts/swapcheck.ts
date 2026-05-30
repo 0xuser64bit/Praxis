@@ -42,6 +42,11 @@ function policy(overrides: Partial<PolicyView> = {}): PolicyView {
     expiryTs: now + 7 * 86_400,
     paused: false,
     vaultBalance: 6_000_000_000n,
+    tokenMint: SYSTEM_PROGRAM_ID.toBase58(),
+    tokenMaxPerTx: 0n,
+    tokenDailyLimit: 0n,
+    tokenSpentToday: 0n,
+    tokenDayStartTs: now,
     ...overrides,
   };
 }

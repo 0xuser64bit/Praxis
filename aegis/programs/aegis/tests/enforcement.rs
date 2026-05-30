@@ -17,6 +17,7 @@ use {
         ToAccountMetas,
     },
     litesvm::{types::TransactionResult, LiteSVM},
+    solana_account::Account as SolanaAccount,
     solana_clock::Clock,
     solana_instruction::error::InstructionError,
     solana_keypair::Keypair,
@@ -29,6 +30,27 @@ use {
 const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
 fn sol(n: u64) -> u64 {
     n * LAMPORTS_PER_SOL
+}
+
+/// SPL Token program (classic), loaded by LiteSVM's default programs.
+fn spl_token_id() -> Pubkey {
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".parse().unwrap()
+}
+
+/// Demo token base units (6 decimals, USDC-style): `tok(1)` == 1_000_000.
+fn tok(n: u64) -> u64 {
+    n * 1_000_000
+}
+
+/// Build a classic 165-byte SPL token account's data (mint, owner, amount,
+/// state=Initialized); all other COption fields are None/zero.
+fn token_account_data(mint: &Pubkey, owner: &Pubkey, amount: u64) -> Vec<u8> {
+    let mut d = vec![0u8; 165];
+    d[0..32].copy_from_slice(mint.as_ref());
+    d[32..64].copy_from_slice(owner.as_ref());
+    d[64..72].copy_from_slice(&amount.to_le_bytes());
+    d[108] = 1; // AccountState::Initialized
+    d
 }
 
 /// Anchor offsets user error codes by 6000. The on-chain `Custom(code)` for an
@@ -284,6 +306,67 @@ impl Ctx {
         );
         let owner = self.owner.insecure_clone();
         self.send(ix, &[&owner])
+    }
+
+    /// Place a ready-made SPL token account (owned by the SPL Token program)
+    /// directly into the SVM, so the agent_transfer_spl CPI has real accounts.
+    fn set_token_account(&mut self, addr: Pubkey, mint: &Pubkey, owner: &Pubkey, amount: u64) {
+        let acct = SolanaAccount {
+            lamports: sol(1) / 100, // comfortably rent-exempt for 165 bytes
+            data: token_account_data(mint, owner, amount),
+            owner: spl_token_id(),
+            executable: false,
+            rent_epoch: 0,
+        };
+        self.svm.set_account(addr, acct).unwrap();
+    }
+
+    fn configure_token(
+        &mut self,
+        token_mint: Pubkey,
+        token_max_per_tx: u64,
+        token_daily_limit: u64,
+    ) -> TransactionResult {
+        let ix = Instruction::new_with_bytes(
+            aegis::ID,
+            &aegis::instruction::ConfigureToken {
+                token_mint,
+                token_max_per_tx,
+                token_daily_limit,
+            }
+            .data(),
+            aegis::accounts::ConfigureToken {
+                owner: self.owner.pubkey(),
+                policy: self.policy,
+            }
+            .to_account_metas(None),
+        );
+        let owner = self.owner.insecure_clone();
+        self.send(ix, &[&owner])
+    }
+
+    fn agent_transfer_spl(
+        &mut self,
+        amount: u64,
+        vault_token_account: Pubkey,
+        recipient_token_account: Pubkey,
+        signer: &Keypair,
+    ) -> TransactionResult {
+        let ix = Instruction::new_with_bytes(
+            aegis::ID,
+            &aegis::instruction::AgentTransferSpl { amount }.data(),
+            aegis::accounts::AgentTransferSpl {
+                agent_authority: signer.pubkey(),
+                policy: self.policy,
+                vault: self.vault,
+                vault_token_account,
+                recipient_token_account,
+                action_log: self.action_log,
+                token_program: spl_token_id(),
+            }
+            .to_account_metas(None),
+        );
+        self.send(ix, &[signer])
     }
 
     fn policy_state(&self) -> PolicyAccount {
@@ -574,6 +657,110 @@ fn t6_admin_invariants() -> Result<String, String> {
 }
 
 // --------------------------------------------------------------------------
+// T7 — SPL token envelope: not-configured reject; on-chain mint allow-list
+//      (wrong mint reject); token per-tx + daily caps in token units; and the
+//      token counter is INDEPENDENT of the SOL counter (different assets).
+// --------------------------------------------------------------------------
+fn t7_spl_token() -> Result<String, String> {
+    let far = 10_000_000_000i64;
+    // SOL envelope: 2 / 5 SOL. Vault funded so the SOL path still works later.
+    let mut c = Ctx::setup(sol(2), sol(5), vec![], far, 1_000, sol(10));
+    let agent = c.agent.insecure_clone();
+
+    let mint = Pubkey::new_unique();
+    let other_mint = Pubkey::new_unique();
+    let recipient = Pubkey::new_unique();
+    let vault_ta = Pubkey::new_unique();
+    let recipient_ta = Pubkey::new_unique();
+
+    // The vault PDA is the token authority; make sure it exists as a system acct.
+    let vault_pda = c.vault;
+    c.svm.airdrop(&vault_pda, sol(1)).unwrap();
+
+    // Vault holds 1000 tokens; recipient starts at 0.
+    c.set_token_account(vault_ta, &mint, &vault_pda, tok(1000));
+    c.set_token_account(recipient_ta, &mint, &recipient, 0);
+
+    // (a) Not configured yet → SplNotConfigured.
+    expect_reject(
+        &c.agent_transfer_spl(tok(10), vault_ta, recipient_ta, &agent),
+        ecode(AegisError::SplNotConfigured),
+        "SplNotConfigured",
+        "T7 not configured",
+    )?;
+
+    // Owner configures the token envelope: per-tx 100, daily 250 (token units).
+    expect_ok(&c.configure_token(mint, tok(100), tok(250)), "T7 configure_token")?;
+
+    // (b) ON-CHAIN MINT ALLOW-LIST: a token account of a DIFFERENT mint → reject.
+    let wrong_vault_ta = Pubkey::new_unique();
+    let wrong_recipient_ta = Pubkey::new_unique();
+    c.set_token_account(wrong_vault_ta, &other_mint, &vault_pda, tok(1000));
+    c.set_token_account(wrong_recipient_ta, &other_mint, &recipient, 0);
+    expect_reject(
+        &c.agent_transfer_spl(tok(10), wrong_vault_ta, wrong_recipient_ta, &agent),
+        ecode(AegisError::MintNotAllowed),
+        "MintNotAllowed",
+        "T7 wrong mint",
+    )?;
+
+    // (c) token per-tx boundary: == max ok, max+1 reject.
+    expect_ok(
+        &c.agent_transfer_spl(tok(100), vault_ta, recipient_ta, &agent),
+        "T7 token per-tx == max",
+    )?; // token_spent = 100
+    expect_reject(
+        &c.agent_transfer_spl(tok(101), vault_ta, recipient_ta, &agent),
+        ecode(AegisError::ExceedsPerTxLimit),
+        "ExceedsPerTxLimit",
+        "T7 token per-tx max+1",
+    )?;
+
+    // (d) token daily cap (separate counter): 100 ok (→200), 100 → 300 > 250 reject.
+    expect_ok(
+        &c.agent_transfer_spl(tok(100), vault_ta, recipient_ta, &agent),
+        "T7 token daily within",
+    )?; // token_spent = 200
+    expect_reject(
+        &c.agent_transfer_spl(tok(100), vault_ta, recipient_ta, &agent),
+        ecode(AegisError::ExceedsDailyLimit),
+        "ExceedsDailyLimit",
+        "T7 token daily over",
+    )?;
+
+    // (e) INDEPENDENCE: token spend left the SOL counter at 0; a SOL transfer
+    //     still works and does not touch the token counter.
+    let st = c.policy_state();
+    if st.spent_today != 0 {
+        return Err(format!("T7 independence: SOL spent_today should be 0, got {}", st.spent_today));
+    }
+    if st.token_spent_today != tok(200) {
+        return Err(format!("T7 token_spent_today expected 200 tok, got {}", st.token_spent_today));
+    }
+    let to = Pubkey::new_unique();
+    expect_ok(
+        &c.agent_transfer(sol(1), to, &agent),
+        "T7 SOL transfer still works alongside token envelope",
+    )?;
+    let st2 = c.policy_state();
+    if st2.spent_today != sol(1) {
+        return Err(format!("T7 SOL spent_today expected 1 SOL, got {}", st2.spent_today));
+    }
+    if st2.token_spent_today != tok(200) {
+        return Err(format!("T7 token counter moved by a SOL transfer: {}", st2.token_spent_today));
+    }
+
+    // Vault token account actually debited by the two successful transfers (200).
+    Ok(format!(
+        "not-configured→Custom({}); wrong mint→Custom({}) mint_not_allowed; token per-tx {{100 ok, 101→Custom({})}}; token daily {{→200 ok, →300→Custom({})}}; SOL/token counters independent (SOL=1, token=200)",
+        ecode(AegisError::SplNotConfigured),
+        ecode(AegisError::MintNotAllowed),
+        ecode(AegisError::ExceedsPerTxLimit),
+        ecode(AegisError::ExceedsDailyLimit),
+    ))
+}
+
+// --------------------------------------------------------------------------
 // THE GATE
 // --------------------------------------------------------------------------
 #[test]
@@ -585,6 +772,7 @@ fn aegis_enforcement_gate() {
         ("T4", "Revoke", t4_revoke),
         ("T5", "Allow-list", t5_allow_list),
         ("T6", "Admin invariants", t6_admin_invariants),
+        ("T7", "SPL token envelope", t7_spl_token),
     ];
 
     let mut results: Vec<(&str, &str, bool, String)> = Vec::new();

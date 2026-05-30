@@ -129,6 +129,191 @@ export type Aegis = {
       ]
     },
     {
+      "name": "agentTransferSpl",
+      "docs": [
+        "Agent-initiated SPL-token transfer. Enforces the dedicated token envelope",
+        "+ the on-chain mint allow-list (see `agent_transfer_spl`)."
+      ],
+      "discriminator": [
+        248,
+        212,
+        16,
+        124,
+        45,
+        7,
+        217,
+        100
+      ],
+      "accounts": [
+        {
+          "name": "agentAuthority",
+          "signer": true
+        },
+        {
+          "name": "policy",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "policy.owner",
+                "account": "policyAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The vault PDA — the AUTHORITY over the vault's token account. Signs the",
+            "token CPI via seeds; never read as data."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "policy"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vaultTokenAccount",
+          "docs": [
+            "account owned by the SPL Token program, with `mint == policy.token_mint`",
+            "and `authority == vault`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "recipientTokenAccount",
+          "docs": [
+            "account owned by the SPL Token program with `mint == policy.token_mint`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "actionLog",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  108,
+                  111,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "policy"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenProgram"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "configureToken",
+      "docs": [
+        "Owner-only. Configure the single SPL-token envelope (mint + token caps)."
+      ],
+      "discriminator": [
+        237,
+        33,
+        22,
+        68,
+        66,
+        204,
+        255,
+        70
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "policy"
+          ]
+        },
+        {
+          "name": "policy",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "tokenMint",
+          "type": "pubkey"
+        },
+        {
+          "name": "tokenMaxPerTx",
+          "type": "u64"
+        },
+        {
+          "name": "tokenDailyLimit",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "fundVault",
       "docs": [
         "Owner-only. Fund the program-owned SOL vault."
@@ -700,6 +885,19 @@ export type Aegis = {
       ]
     },
     {
+      "name": "tokenConfigured",
+      "discriminator": [
+        153,
+        220,
+        126,
+        193,
+        90,
+        98,
+        145,
+        116
+      ]
+    },
+    {
       "name": "vaultFunded",
       "discriminator": [
         192,
@@ -791,6 +989,21 @@ export type Aegis = {
       "code": 6012,
       "name": "invalidAgentAuthority",
       "msg": "Agent authority cannot be the default public key"
+    },
+    {
+      "code": 6013,
+      "name": "mintNotAllowed",
+      "msg": "Transfer mint is not the policy's configured token mint"
+    },
+    {
+      "code": 6014,
+      "name": "splNotConfigured",
+      "msg": "SPL token transfers are not configured for this policy"
+    },
+    {
+      "code": 6015,
+      "name": "invalidTokenAccount",
+      "msg": "Account is not a valid SPL token account for the configured mint"
     }
   ],
   "types": [
@@ -1082,6 +1295,41 @@ export type Aegis = {
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "tokenMint",
+            "docs": [
+              "The single SPL mint the agent may move via `agent_transfer_spl`.",
+              "`Pubkey::default()` == SPL transfers disabled (not configured). Enforced",
+              "on-chain: a token transfer's mint MUST equal this — the on-chain mint",
+              "allow-list, single-mint form. Set via `configure_token` (owner-only)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "tokenMaxPerTx",
+            "docs": [
+              "Per-tx cap in the token's own base units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "tokenDailyLimit",
+            "docs": [
+              "Rolling daily cap in the token's own base units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "tokenSpentToday",
+            "type": "u64"
+          },
+          {
+            "name": "tokenDayStartTs",
+            "docs": [
+              "Unix seconds; start of the current rolling 24h window for the token."
+            ],
+            "type": "i64"
           }
         ]
       }
@@ -1148,6 +1396,33 @@ export type Aegis = {
           {
             "name": "paused",
             "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tokenConfigured",
+      "docs": [
+        "Emitted by `configure_token` when the owner sets the SPL-token envelope."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "policy",
+            "type": "pubkey"
+          },
+          {
+            "name": "tokenMint",
+            "type": "pubkey"
+          },
+          {
+            "name": "tokenMaxPerTx",
+            "type": "u64"
+          },
+          {
+            "name": "tokenDailyLimit",
+            "type": "u64"
           }
         ]
       }

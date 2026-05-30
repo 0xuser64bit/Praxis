@@ -25,6 +25,9 @@ anchor-lang = "=1.0.1"
 
 [dev-dependencies]
 litesvm = "0.10.0"
+# Construct SPL token accounts directly (set_account) for the agent_transfer_spl
+# gate, without pulling spl-token instruction builders.
+solana-account = "3.2"
 solana-message = "3.0.1"
 solana-transaction = "3.0.2"
 solana-signer = "3.0.0"

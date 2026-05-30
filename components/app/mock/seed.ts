@@ -93,6 +93,14 @@ export function createInitialState(): StoreState {
     expiryTs: now + 7 * DAY,
     paused: false,
     vaultBalance: sol("6.25"),
+    // SPL-token envelope disabled by default (no token configured), mirroring a
+    // fresh on-chain policy. The agent moves native SOL today; the dashboard's
+    // token-transfer surface is a later wiring step.
+    tokenMint: ADDR.system,
+    tokenMaxPerTx: 0n,
+    tokenDailyLimit: 0n,
+    tokenSpentToday: 0n,
+    tokenDayStartTs: now,
   };
 
   // A signed historical transfer from the previous window; the live demo starts

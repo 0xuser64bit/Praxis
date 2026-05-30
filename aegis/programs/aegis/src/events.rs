@@ -59,6 +59,15 @@ pub struct AgentActionRejected {
     pub ts: i64,
 }
 
+/// Emitted by `configure_token` when the owner sets the SPL-token envelope.
+#[event]
+pub struct TokenConfigured {
+    pub policy: Pubkey,
+    pub token_mint: Pubkey,
+    pub token_max_per_tx: u64,
+    pub token_daily_limit: u64,
+}
+
 #[event]
 pub struct AgentRevoked {
     pub policy: Pubkey,

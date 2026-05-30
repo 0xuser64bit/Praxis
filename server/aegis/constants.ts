@@ -31,6 +31,8 @@ export const SEEDS = {
 
 export const INSTRUCTION_DISCRIMINATOR = {
   agentTransfer: instructionDiscriminator("agent_transfer"),
+  agentTransferSpl: instructionDiscriminator("agent_transfer_spl"),
+  configureToken: instructionDiscriminator("configure_token"),
   fundVault: instructionDiscriminator("fund_vault"),
   initializePolicy: instructionDiscriminator("initialize_policy"),
   revokeAgent: instructionDiscriminator("revoke_agent"),
@@ -46,6 +48,7 @@ export const ACCOUNT_DISCRIMINATOR = {
 
 export const ACTION_LOG_CAP = 32;
 export const KIND_TRANSFER = 0;
+export const KIND_TRANSFER_SPL = 1;
 export const RESULT_REJECTED = 0;
 export const RESULT_ALLOWED = 1;
 
@@ -59,6 +62,7 @@ export const AEGIS_ERROR_CODE_TO_REASON: Record<number, RejectReason> = {
   [ANCHOR_ERROR_OFFSET + 4]: AegisRejectReason.OverDaily,
   [ANCHOR_ERROR_OFFSET + 5]: AegisRejectReason.RecipientNotAllowed,
   [ANCHOR_ERROR_OFFSET + 6]: AegisRejectReason.Overflow,
+  [ANCHOR_ERROR_OFFSET + 13]: AegisRejectReason.MintNotAllowed,
 };
 
 export const AEGIS_OPERATIONAL_ERROR: Record<number, string> = {
@@ -68,6 +72,8 @@ export const AEGIS_OPERATIONAL_ERROR: Record<number, string> = {
   [ANCHOR_ERROR_OFFSET + 10]: "invalid policy limits",
   [ANCHOR_ERROR_OFFSET + 11]: "vault has insufficient balance",
   [ANCHOR_ERROR_OFFSET + 12]: "invalid agent authority",
+  [ANCHOR_ERROR_OFFSET + 14]: "SPL token transfers are not configured for this policy",
+  [ANCHOR_ERROR_OFFSET + 15]: "account is not a valid SPL token account for the configured mint",
 };
 
 export function reasonFromAegisErrorCode(code: number): RejectReason | undefined {

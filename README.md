@@ -59,12 +59,16 @@ Open `http://localhost:3000/app`.
 
 ```bash
 bun run lint
+bun run test
 bun run build
 bun run aegis:test
 ```
 
-`bun run aegis:test` rebuilds the Anchor program before running the LiteSVM
-enforcement gate.
+`bun run test` runs the TypeScript suite (auth/session, wallet challenge, request
+validation, rate limiting, state persistence, the Aegis codec, env parsing, the
+server provider against a fake Aegis client, and the API route auth/validation
+seams) — no validator or network required. `bun run aegis:test` rebuilds the
+Anchor program before running the LiteSVM enforcement gate.
 
 ## Demo Script
 

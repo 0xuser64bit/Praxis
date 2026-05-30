@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "bun test server app/api",
+    "test:watch": "bun test --watch server app/api",
     "aegis:build": "cd aegis && NO_DNA=1 anchor build",
     "aegis:test": "cd aegis && NO_DNA=1 anchor build && NO_DNA=1 cargo test --test enforcement -- --nocapture",
     "praxis:demo": "bun scripts/praxis-demo.ts",
@@ -25,6 +27,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/bun": "^1.3.14",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

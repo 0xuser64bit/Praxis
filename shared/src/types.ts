@@ -152,6 +152,8 @@ export interface ActionLogEntry {
   kind: ActionKind;
   amount: BaseUnits;
   target: Address;
+  /** Asset mint for SPL transfers. Undefined/default means native SOL. */
+  mint?: Address;
   result: "allowed" | "rejected";
   /** Human-readable explanation; set iff `result === "rejected"`. */
   reason?: string;

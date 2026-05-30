@@ -1050,7 +1050,7 @@
                     "name": "ActionRecord"
                   }
                 },
-                32
+                16
               ]
             }
           },
@@ -1079,6 +1079,13 @@
           },
           {
             "name": "target",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Asset mint for SPL transfers. `Pubkey::default()` means native SOL."
+            ],
             "type": "pubkey"
           },
           {

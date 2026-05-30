@@ -51,7 +51,7 @@ export const ACCOUNT_DISCRIMINATOR = {
   actionLog: accountDiscriminator("ActionLog"),
 } as const;
 
-export const ACTION_LOG_CAP = 32;
+export const ACTION_LOG_CAP = 16;
 export const KIND_TRANSFER = 0;
 export const KIND_TRANSFER_SPL = 1;
 export const RESULT_REJECTED = 0;

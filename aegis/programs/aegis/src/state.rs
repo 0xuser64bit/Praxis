@@ -90,6 +90,8 @@ pub struct ActionRecord {
     pub kind: u8,
     pub amount: u64,
     pub target: Pubkey,
+    /// Asset mint for SPL transfers. `Pubkey::default()` means native SOL.
+    pub mint: Pubkey,
     /// `RESULT_ALLOWED` / `RESULT_REJECTED`.
     pub result: u8,
     /// `RejectReason` code; meaningful only when `result == RESULT_REJECTED`.

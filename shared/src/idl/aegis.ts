@@ -1056,7 +1056,7 @@ export type Aegis = {
                     "name": "actionRecord"
                   }
                 },
-                32
+                16
               ]
             }
           },
@@ -1085,6 +1085,13 @@ export type Aegis = {
           },
           {
             "name": "target",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Asset mint for SPL transfers. `Pubkey::default()` means native SOL."
+            ],
             "type": "pubkey"
           },
           {

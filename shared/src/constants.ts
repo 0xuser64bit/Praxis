@@ -19,7 +19,7 @@ export const MAX_ALLOWED_RECIPIENTS = 16;
 export const MAX_ALLOWED_MINTS = 16;
 
 /** Ring-buffer capacity of the on-chain ActionLog (allowed actions only). */
-export const ACTION_LOG_CAP = 32;
+export const ACTION_LOG_CAP = 16;
 
 /** Rolling daily-limit window, in seconds (24h). Matches the on-chain constant. */
 export const DAY_WINDOW_SECONDS = 86_400;

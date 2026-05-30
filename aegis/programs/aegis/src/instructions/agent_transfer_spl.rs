@@ -272,6 +272,7 @@ pub fn handler(ctx: Context<AgentTransferSpl>, amount: u64) -> Result<()> {
         kind: KIND_TRANSFER_SPL,
         amount,
         target,
+        mint: token_mint,
         result: RESULT_ALLOWED,
         reason: 0,
         ts: now,

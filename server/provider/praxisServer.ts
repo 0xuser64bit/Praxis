@@ -104,15 +104,13 @@ export class PraxisServerProvider implements PraxisProvider {
 
   async refreshActivity(): Promise<ActivityEntry[]> {
     const logs = await this.aegis.getActionLog();
-    // The on-chain ActionRecord stores no mint; for an SPL transfer the asset is
-    // the policy's single configured token_mint, resolved to a known token.
-    const tokenAsset = this.tokenForMint(this.state.policy?.tokenMint);
     const onChain = logs.map((entry, index): ActivityEntry => {
       const isSpl = entry.kind === ActionKind.TransferSpl;
+      const tokenAsset = isSpl ? this.tokenForMint(entry.mint) : undefined;
       return {
         id: `chain-${entry.sig ?? entry.ts}-${index}`,
-        // Both native and SPL transfers render as a "transfer" row; the ASSET is
-        // what distinguishes them (agent_swap is v2 / not on-chain).
+        // Both native and SPL transfers render as a transfer row; the asset
+        // distinguishes them, and the on-chain record carries historical mint.
         kind: "transfer",
         label: this.addressBook.labelFor(entry.target),
         asset: isSpl ? tokenAsset?.symbol ?? "TOKEN" : "SOL",

@@ -144,6 +144,7 @@ pub fn handler(ctx: Context<AgentTransfer>, amount: u64) -> Result<()> {
         kind: KIND_TRANSFER,
         amount,
         target,
+        mint: Pubkey::default(),
         result: RESULT_ALLOWED,
         reason: 0,
         ts: now,

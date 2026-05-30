@@ -120,6 +120,7 @@ function decodeRecord(c: Cursor): ActionLogEntry {
   const kind = c.u8();
   const amount = c.u64();
   const target = c.pubkey();
+  const mint = c.pubkey();
   const result = c.u8();
   const reason = c.u8();
   const ts = c.i64();
@@ -128,6 +129,7 @@ function decodeRecord(c: Cursor): ActionLogEntry {
     kind: decodeKind(kind),
     amount,
     target,
+    mint,
     result: result === RESULT_ALLOWED ? "allowed" : "rejected",
     reasonCode: result === RESULT_REJECTED ? (reason as RejectReason) : undefined,
     ts,

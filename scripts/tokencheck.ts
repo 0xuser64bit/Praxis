@@ -18,6 +18,7 @@ import { MockPraxisProvider } from "../components/app/mock/mockProvider";
 
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const BONK_MINT = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
+const JUP_MINT = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN";
 const DEFAULT_MINT = "11111111111111111111111111111111";
 const now = 1_900_000_000;
 
@@ -127,8 +128,32 @@ async function mockPart() {
   assert("BONK send → MintNotAllowed", bonk?.check.allowed === false && bonk?.check.reasonCode === RejectReason.MintNotAllowed);
 }
 
+async function dashboardPart() {
+  console.log("│ C. dashboard configureToken reconfigures the token envelope (mock)");
+  const jup = (n: number): bigint => BigInt(n) * 1_000_000n;
+  const p = new MockPraxisProvider();
+
+  // Seed configures USDC. The owner reconfigures the envelope to JUP.
+  await p.configureToken({ tokenMint: JUP_MINT, tokenMaxPerTx: jup(50), tokenDailyLimit: jup(150) });
+  const pol = p.getPolicy();
+  assert("tokenMint → JUP", pol.tokenMint === JUP_MINT);
+  assert("tokenMaxPerTx updated to 50 JUP", pol.tokenMaxPerTx === jup(50));
+  assert("tokenDailyLimit updated to 150 JUP", pol.tokenDailyLimit === jup(150));
+  assert("tokenSpentToday reset on configure", pol.tokenSpentToday === 0n);
+
+  // USDC is no longer the configured mint → rejected; JUP within new caps → allowed.
+  const rU = await p.send(null, "send 10 usdc to maya");
+  const propU = proposalFrom(p, latestAgentBlocks(p, rU.threadId));
+  assert("USDC now rejected (mint changed) → MintNotAllowed", propU?.check.allowed === false && propU?.check.reasonCode === RejectReason.MintNotAllowed);
+
+  const rJ = await p.send(null, "send 40 jup to maya");
+  const propJ = proposalFrom(p, latestAgentBlocks(p, rJ.threadId));
+  assert("40 JUP within new caps → allowed", propJ?.check.allowed === true);
+}
+
 async function main() {
   await mockPart();
+  await dashboardPart();
   console.log("└───────────────────────────────────────────────────────────────────────────");
   if (failures === 0) {
     console.log("\nTOKEN TRANSFER: PASS ✅");

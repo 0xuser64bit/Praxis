@@ -95,6 +95,18 @@ export function readPolicyPatch(value: unknown) {
   };
 }
 
+export function readTokenEnvelopeConfig(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new PraxisInputError("config must be an object");
+  }
+  const config = value as Record<string, unknown>;
+  return {
+    tokenMint: readString(config.tokenMint, "config.tokenMint"),
+    tokenMaxPerTx: readBaseUnits(config.tokenMaxPerTx, "config.tokenMaxPerTx"),
+    tokenDailyLimit: readBaseUnits(config.tokenDailyLimit, "config.tokenDailyLimit"),
+  };
+}
+
 export function readNumber(value: unknown, name: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value)) {
     throw new PraxisInputError(`${name} must be a safe integer`);

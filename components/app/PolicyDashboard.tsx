@@ -7,7 +7,7 @@
  * provider — the same shapes a real Aegis client would.
  */
 
-import type { AllowListKind, PolicyView } from "@praxis/shared";
+import type { AllowListKind, PolicyView, TokenEnvelopeConfig } from "@praxis/shared";
 import { remaining as calcRemaining } from "@praxis/shared";
 import {
   IconCheck,
@@ -28,8 +28,14 @@ import { useAddressBook, usePolicy, useProvider } from "./ProviderContext";
 import { Card, Dot, Label } from "./ui";
 import { formatSol, formatUnits, percentOf, shortenAddress, toBaseUnits } from "./lib/units";
 import { useNow } from "./lib/useNow";
-import { effectiveSpentToday } from "./mock/policy";
-import { QUICK_MINTS, mintLabel, programLabel } from "./mock/labels";
+import { effectiveSpentToday, effectiveTokenSpentToday } from "./mock/policy";
+import {
+  QUICK_MINTS,
+  TOKEN_ENVELOPE_MINTS,
+  mintDecimals,
+  mintLabel,
+  programLabel,
+} from "./mock/labels";
 
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 
@@ -108,6 +114,14 @@ export function PolicyDashboard() {
             }}
           />
         </div>
+
+        <TokenEnvelopeCard
+          policy={policy}
+          now={now}
+          onConfigure={(config) => {
+            void provider.configureToken(config).catch(() => undefined);
+          }}
+        />
 
         <Card className="mt-4 p-5">
           <Label className="mb-4">Allow-lists</Label>
@@ -217,28 +231,179 @@ function CapsCard({
   );
 }
 
+// --- SPL token envelope (separate asset, its own caps) ---
+function TokenEnvelopeCard({
+  policy,
+  now,
+  onConfigure,
+}: {
+  policy: PolicyView;
+  now: number;
+  onConfigure: (config: TokenEnvelopeConfig) => void;
+}) {
+  const configured = policy.tokenMint !== SYSTEM_PROGRAM;
+  const decimals = mintDecimals(policy.tokenMint);
+  const symbol = mintLabel(policy.tokenMint) ?? "TOKEN";
+
+  // Default caps when (re)selecting a token: 200 per-tx / 500 daily, in its units.
+  const defaultsFor = (mint: string): TokenEnvelopeConfig => ({
+    tokenMint: mint,
+    tokenMaxPerTx: toBaseUnits("200", mintDecimals(mint)),
+    tokenDailyLimit: toBaseUnits("500", mintDecimals(mint)),
+  });
+
+  const pick = (mint: string) => onConfigure(defaultsFor(mint));
+
+  return (
+    <Card className="mt-4 p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <Label>Token transfers (SPL)</Label>
+        {configured && (
+          <span className="inline-flex items-center gap-2 rounded-full bg-[var(--bg-elevated)] px-3 py-1 text-[11px] [border:0.5px_solid_var(--border)]">
+            <span className="text-[var(--text-primary)]">{symbol}</span>
+            <span className="[font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
+              {shortenAddress(policy.tokenMint)}
+            </span>
+          </span>
+        )}
+      </div>
+
+      {!configured ? (
+        <div>
+          <p className="mb-3 text-[13px] text-[var(--text-secondary)]">
+            No SPL token configured. Pick one to let the agent move it within its own
+            on-chain caps (separate from the SOL envelope).
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {TOKEN_ENVELOPE_MINTS.map((m) => (
+              <button
+                key={m.address}
+                type="button"
+                onClick={() => pick(m.address)}
+                className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] [transition:color_0.15s] hover:text-[var(--accent)]"
+              >
+                <IconPlus size={11} />
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          <TokenSpend policy={policy} now={now} decimals={decimals} symbol={symbol} />
+          <div className="h-px bg-[var(--border)]" />
+          <CapRow
+            label="Per transaction"
+            value={policy.tokenMaxPerTx}
+            decimals={decimals}
+            unit={symbol}
+            onSave={(v) =>
+              onConfigure({
+                tokenMint: policy.tokenMint,
+                tokenMaxPerTx: v,
+                tokenDailyLimit: policy.tokenDailyLimit,
+              })
+            }
+          />
+          <CapRow
+            label="Daily limit"
+            value={policy.tokenDailyLimit}
+            decimals={decimals}
+            unit={symbol}
+            onSave={(v) =>
+              onConfigure({
+                tokenMint: policy.tokenMint,
+                tokenMaxPerTx: policy.tokenMaxPerTx,
+                tokenDailyLimit: v,
+              })
+            }
+          />
+          <div className="flex items-center gap-2">
+            <span className="[font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
+              switch token:
+            </span>
+            {TOKEN_ENVELOPE_MINTS.filter((m) => m.address !== policy.tokenMint).map((m) => (
+              <button
+                key={m.address}
+                type="button"
+                onClick={() => pick(m.address)}
+                className="rounded-full px-2.5 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] hover:text-[var(--accent)]"
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function TokenSpend({
+  policy,
+  now,
+  decimals,
+  symbol,
+}: {
+  policy: PolicyView;
+  now: number;
+  decimals: number;
+  symbol: string;
+}) {
+  const spent = effectiveTokenSpentToday(policy, now);
+  const left = calcRemaining(policy.tokenDailyLimit, spent);
+  const pct = percentOf(spent, policy.tokenDailyLimit);
+  const fmt = (v: bigint) => formatUnits(v, decimals, { maxFrac: 4 });
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between">
+        <span className="[font-family:var(--font-mono)] text-[13px] text-[var(--text-primary)]">
+          {fmt(spent)} {symbol} <span className="text-[var(--text-tertiary)]">spent today</span>
+        </span>
+        <span className="[font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
+          {fmt(left)} of {fmt(policy.tokenDailyLimit)} {symbol} left
+        </span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--bg-elevated)]">
+        <div
+          className="h-full rounded-full [transition:width_0.5s_ease]"
+          style={{
+            width: `${pct}%`,
+            background: pct >= 90 ? "var(--danger)" : pct >= 70 ? "var(--warning)" : "var(--accent)",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function CapRow({
   label,
   value,
   onSave,
+  decimals = 9,
+  unit = "SOL",
 }: {
   label: string;
   value: bigint;
   onSave: (v: bigint) => void;
+  decimals?: number;
+  unit?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState(false);
 
   const begin = () => {
-    setDraft(formatUnits(value, 9, { maxFrac: 9 }));
+    setDraft(formatUnits(value, decimals, { maxFrac: decimals }));
     setError(false);
     setEditing(true);
   };
 
   const commit = () => {
     try {
-      onSave(toBaseUnits(draft, 9));
+      onSave(toBaseUnits(draft, decimals));
       setEditing(false);
     } catch {
       setError(true);
@@ -264,7 +429,7 @@ function CapRow({
             }}
           />
           <span className="[font-family:var(--font-mono)] text-[12px] text-[var(--text-tertiary)]">
-            SOL
+            {unit}
           </span>
           <button
             type="button"
@@ -289,7 +454,7 @@ function CapRow({
           onClick={begin}
           className="group flex items-center gap-2 [font-family:var(--font-mono)] text-[15px] text-[var(--text-primary)]"
         >
-          {formatSol(value)} SOL
+          {formatUnits(value, decimals, { maxFrac: 4 })} {unit}
           <IconPencil
             size={13}
             className="text-[var(--text-quaternary)] [transition:color_0.15s] group-hover:text-[var(--accent)]"

@@ -17,6 +17,7 @@ import type {
   PolicyView,
   PraxisProvider,
   Thread,
+  TokenEnvelopeConfig,
 } from "@praxis/shared";
 import {
   DAY_WINDOW_SECONDS,
@@ -282,6 +283,21 @@ export class MockPraxisProvider implements PraxisProvider {
       ...(patch.dailyLimit !== undefined ? { dailyLimit: patch.dailyLimit } : {}),
       ...(patch.expiryTs !== undefined ? { expiryTs: patch.expiryTs } : {}),
       ...(patch.paused !== undefined ? { paused: patch.paused } : {}),
+    };
+    this.notify();
+  };
+
+  configureToken = async (config: TokenEnvelopeConfig): Promise<void> => {
+    await delay(250);
+    // Mirror on-chain configure_token: set the token + caps and start a fresh
+    // token daily window.
+    this.state.policy = {
+      ...this.state.policy,
+      tokenMint: config.tokenMint,
+      tokenMaxPerTx: config.tokenMaxPerTx,
+      tokenDailyLimit: config.tokenDailyLimit,
+      tokenSpentToday: 0n,
+      tokenDayStartTs: this.now(),
     };
     this.notify();
   };

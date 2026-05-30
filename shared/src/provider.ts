@@ -202,6 +202,18 @@ export interface PolicyUpdate {
   paused?: boolean;
 }
 
+/**
+ * Owner configuration of the dedicated SPL-token envelope (the on-chain
+ * `configure_token`). Sets which single mint the agent may move via
+ * `agent_transfer_spl` and its own caps (in the token's base units). Applying
+ * this resets the token's rolling daily window.
+ */
+export interface TokenEnvelopeConfig {
+  tokenMint: Address;
+  tokenMaxPerTx: BaseUnits;
+  tokenDailyLimit: BaseUnits;
+}
+
 export type AllowListKind = "programs" | "recipients" | "mints";
 
 export type ProviderConnectionState =
@@ -245,6 +257,8 @@ export interface PraxisProvider {
 
   // --- policy dashboard (owner) ---
   updatePolicy(patch: PolicyUpdate): Promise<void>;
+  /** Configure the SPL-token envelope (mint + token caps). */
+  configureToken(config: TokenEnvelopeConfig): Promise<void>;
   /** The kill switch — zeroes the agent key and pauses the policy. */
   revokeAgent(): Promise<void>;
   /** Issue a fresh session key and unpause. */

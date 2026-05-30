@@ -10,6 +10,7 @@ import type {
   ProviderConnectionState,
   PraxisProvider,
   Thread,
+  TokenEnvelopeConfig,
 } from "@praxis/shared";
 
 interface RemoteStoreState {
@@ -92,6 +93,11 @@ export class RemotePraxisProvider implements PraxisProvider {
 
   updatePolicy = async (patch: PolicyUpdate): Promise<void> => {
     await this.mutate(() => this.post("/api/praxis/update-policy", { patch: toWire(patch) }));
+    await this.refreshAll();
+  };
+
+  configureToken = async (config: TokenEnvelopeConfig): Promise<void> => {
+    await this.mutate(() => this.post("/api/praxis/configure-token", { config: toWire(config) }));
     await this.refreshAll();
   };
 

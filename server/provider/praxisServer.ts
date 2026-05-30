@@ -11,6 +11,7 @@ import {
   type PolicyView,
   type PraxisProvider,
   type Thread,
+  type TokenEnvelopeConfig,
   type TokenInfo,
 } from "@praxis/shared";
 
@@ -233,6 +234,16 @@ export class PraxisServerProvider implements PraxisProvider {
   // --- policy dashboard ---
   updatePolicy = async (patch: PolicyUpdate): Promise<void> => {
     await this.aegis.updatePolicy(patch);
+    await this.refreshOnChain();
+  };
+
+  configureToken = async (config: TokenEnvelopeConfig): Promise<void> => {
+    validatePublicKey(config.tokenMint);
+    await this.aegis.configureToken({
+      tokenMint: config.tokenMint,
+      tokenMaxPerTx: config.tokenMaxPerTx,
+      tokenDailyLimit: config.tokenDailyLimit,
+    });
     await this.refreshOnChain();
   };
 

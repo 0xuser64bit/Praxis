@@ -20,6 +20,7 @@ type OwnerActionRequest =
   | { kind: "bootstrapPolicy"; fundLamports: bigint }
   | { kind: "fundVault"; amount: bigint }
   | { kind: "withdrawVault"; amount: bigint }
+  | { kind: "closePolicy" }
   | { kind: "updatePolicy"; patch: PolicyUpdate }
   | { kind: "allowList"; listKind: AllowListKind; address: string; mode: "add" | "remove" }
   | { kind: "revoke" }
@@ -129,6 +130,14 @@ export class RemotePraxisProvider implements PraxisProvider {
     await this.ownerAction(
       { kind: "withdrawVault", amount },
       () => this.post("/api/praxis/withdraw-vault", { amount }),
+    );
+    await this.refreshAll();
+  };
+
+  deleteAgent = async (): Promise<void> => {
+    await this.ownerAction(
+      { kind: "closePolicy" },
+      () => this.post("/api/praxis/delete-agent", {}),
     );
     await this.refreshAll();
   };

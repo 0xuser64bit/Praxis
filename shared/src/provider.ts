@@ -266,6 +266,12 @@ export interface PraxisProvider {
   fundVault(amount: BaseUnits): Promise<void>;
   /** Withdraw SOL from the policy's vault back to the owner wallet (owner-only, uncapped). */
   withdrawVault(amount: BaseUnits): Promise<void>;
+  /**
+   * Tear the agent down: drain the vault to the owner and close the policy +
+   * audit-log accounts (reclaiming rent). Irreversible; afterwards the wallet
+   * has no policy and lands back on onboarding.
+   */
+  deleteAgent(): Promise<void>;
   updatePolicy(patch: PolicyUpdate): Promise<void>;
   /** Configure the SPL-token envelope (mint + token caps). */
   configureToken(config: TokenEnvelopeConfig): Promise<void>;

@@ -184,6 +184,27 @@ export function buildWithdrawVaultIx(
   });
 }
 
+/**
+ * Owner-only teardown: drains the vault to the owner and closes the policy +
+ * action-log accounts (rent → owner). Account order matches the `close_policy`
+ * context: owner, policy, action_log, vault, system_program.
+ */
+export function buildClosePolicyIx(
+  addresses: AegisAddresses & { owner: PublicKey },
+): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: addresses.programId,
+    keys: [
+      { pubkey: addresses.owner, isSigner: true, isWritable: true },
+      { pubkey: addresses.policy, isSigner: false, isWritable: true },
+      { pubkey: addresses.actionLog, isSigner: false, isWritable: true },
+      { pubkey: addresses.vault, isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: INSTRUCTION_DISCRIMINATOR.closePolicy,
+  });
+}
+
 export function buildUpdatePolicyIx(
   addresses: AegisAddresses & { owner: PublicKey },
   args: {

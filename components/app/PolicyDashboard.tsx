@@ -10,6 +10,7 @@
 import type { AllowListKind, PolicyView, TokenEnvelopeConfig } from "@praxis/shared";
 import { remaining as calcRemaining } from "@praxis/shared";
 import {
+  IconAlertTriangle,
   IconArrowUp,
   IconCheck,
   IconKey,
@@ -17,6 +18,7 @@ import {
   IconPlus,
   IconRefresh,
   IconShieldX,
+  IconTrash,
   IconWallet,
   IconX,
 } from "@tabler/icons-react";
@@ -207,6 +209,11 @@ export function PolicyDashboard() {
                 />
               </div>
             </Card>
+
+            <DangerZone
+              policy={policy}
+              onDelete={() => runMutation(() => provider.deleteAgent(), "Could not delete the agent.")}
+            />
           </>
         )}
 
@@ -215,6 +222,65 @@ export function PolicyDashboard() {
       {revokeOpen && (
         <RevokeDialog onConfirm={() => provider.revokeAgent()} onClose={() => setRevokeOpen(false)} />
       )}
+    </div>
+  );
+}
+
+// --- danger zone (delete agent) ---
+function DangerZone({
+  policy,
+  onDelete,
+}: {
+  policy: PolicyView;
+  onDelete: () => void;
+}) {
+  const [confirm, setConfirm] = useState("");
+  const tokenConfigured = policy.tokenMint !== SYSTEM_PROGRAM;
+  const armed = confirm.trim().toUpperCase() === "DELETE";
+
+  return (
+    <div className="mt-4 rounded-xl bg-[rgba(199,91,91,0.05)] p-5 [border:0.5px_solid_rgba(199,91,91,0.4)]">
+      <div className="flex items-center gap-2">
+        <IconAlertTriangle size={16} className="text-[var(--danger)]" />
+        <Label className="text-[var(--danger)]">Danger zone</Label>
+      </div>
+
+      <p className="mt-3 text-[13px] leading-[1.55] text-[var(--text-secondary)]">
+        <span className="font-medium text-[var(--text-primary)]">Delete agent &amp; close vault.</span>{" "}
+        Returns your vault balance ({formatSol(policy.vaultBalance)} SOL) plus the
+        account rent (~0.022 SOL) to your wallet, and wipes this policy on-chain.
+        This <span className="font-medium">cannot be undone</span> — you can set up
+        a fresh agent afterward.
+      </p>
+
+      {tokenConfigured && (
+        <div className="mt-3 rounded-md bg-[rgba(199,91,91,0.10)] p-3 text-[12px] leading-[1.5] text-[var(--danger)]">
+          You have an SPL token envelope configured. If the vault still holds
+          tokens, move them out first — SOL-only teardown for now; the delete
+          will be refused while tokens remain.
+        </div>
+      )}
+
+      <div className="mt-4 flex items-center gap-2">
+        <input
+          value={confirm}
+          onChange={(event) => setConfirm(event.target.value)}
+          placeholder="Type DELETE to confirm"
+          className="h-9 flex-1 rounded-md bg-[var(--bg)] px-3 text-[13px] text-[var(--text-primary)] [border:0.5px_solid_var(--border)] outline-none focus:[border-color:var(--danger)]"
+        />
+        <button
+          type="button"
+          disabled={!armed}
+          onClick={() => {
+            onDelete();
+            setConfirm("");
+          }}
+          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md px-4 text-[13px] font-medium text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.4)] [transition:background_0.15s] hover:bg-[rgba(199,91,91,0.12)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <IconTrash size={15} />
+          Delete agent
+        </button>
+      </div>
     </div>
   );
 }

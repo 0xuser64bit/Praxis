@@ -79,3 +79,12 @@ pub struct AgentRotated {
     pub policy: Pubkey,
     pub new_agent_authority: Pubkey,
 }
+
+/// Emitted by `close_policy` when the owner tears down the policy.
+#[event]
+pub struct PolicyClosed {
+    pub policy: Pubkey,
+    pub owner: Pubkey,
+    /// Vault SOL (lamports) returned to the owner as part of the teardown.
+    pub reclaimed_vault: u64,
+}

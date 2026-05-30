@@ -6,6 +6,7 @@
 
 pub mod agent_transfer;
 pub mod agent_transfer_spl;
+pub mod close_policy;
 pub mod configure_token;
 pub mod fund_vault;
 pub mod initialize_policy;
@@ -16,6 +17,7 @@ pub mod withdraw_vault;
 
 pub use agent_transfer::*;
 pub use agent_transfer_spl::*;
+pub use close_policy::*;
 pub use configure_token::*;
 pub use fund_vault::*;
 pub use initialize_policy::*;

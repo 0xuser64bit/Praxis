@@ -246,6 +246,110 @@
       ]
     },
     {
+      "name": "close_policy",
+      "docs": [
+        "Owner-only teardown. Drains the vault to the owner and closes the policy",
+        "+ audit-log accounts, reclaiming all rent. Irreversible."
+      ],
+      "discriminator": [
+        55,
+        42,
+        248,
+        229,
+        222,
+        138,
+        26,
+        252
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "policy"
+          ]
+        },
+        {
+          "name": "policy",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "action_log",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  108,
+                  111,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "policy"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "policy"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "configure_token",
       "docs": [
         "Owner-only. Configure the single SPL-token envelope (mint + token caps)."
@@ -853,6 +957,19 @@
       ]
     },
     {
+      "name": "PolicyClosed",
+      "discriminator": [
+        19,
+        126,
+        82,
+        173,
+        79,
+        86,
+        50,
+        51
+      ]
+    },
+    {
       "name": "PolicyInitialized",
       "discriminator": [
         102,
@@ -1331,6 +1448,32 @@
               "Unix seconds; start of the current rolling 24h window for the token."
             ],
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PolicyClosed",
+      "docs": [
+        "Emitted by `close_policy` when the owner tears down the policy."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "policy",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "reclaimed_vault",
+            "docs": [
+              "Vault SOL (lamports) returned to the owner as part of the teardown."
+            ],
+            "type": "u64"
           }
         ]
       }

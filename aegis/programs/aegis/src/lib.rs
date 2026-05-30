@@ -118,4 +118,10 @@ pub mod aegis {
     pub fn rotate_agent(ctx: Context<RotateAgent>, new_agent_authority: Pubkey) -> Result<()> {
         rotate_agent::handler(ctx, new_agent_authority)
     }
+
+    /// Owner-only teardown. Drains the vault to the owner and closes the policy
+    /// + audit-log accounts, reclaiming all rent. Irreversible.
+    pub fn close_policy(ctx: Context<ClosePolicy>) -> Result<()> {
+        close_policy::handler(ctx)
+    }
 }

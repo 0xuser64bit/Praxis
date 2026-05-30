@@ -166,9 +166,13 @@ describe("readOwnerAction", () => {
     );
   });
 
+  test("parses closePolicy (no args)", () => {
+    expect(readOwnerAction({ kind: "closePolicy" })).toEqual({ kind: "closePolicy" });
+  });
+
   test("rejects an unknown kind and non-objects", () => {
     expect(() => readOwnerAction({ kind: "selfDestruct" })).toThrow(
-      /bootstrapPolicy, fundVault, withdrawVault, updatePolicy, allowList, revoke, or rotate/,
+      /bootstrapPolicy, fundVault, withdrawVault, closePolicy, updatePolicy, allowList, revoke, or rotate/,
     );
     expect(() => readOwnerAction("revoke")).toThrow(/must be an object/);
   });

@@ -296,6 +296,14 @@ export class MockPraxisProvider implements PraxisProvider {
     this.notify();
   };
 
+  // Mock mode has no onboarding screen to return to, so teardown just drains
+  // the vault (the closest faithful representation of "deleted").
+  deleteAgent = async (): Promise<void> => {
+    await delay(250);
+    this.state.policy = { ...this.state.policy, vaultBalance: 0n };
+    this.notify();
+  };
+
   updatePolicy = async (patch: PolicyUpdate): Promise<void> => {
     await delay(250);
     this.state.policy = {

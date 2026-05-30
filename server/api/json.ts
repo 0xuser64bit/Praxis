@@ -254,6 +254,8 @@ export function readOwnerAction(value: unknown): OwnerAction {
       }
       return { kind: "withdrawVault", amount };
     }
+    case "closePolicy":
+      return { kind: "closePolicy" };
     case "revoke":
       return { kind: "revoke" };
     case "rotate":
@@ -272,7 +274,7 @@ export function readOwnerAction(value: unknown): OwnerAction {
       };
     }
     default:
-      throw new PraxisInputError("action.kind must be bootstrapPolicy, fundVault, withdrawVault, updatePolicy, allowList, revoke, or rotate");
+      throw new PraxisInputError("action.kind must be bootstrapPolicy, fundVault, withdrawVault, closePolicy, updatePolicy, allowList, revoke, or rotate");
   }
 }
 

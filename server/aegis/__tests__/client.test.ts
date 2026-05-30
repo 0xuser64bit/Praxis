@@ -147,6 +147,36 @@ describe("buildUnsignedOwnerTransaction", () => {
     expect(tx.instructions[0].data.readBigUInt64LE(8)).toBe(125_000_000n);
   });
 
+  test("builds a closePolicy tx (owner + policy + action_log + vault)", async () => {
+    const config = makeConfig();
+    const wallet = config.ownerAddress!;
+    // closePolicy reads the policy to enforce the SOL-only (no token balance)
+    // guard; tokenMint=default means the envelope is unconfigured, so it passes.
+    const policyData = encodePolicyAccount(
+      policyFixture({
+        address: config.policyAddress!.toBase58(),
+        tokenMint: PublicKey.default.toBase58(),
+      }),
+    );
+    const client = new AegisClient(config, fakeConnection({
+      getAccountInfo: async () => ({ data: policyData, owner: DEFAULT_AEGIS_PROGRAM_ID, lamports: 1, executable: false }),
+      getBalance: async () => 0,
+    }));
+
+    const draft = await client.buildUnsignedOwnerTransaction(wallet, { kind: "closePolicy" });
+    const tx = Transaction.from(Uint8Array.from(Buffer.from(draft.transaction, "base64")));
+
+    expect(tx.instructions).toHaveLength(1);
+    expect(tx.feePayer?.equals(wallet)).toBe(true);
+    // owner is the sole writable signer; 4 program accounts + system program.
+    const ix = tx.instructions[0];
+    expect(ix.keys[0].pubkey.equals(wallet)).toBe(true);
+    expect(ix.keys[0].isSigner && ix.keys[0].isWritable).toBe(true);
+    expect(ix.keys).toHaveLength(5);
+    // no u64 arg — discriminator only.
+    expect(ix.data).toHaveLength(8);
+  });
+
   test("refuses to rotate to the current agent key", async () => {
     const agent = Keypair.generate();
     const config = makeConfig({ agentKeypair: agent, nextAgentKeypair: agent });

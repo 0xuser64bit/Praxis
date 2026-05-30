@@ -10,5 +10,6 @@ Recommended mock walkthrough:
 4. Revoke the agent in Policy, then type another send.
 5. Type `what's bonk doing this week` for read-only research.
 
-API mode does not fall back to mock data. If the live backend is not configured,
-the app renders an explicit API error state.
+API mode starts with Solana wallet sign-in, then loads the wallet-scoped policy
+and workspace. It does not fall back to mock data. If the live backend is not
+configured, the app renders an explicit API error state.

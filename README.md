@@ -30,21 +30,24 @@ Open `http://localhost:3000/app`.
 
 ### Live API mode
 
-Use this for the real Aegis send flow on localnet/devnet. Copy `.env.example`,
-then configure:
+Use this for the real Aegis send flow on localnet/devnet. API mode now requires
+wallet sign-in; the signed-in wallet address derives the Aegis policy PDA and
+scopes the off-chain workspace state. Copy `.env.example`, then configure:
 
 - `NEXT_PUBLIC_PRAXIS_PROVIDER=api`
-- `PRAXIS_DEMO_MUTATION_TOKEN`
-- `NEXT_PUBLIC_PRAXIS_DEMO_MUTATION_TOKEN` with the same local-demo value
+- `PRAXIS_SESSION_SECRET` for stable signed sessions
+- `PRAXIS_STATE_DIR` for local/devnet workspace persistence
 - `SOLANA_RPC_URL`
 - `PRAXIS_AGENT_KEYPAIR_PATH` or `PRAXIS_AGENT_KEYPAIR`
 - `PRAXIS_NEXT_AGENT_KEYPAIR_PATH` or `PRAXIS_NEXT_AGENT_KEYPAIR` for
   rotate/re-enable; it must be different from the current agent key
-- `AEGIS_POLICY_ADDRESS`, `AEGIS_OWNER_ADDRESS`, or `PRAXIS_OWNER_KEYPAIR_PATH`
+- `PRAXIS_OWNER_KEYPAIR_PATH` only for local/devnet owner/admin routes; it must
+  match the wallet you sign in with
 - `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`, unless using `PRAXIS_LOCAL_INTENT=1`
 
-The demo mutation token is not production authentication. It only prevents an
-accidental public deployment from exposing server-side signer routes.
+Server-side owner key custody is still a local/devnet convenience. Production
+owner/admin actions should be wallet-signed transactions, not backend keypair
+transactions.
 
 ```bash
 bun run dev
@@ -75,9 +78,19 @@ The script initializes a demo policy if needed, funds the vault, previews and
 executes `send 0.5 sol to maya`, then submits an over-cap transfer so Aegis
 returns a typed rejection.
 
+For SPL sends, prepare the configured token vault and known recipient associated
+token accounts:
+
+```bash
+bun run praxis:setup-token-accounts
+```
+
+Set `PRAXIS_TOKEN_VAULT_FUND_AMOUNT` to transfer tokens from the owner ATA into
+the vault ATA during setup.
+
 ## Production Gap
 
-This repo is now demo-ready, not production-ready. Before production, owner
-policy actions must be wallet-signed, user/session auth must replace the demo
-mutation token, durable storage must replace the in-memory provider, and API
-routes need per-user authorization and rate limits.
+This repo is now a stronger local/devnet MVP candidate, not production-ready.
+Before production, replace filesystem state with managed database storage, move
+owner/admin actions to wallet-signed transactions, put the agent key in a real
+key-management boundary, and add platform-level rate limiting/monitoring.

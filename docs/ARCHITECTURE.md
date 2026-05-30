@@ -27,14 +27,17 @@ enforces the spending envelope.
 `/api/praxis/*` route handlers.
 
 - Reads policy and activity through `PraxisServerProvider`.
+- Requires Solana wallet message signing and a signed HTTP-only session cookie.
+- Derives the live policy PDA from the signed-in wallet address.
+- Persists off-chain threads, proposals, and activity under `PRAXIS_STATE_DIR`.
 - Parses intent with Anthropic Messages API or the local demo parser.
 - Resolves address-book labels off-chain.
 - Simulates through `AegisClient`.
 - Signs agent actions with the configured scoped agent key.
-- Uses a demo mutation token, not production authentication.
+- Requires backend owner-key actions to match the signed-in wallet.
 
-The server provider is still an in-memory singleton. That is acceptable for a
-demo, but it is not a production state model.
+The filesystem state adapter is for local/devnet durability. Production should
+replace it with managed database storage.
 
 ## Core Data Flow
 
@@ -46,6 +49,7 @@ demo, but it is not a production state model.
 6. On confirm, API mode signs an Aegis instruction with the scoped agent key.
 7. Aegis enforces the policy on-chain before any value leaves the vault.
 8. Policy and activity are refreshed into the UI.
+9. Threads, proposals, and off-chain rejected activity are persisted by wallet.
 
 ## On-Chain Model
 
@@ -56,7 +60,8 @@ Aegis stores:
 - Vault PDA: native SOL custody.
 - Token vault account: associated token account owned by the vault PDA for the
   configured SPL mint.
-- `ActionLog`: fixed-size ring buffer of allowed actions.
+- `ActionLog`: fixed-size ring buffer of allowed actions, including the mint
+  moved by each record. Native SOL records use the default pubkey as mint.
 
 Supported agent instructions:
 
@@ -114,15 +119,14 @@ They are not the source of truth for value movement.
 
 ## Current Production Gaps
 
-- No real authentication or authorization.
-- Public demo mutation token is not production auth.
-- Server-side key custody is demo-only.
-- No durable database.
-- No rate limits.
-- No rejected-action indexer.
-- No live setup flow for SPL token vault/recipient accounts.
-- No historical mint stored in `ActionRecord`, so SPL activity can be mislabeled
-  after token reconfiguration.
+- Server-side agent key custody is still demo/localnet oriented.
+- Owner/admin routes still rely on a backend owner keypair when used from API
+  mode; production should use wallet-signed owner transactions.
+- Filesystem state is local/devnet durability, not production database storage.
+- Route rate limits are process-local and need platform/WAF enforcement.
+- No durable rejected-transaction indexer for failures that happen outside the
+  app process.
+- No managed setup/funding product flow for SPL token vault balances.
 
 ## Verification Commands
 

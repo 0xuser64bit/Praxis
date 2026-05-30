@@ -5,15 +5,21 @@ All money crosses JSON as integer decimal strings; in memory it is `bigint`.
 
 ## Security boundary
 
-Every `POST` route requires:
+API mode uses wallet ownership as the user boundary.
 
-- a same-origin browser request, when an `Origin` header is present
-- `x-praxis-demo-token` matching `PRAXIS_DEMO_MUTATION_TOKEN`
+- `POST /api/praxis/auth/challenge` creates a short-lived sign-in message for
+  a Solana wallet address.
+- `POST /api/praxis/auth/verify` verifies the wallet signature and sets a
+  signed, HTTP-only session cookie.
+- All `/api/praxis/*` read and mutation routes require that session.
+- Every mutation route also requires a same-origin browser request when an
+  `Origin` header is present.
+- Auth, read, mutation, and agent-send routes have process-local rate limits.
 
-The browser client sends that header from `NEXT_PUBLIC_PRAXIS_DEMO_MUTATION_TOKEN`
-in API mode. This is a local-demo guard, not production auth. A production build
-must replace it with wallet/session authorization and owner-signed policy/admin
-transactions.
+The signed-in wallet derives the live policy PDA and scopes the off-chain
+workspace. Backend owner-key routes are allowed only when `PRAXIS_OWNER_KEYPAIR`
+matches the signed-in wallet. Production should move owner/admin actions to
+wallet-signed transactions.
 
 ## Routes
 
@@ -26,12 +32,17 @@ transactions.
 - `GET /api/praxis/is-thinking?threadId=<threadId>`
 - `GET /api/praxis/get-version`
 - `GET /api/praxis/subscribe` returns polling metadata for `get-version`
+- `GET /api/praxis/auth/session`
+- `DELETE /api/praxis/auth/session`
+- `POST /api/praxis/auth/challenge` with `{ "address": string }`
+- `POST /api/praxis/auth/verify` with `{ "address": string, "nonce": string, "signature": string }`
 - `POST /api/praxis/send` with `{ "threadId": string | null, "text": string }`
 - `POST /api/praxis/sign-proposal` with `{ "proposalId": string }`
 - `POST /api/praxis/cancel-proposal` with `{ "proposalId": string }`
 - `POST /api/praxis/new-thread` with optional `{ "threadId": string }`
 - `POST /api/praxis/update-policy` with `{ "patch": { "maxPerTx"?: string, "dailyLimit"?: string, "expiryTs"?: number, "paused"?: boolean } }`
 - `POST /api/praxis/configure-token` with `{ "config": { "tokenMint": string, "tokenMaxPerTx": string, "tokenDailyLimit": string } }`
+- `POST /api/praxis/prepare-token-accounts` with `{ "recipientAddresses"?: string[] }`
 - `POST /api/praxis/revoke-agent`
 - `POST /api/praxis/rotate-agent`
 - `POST /api/praxis/add-to-allow-list` with `{ "kind": "programs" | "recipients" | "mints", "address": string }`
@@ -46,16 +57,22 @@ Copy `.env.example` and fill in:
 
 - `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` for Messages API intent parsing.
 - `SOLANA_RPC_URL` for the target cluster.
+- `PRAXIS_SESSION_SECRET` for stable wallet sessions.
+- `PRAXIS_STATE_DIR` for local/devnet off-chain state persistence.
 - `PRAXIS_AGENT_KEYPAIR_PATH` or `PRAXIS_AGENT_KEYPAIR` for the scoped agent signer.
 - `PRAXIS_NEXT_AGENT_KEYPAIR_PATH` or `PRAXIS_NEXT_AGENT_KEYPAIR` for `rotate-agent`; it must be different from the current agent key.
-- `AEGIS_POLICY_ADDRESS`, or `AEGIS_OWNER_ADDRESS`, or an owner keypair so the server can locate the policy PDA.
-- Optional `PRAXIS_OWNER_KEYPAIR_PATH` / `PRAXIS_OWNER_KEYPAIR` for server-side policy admin routes.
+- Optional `PRAXIS_OWNER_KEYPAIR_PATH` / `PRAXIS_OWNER_KEYPAIR` for local/devnet server-side policy admin routes. It must match the signed-in wallet.
 - Optional `PRAXIS_ADDRESS_BOOK` for off-chain labels.
-- `PRAXIS_DEMO_MUTATION_TOKEN` and `NEXT_PUBLIC_PRAXIS_DEMO_MUTATION_TOKEN` for local API-mode demos.
+- Optional `PRAXIS_LLM_TIMEOUT_MS`, `PRAXIS_RPC_READ_TIMEOUT_MS`, and
+  `PRAXIS_INDEXER_TIMEOUT_MS` to tune external-call deadlines.
 
 The agent executor only signs `agent_transfer` and `agent_transfer_spl` through
 Aegis. It never builds raw transfers outside the program. Swaps are represented
 as typed, blocked `swap` proposal stubs; no Jupiter CPI is built or signed.
+
+`configure-token` prepares the vault associated token account when backend owner
+signing is available. `prepare-token-accounts` idempotently creates the vault
+and supplied recipient ATAs for the configured token mint.
 
 ## Demo
 
@@ -69,3 +86,11 @@ With a local validator and owner/agent keypairs, the script initializes a demo
 policy if needed, funds the vault, prints the `send 0.5 sol to maya` preview and
 confirmation, then sends an over-cap transfer with preflight skipped so Aegis
 returns its typed rejection reason.
+
+For SPL account setup:
+
+```bash
+bun run praxis:setup-token-accounts
+```
+
+Set `PRAXIS_TOKEN_VAULT_FUND_AMOUNT` to fund the token vault from the owner ATA.

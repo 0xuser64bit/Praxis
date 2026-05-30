@@ -20,16 +20,17 @@ behavior as shipped.
 - Swap intents parsed as policy previews only. They are always blocked because
   `agent_swap` and Jupiter CPI are not implemented.
 - Wallet signed-message sessions for API mode.
-- Wallet-scoped API providers and local/devnet filesystem persistence for
-  threads, proposals, and activity.
+- Wallet-scoped API providers behind a `StateRepository` seam, with a
+  filesystem backend (local/devnet) and a managed Postgres/Neon backend
+  (`PRAXIS_STATE_BACKEND=postgres`) for durable threads, proposals, and activity.
 - Process-local rate limits and external-call timeouts.
 - SPL associated token account setup route, UI action, and script.
 - Historical mint snapshots in allowed on-chain action records.
 
 ## Not Implemented
 
-- Production-grade managed database storage for threads, proposals, rejected
-  activity, or users.
+- Durable user/profile records (the managed Postgres backend persists
+  threads/proposals/activity per wallet; there is no separate users table yet).
 - Wallet-signed owner/admin transactions.
 - Managed SPL vault funding UX.
 - Durable rejected-action indexing. The on-chain action log stores allowed
@@ -52,7 +53,9 @@ depend on hand-created token accounts.
 
 ### Phase 2: MVP Foundations
 
-1. Replace filesystem state with a managed database.
+1. ~~Replace filesystem state with a managed database.~~ Done — a
+   `StateRepository` seam ships filesystem (local) and Postgres/Neon (managed)
+   backends, switched by `PRAXIS_STATE_BACKEND`.
 2. Move owner/admin authority to wallet-signed transactions or a clearly
    authorized backend custody model.
 3. Add durable user/profile records if email or team features become necessary.
@@ -65,7 +68,10 @@ process-local storage or backend owner key custody.
 1. Index failed transaction logs that emit `AgentActionRejected`.
 2. Add platform-level rate limits, logging, and alerts.
 3. Add Playwright coverage for the core UI flows.
-4. Add API route tests around auth/session and setup flows.
+4. ~~Add API route tests around auth/session and setup flows.~~ Done — a bun-test
+   suite covers auth/session, the wallet challenge, request validation, rate
+   limiting, state persistence, the Aegis codec, the server provider, and the
+   API route auth/validation seams (`bun run test`).
 
 Expected outcome: failures are bounded, observable, and reconstructable.
 

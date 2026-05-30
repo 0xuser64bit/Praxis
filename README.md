@@ -94,7 +94,10 @@ the vault ATA during setup.
 
 ## Production Gap
 
-This repo is now a stronger local/devnet MVP candidate, not production-ready.
-Before production, replace filesystem state with managed database storage, move
-owner/admin actions to wallet-signed transactions, put the agent key in a real
-key-management boundary, and add platform-level rate limiting/monitoring.
+This repo is a strong local/devnet MVP candidate. Managed state storage is now
+available — set `PRAXIS_STATE_BACKEND=postgres` with a `DATABASE_URL` (Neon or
+any Postgres) to persist threads/proposals/activity durably across instances;
+the filesystem backend remains the default for local/devnet. Before production,
+also move owner/admin actions to wallet-signed transactions, put the agent key
+in a real key-management boundary, and add platform-level rate limiting and
+monitoring.

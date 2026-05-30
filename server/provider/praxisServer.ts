@@ -35,11 +35,8 @@ import {
 } from "../env";
 import { PraxisConfigError, PraxisNotFoundError } from "../errors";
 import { parseHumanUnits, SOL_DECIMALS } from "../units";
-import {
-  loadProviderState,
-  saveProviderState,
-  type StoredProviderState,
-} from "./stateStore";
+import { getStateRepository, type StateRepository } from "./stateRepository";
+import type { StoredProviderState } from "./stateSerialization";
 
 interface StoreState {
   threads: Thread[];
@@ -53,23 +50,52 @@ const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 
 let singleton: PraxisServerProvider | undefined;
 const providersByWallet = new Map<string, PraxisServerProvider>();
+const inflightByWallet = new Map<string, Promise<PraxisServerProvider>>();
 
-export function getPraxisServerProvider(walletAddress?: string): PraxisServerProvider {
+function ownerKeyForConfig(config: PraxisServerConfig): string {
+  return config.ownerAddress?.toBase58() ?? config.policyAddress?.toBase58() ?? "default";
+}
+
+/**
+ * Acquire the cached provider for a wallet, hydrating its durable state from the
+ * configured {@link StateRepository} on first acquisition. Async because a
+ * managed-database backend loads over the network; in-flight loads are coalesced
+ * so concurrent requests for the same wallet share one hydration.
+ */
+export async function getPraxisServerProvider(walletAddress?: string): Promise<PraxisServerProvider> {
+  const repository = getStateRepository();
+
   if (walletAddress) {
     const normalized = validatePublicKey(walletAddress, "walletAddress").toBase58();
     const existing = providersByWallet.get(normalized);
     if (existing) return existing;
-    const provider = new PraxisServerProvider(configForWalletOwner(new PublicKey(normalized)));
-    providersByWallet.set(normalized, provider);
-    return provider;
+    const inflight = inflightByWallet.get(normalized);
+    if (inflight) return inflight;
+
+    const promise = (async () => {
+      const config = configForWalletOwner(new PublicKey(normalized));
+      const stored = await repository.load(ownerKeyForConfig(config));
+      const provider = new PraxisServerProvider(config, new AegisClient(config), stored);
+      providersByWallet.set(normalized, provider);
+      return provider;
+    })().finally(() => inflightByWallet.delete(normalized));
+
+    inflightByWallet.set(normalized, promise);
+    return promise;
   }
-  if (!singleton) singleton = new PraxisServerProvider();
+
+  if (!singleton) {
+    const config = getServerConfig();
+    const stored = await repository.load(ownerKeyForConfig(config));
+    singleton = new PraxisServerProvider(config, new AegisClient(config), stored);
+  }
   return singleton;
 }
 
 export function resetPraxisServerProviderForTests() {
   singleton = undefined;
   providersByWallet.clear();
+  inflightByWallet.clear();
 }
 
 export class PraxisServerProvider implements PraxisProvider {
@@ -77,20 +103,25 @@ export class PraxisServerProvider implements PraxisProvider {
   private readonly aegis: AegisClient;
   private readonly addressBook: AddressBook;
   private readonly ownerKey: string;
+  private readonly repository: StateRepository;
   private readonly listeners = new Set<() => void>();
   private state: StoreState;
   private version = 0;
 
-  constructor(config = getServerConfig(), aegis = new AegisClient(config)) {
+  constructor(
+    config = getServerConfig(),
+    aegis = new AegisClient(config),
+    initialState?: StoredProviderState,
+  ) {
     this.config = config;
     this.aegis = aegis;
+    this.repository = getStateRepository();
     this.addressBook = new AddressBook(config.addressBook);
-    this.ownerKey = config.ownerAddress?.toBase58() ?? config.policyAddress?.toBase58() ?? "default";
-    const stored = loadProviderState(this.ownerKey);
+    this.ownerKey = ownerKeyForConfig(config);
     this.state = {
-      threads: stored?.threads.length ? stored.threads : [welcomeThread(nowSeconds())],
-      proposals: stored?.proposals ?? {},
-      activity: stored?.activity ?? [],
+      threads: initialState?.threads.length ? initialState.threads : [welcomeThread(nowSeconds())],
+      proposals: initialState?.proposals ?? {},
+      activity: initialState?.activity ?? [],
       thinking: {},
     };
   }
@@ -580,11 +611,12 @@ export class PraxisServerProvider implements PraxisProvider {
       proposals: this.state.proposals,
       activity: this.state.activity,
     };
-    try {
-      saveProviderState(this.ownerKey, state);
-    } catch (error) {
+    // Fire-and-forget: in-memory state is authoritative within the process; the
+    // repository is the durable mirror that catches up asynchronously. Failures
+    // are logged, never thrown into a request path.
+    void Promise.resolve(this.repository.save(this.ownerKey, state)).catch((error) => {
       console.warn("Praxis state persistence failed", error);
-    }
+    });
   }
 }
 

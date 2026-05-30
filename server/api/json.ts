@@ -1,6 +1,9 @@
 import { parseUnits } from "@praxis/shared";
 
-import { getPraxisServerProvider } from "../provider/praxisServer";
+import {
+  getPraxisServerProvider,
+  type PraxisServerProvider,
+} from "../provider/praxisServer";
 import { requireSession, type PraxisSession } from "../auth/session";
 import {
   PraxisAuthError,
@@ -44,10 +47,10 @@ export function jsonError(error: unknown, init: ResponseInit = {}): Response {
 
 export async function withProvider<T>(
   session: PraxisSession,
-  fn: (provider: ReturnType<typeof getPraxisServerProvider>) => Promise<T> | T,
+  fn: (provider: PraxisServerProvider) => Promise<T> | T,
 ): Promise<Response> {
   try {
-    const provider = getPraxisServerProvider(session.walletAddress);
+    const provider = await getPraxisServerProvider(session.walletAddress);
     return jsonOk(await fn(provider));
   } catch (error) {
     return jsonError(error);
@@ -56,11 +59,11 @@ export async function withProvider<T>(
 
 export async function withReadProvider<T>(
   request: Request,
-  fn: (provider: ReturnType<typeof getPraxisServerProvider>, session: PraxisSession) => Promise<T> | T,
+  fn: (provider: PraxisServerProvider, session: PraxisSession) => Promise<T> | T,
 ): Promise<Response> {
   try {
     const session = requireReadAuth(request);
-    const provider = getPraxisServerProvider(session.walletAddress);
+    const provider = await getPraxisServerProvider(session.walletAddress);
     return jsonOk(await fn(provider, session));
   } catch (error) {
     return jsonError(error);
@@ -69,11 +72,11 @@ export async function withReadProvider<T>(
 
 export async function withMutationProvider<T>(
   request: Request,
-  fn: (provider: ReturnType<typeof getPraxisServerProvider>, session: PraxisSession) => Promise<T> | T,
+  fn: (provider: PraxisServerProvider, session: PraxisSession) => Promise<T> | T,
 ): Promise<Response> {
   try {
     const session = requireMutationAuth(request);
-    const provider = getPraxisServerProvider(session.walletAddress);
+    const provider = await getPraxisServerProvider(session.walletAddress);
     return jsonOk(await fn(provider, session));
   } catch (error) {
     return jsonError(error);

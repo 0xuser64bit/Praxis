@@ -20,7 +20,7 @@ import {
   IconWallet,
   IconX,
 } from "@tabler/icons-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { Button } from "@/components/praxis/Button";
 
@@ -46,6 +46,7 @@ export function PolicyDashboard() {
   const addressBook = useAddressBook();
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"overview" | "advanced">("overview");
   const now = useNow();
   const revoked = policy.paused || policy.agentAuthority === SYSTEM_PROGRAM;
   const runMutation = (action: () => Promise<void>, fallback: string) => {
@@ -114,81 +115,100 @@ export function PolicyDashboard() {
           </div>
         )}
 
-        <VaultCard
-          policy={policy}
-          onFund={(amount) => runMutation(() => provider.fundVault(amount), "Could not add funds to the vault.")}
-          onWithdraw={(amount) => runMutation(() => provider.withdrawVault(amount), "Could not withdraw from the vault.")}
-        />
-
-        <SpendCard policy={policy} now={now} />
-
-        <div className="mt-4 grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
-          <CapsCard
-            policy={policy}
-            onSave={(patch) => {
-              runMutation(() => provider.updatePolicy(patch), "Policy update failed.");
-            }}
-          />
-          <SessionCard
-            policy={policy}
-            revoked={revoked}
-            now={now}
-            onRotate={() => {
-              runMutation(() => provider.rotateAgent(), "Rotate failed.");
-            }}
-            onUpdateExpiry={(expiryTs) => {
-              runMutation(() => provider.updatePolicy({ expiryTs }), "Expiry update failed.");
-            }}
-          />
+        <div className="mb-5 inline-flex rounded-lg bg-[var(--bg-elevated)] p-0.5 [border:0.5px_solid_var(--border)]">
+          <TabButton active={tab === "overview"} onClick={() => setTab("overview")}>
+            Overview
+          </TabButton>
+          <TabButton active={tab === "advanced"} onClick={() => setTab("advanced")}>
+            Advanced
+          </TabButton>
         </div>
 
-        <TokenEnvelopeCard
-          policy={policy}
-          now={now}
-          onConfigure={(config) => {
-            runMutation(() => provider.configureToken(config), "Token configuration failed.");
-          }}
-          onPrepareAccounts={() => {
-            runMutation(
-              () => provider.prepareTokenAccounts(addressBook.map((entry) => entry.address)),
-              "Token account setup failed.",
-            );
-          }}
-        />
+        {tab === "overview" ? (
+          <>
+            <VaultCard
+              policy={policy}
+              onFund={(amount) => runMutation(() => provider.fundVault(amount), "Could not add funds to the vault.")}
+              onWithdraw={(amount) => runMutation(() => provider.withdrawVault(amount), "Could not withdraw from the vault.")}
+            />
 
-        <Card className="mt-4 p-5">
-          <Label className="mb-4">Allow-lists</Label>
-          <div className="flex flex-col gap-5">
-            <AllowList
-              kind="programs"
-              title="Programs"
-              hint="Only these programs may be invoked"
-              addresses={policy.allowedPrograms}
-              labeler={programLabel}
-              onAdd={addToAllowList}
-              onRemove={removeFromAllowList}
+            <SpendCard policy={policy} now={now} />
+
+            <div className="mt-4">
+              <SessionCard policy={policy} revoked={revoked} now={now} showActions={false} />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
+              <CapsCard
+                policy={policy}
+                onSave={(patch) => {
+                  runMutation(() => provider.updatePolicy(patch), "Policy update failed.");
+                }}
+              />
+              <SessionCard
+                policy={policy}
+                revoked={revoked}
+                now={now}
+                onRotate={() => {
+                  runMutation(() => provider.rotateAgent(), "Rotate failed.");
+                }}
+                onUpdateExpiry={(expiryTs) => {
+                  runMutation(() => provider.updatePolicy({ expiryTs }), "Expiry update failed.");
+                }}
+              />
+            </div>
+
+            <TokenEnvelopeCard
+              policy={policy}
+              now={now}
+              onConfigure={(config) => {
+                runMutation(() => provider.configureToken(config), "Token configuration failed.");
+              }}
+              onPrepareAccounts={() => {
+                runMutation(
+                  () => provider.prepareTokenAccounts(addressBook.map((entry) => entry.address)),
+                  "Token account setup failed.",
+                );
+              }}
             />
-            <AllowList
-              kind="mints"
-              title="Verified mints"
-              hint="The agent may only route into these mints"
-              addresses={policy.allowedMints}
-              labeler={mintLabel}
-              quickAdd={QUICK_MINTS}
-              onAdd={addToAllowList}
-              onRemove={removeFromAllowList}
-            />
-            <AllowList
-              kind="recipients"
-              title="Recipients"
-              hint="Empty means any recipient is allowed"
-              addresses={policy.allowedRecipients}
-              emptyMeansAny
-              onAdd={addToAllowList}
-              onRemove={removeFromAllowList}
-            />
-          </div>
-        </Card>
+
+            <Card className="mt-4 p-5">
+              <Label className="mb-4">Allow-lists</Label>
+              <div className="flex flex-col gap-5">
+                <AllowList
+                  kind="programs"
+                  title="Programs"
+                  hint="Only these programs may be invoked"
+                  addresses={policy.allowedPrograms}
+                  labeler={programLabel}
+                  onAdd={addToAllowList}
+                  onRemove={removeFromAllowList}
+                />
+                <AllowList
+                  kind="mints"
+                  title="Verified mints"
+                  hint="The agent may only route into these mints"
+                  addresses={policy.allowedMints}
+                  labeler={mintLabel}
+                  quickAdd={QUICK_MINTS}
+                  onAdd={addToAllowList}
+                  onRemove={removeFromAllowList}
+                />
+                <AllowList
+                  kind="recipients"
+                  title="Recipients"
+                  hint="Empty means any recipient is allowed"
+                  addresses={policy.allowedRecipients}
+                  emptyMeansAny
+                  onAdd={addToAllowList}
+                  onRemove={removeFromAllowList}
+                />
+              </div>
+            </Card>
+          </>
+        )}
 
       </div>
 
@@ -196,6 +216,32 @@ export function PolicyDashboard() {
         <RevokeDialog onConfirm={() => provider.revokeAgent()} onClose={() => setRevokeOpen(false)} />
       )}
     </div>
+  );
+}
+
+// --- tabs ---
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={`rounded-[7px] px-3.5 py-1.5 text-[12.5px] font-medium [transition:background_0.15s,color_0.15s] ${
+        active
+          ? "bg-[var(--bg-card)] text-[var(--text-primary)] [box-shadow:0_1px_2px_rgba(0,0,0,0.18)]"
+          : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -520,27 +566,31 @@ function SessionCard({
   now,
   onRotate,
   onUpdateExpiry,
+  showActions = true,
 }: {
   policy: PolicyView;
   revoked: boolean;
   now: number;
-  onRotate: () => void;
-  onUpdateExpiry: (expiryTs: number) => void;
+  onRotate?: () => void;
+  onUpdateExpiry?: (expiryTs: number) => void;
+  showActions?: boolean;
 }) {
-  const extendSevenDays = () => onUpdateExpiry(now + 7 * 86400);
+  const extendSevenDays = () => onUpdateExpiry?.(now + 7 * 86400);
 
   return (
     <Card className="p-5">
       <div className="mb-4 flex items-center justify-between">
         <Label>Session key</Label>
-        <button
-          type="button"
-          onClick={onRotate}
-          className="inline-flex items-center gap-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [transition:color_0.15s] hover:text-[var(--text-primary)]"
-        >
-          <IconRefresh size={12} />
-          rotate
-        </button>
+        {showActions && onRotate && (
+          <button
+            type="button"
+            onClick={onRotate}
+            className="inline-flex items-center gap-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [transition:color_0.15s] hover:text-[var(--text-primary)]"
+          >
+            <IconRefresh size={12} />
+            rotate
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-2.5">
@@ -564,13 +614,15 @@ function SessionCard({
           <span className="[font-family:var(--font-mono)] text-[var(--text-primary)]">
             {formatExpiry(policy.expiryTs, now)}
           </span>
-          <button
-            type="button"
-            onClick={extendSevenDays}
-            className="rounded-md px-2 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)]"
-          >
-            extend 7d
-          </button>
+          {showActions && onUpdateExpiry && (
+            <button
+              type="button"
+              onClick={extendSevenDays}
+              className="rounded-md px-2 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)]"
+            >
+              extend 7d
+            </button>
+          )}
         </div>
       </div>
     </Card>

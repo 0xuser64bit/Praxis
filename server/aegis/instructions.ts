@@ -1,6 +1,6 @@
 import { PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
 
-import { INSTRUCTION_DISCRIMINATOR } from "./constants";
+import { INSTRUCTION_DISCRIMINATOR, TOKEN_PROGRAM_ID } from "./constants";
 import { writeI64, writePubkeyVec, writeU64 } from "./codec";
 
 export interface AegisAddresses {
@@ -32,6 +32,45 @@ export function buildAgentTransferIx(
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data: Buffer.concat([INSTRUCTION_DISCRIMINATOR.agentTransfer, writeU64(amount)]),
+  });
+}
+
+export function buildConfigureTokenIx(
+  addresses: AegisAddresses & { owner: PublicKey },
+  args: { tokenMint: PublicKey; tokenMaxPerTx: bigint; tokenDailyLimit: bigint },
+): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: addresses.programId,
+    keys: [
+      { pubkey: addresses.owner, isSigner: true, isWritable: false },
+      { pubkey: addresses.policy, isSigner: false, isWritable: true },
+    ],
+    data: Buffer.concat([
+      INSTRUCTION_DISCRIMINATOR.configureToken,
+      args.tokenMint.toBuffer(),
+      writeU64(args.tokenMaxPerTx),
+      writeU64(args.tokenDailyLimit),
+    ]),
+  });
+}
+
+export function buildAgentTransferSplIx(
+  addresses: AegisAddresses & { agentAuthority: PublicKey },
+  tokenAccounts: { vaultTokenAccount: PublicKey; recipientTokenAccount: PublicKey },
+  amount: bigint,
+): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: addresses.programId,
+    keys: [
+      { pubkey: addresses.agentAuthority, isSigner: true, isWritable: false },
+      { pubkey: addresses.policy, isSigner: false, isWritable: true },
+      { pubkey: addresses.vault, isSigner: false, isWritable: false },
+      { pubkey: tokenAccounts.vaultTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: tokenAccounts.recipientTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: addresses.actionLog, isSigner: false, isWritable: true },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.concat([INSTRUCTION_DISCRIMINATOR.agentTransferSpl, writeU64(amount)]),
   });
 }
 

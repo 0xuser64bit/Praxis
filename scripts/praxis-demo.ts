@@ -86,6 +86,17 @@ async function ensureDemoPolicy(client: AegisClient) {
     expiryTs: now + 7 * 86_400,
   });
   await client.fundVault(parseHumanUnits("1", SOL_DECIMALS));
+
+  // Configure the SPL-token envelope (USDC) so API mode mirrors the mock seed:
+  // the agent can move USDC within its OWN caps via agent_transfer_spl.
+  const usdc = config.tokens.find((token) => token.symbol === "USDC");
+  if (usdc) {
+    await client.configureToken({
+      tokenMint: usdc.mint,
+      tokenMaxPerTx: parseHumanUnits("200", usdc.decimals),
+      tokenDailyLimit: parseHumanUnits("500", usdc.decimals),
+    });
+  }
 }
 
 async function parseTransfer(line: string, config = getServerConfig()): Promise<Extract<ParsedAction, { kind: "transfer" }>> {

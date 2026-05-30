@@ -26,7 +26,7 @@ import {
 } from "@praxis/shared";
 
 import { checkSwapPolicy, parse } from "./intent";
-import { checkTransfer } from "./policy";
+import { checkTransfer, checkTokenTransfer } from "./policy";
 import { ADDR, createInitialState, type StoreState } from "./seed";
 
 const THINK_MS = 700;
@@ -145,12 +145,10 @@ export class MockPraxisProvider implements PraxisProvider {
     const ts = this.now();
 
     if (p.detail.kind === "transfer") {
-      const check = checkTransfer(
-        this.state.policy,
-        p.detail.amount,
-        p.detail.recipientAddress,
-        ts,
-      );
+      const isSol = p.detail.asset.symbol === "SOL";
+      const check = isSol
+        ? checkTransfer(this.state.policy, p.detail.amount, p.detail.recipientAddress, ts)
+        : checkTokenTransfer(this.state.policy, p.detail.asset, p.detail.amount, ts);
       if (!check.allowed) {
         p.check = check;
         p.state = "blocked";
@@ -176,12 +174,20 @@ export class MockPraxisProvider implements PraxisProvider {
         return;
       }
 
-      this.applyRollover(ts);
-      this.state.policy = {
-        ...this.state.policy,
-        spentToday: this.state.policy.spentToday + p.detail.amount,
-        vaultBalance: this.state.policy.vaultBalance - p.detail.amount,
-      };
+      if (isSol) {
+        this.applyRollover(ts);
+        this.state.policy = {
+          ...this.state.policy,
+          spentToday: this.state.policy.spentToday + p.detail.amount,
+          vaultBalance: this.state.policy.vaultBalance - p.detail.amount,
+        };
+      } else {
+        this.applyTokenRollover(ts);
+        this.state.policy = {
+          ...this.state.policy,
+          tokenSpentToday: this.state.policy.tokenSpentToday + p.detail.amount,
+        };
+      }
       p.check = check;
       this.state.activity = [
         {
@@ -257,6 +263,13 @@ export class MockPraxisProvider implements PraxisProvider {
   private applyRollover(now: number) {
     if (now >= this.state.policy.dayStartTs + DAY_WINDOW_SECONDS) {
       this.state.policy = { ...this.state.policy, spentToday: 0n, dayStartTs: now };
+    }
+  }
+
+  /** Reset the TOKEN spent_today on its own rolling window (mirrors Aegis). */
+  private applyTokenRollover(now: number) {
+    if (now >= this.state.policy.tokenDayStartTs + DAY_WINDOW_SECONDS) {
+      this.state.policy = { ...this.state.policy, tokenSpentToday: 0n, tokenDayStartTs: now };
     }
   }
 

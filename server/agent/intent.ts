@@ -9,7 +9,8 @@ export type ParsedIntent =
 export type ParsedAction =
   | {
       kind: "transfer";
-      asset: "SOL";
+      /** Asset symbol: "SOL" (native) or an SPL token symbol like "USDC". */
+      asset: string;
       amountHuman: string;
       recipient: string;
     }
@@ -58,7 +59,8 @@ const intentTool = {
             },
             asset: {
               type: "string",
-              enum: ["SOL"],
+              description:
+                "Asset symbol for a transfer: 'SOL' for native SOL, or an SPL token symbol like 'USDC'. Default 'SOL' if unspecified.",
             },
             amountHuman: {
               type: "string",
@@ -138,14 +140,14 @@ export async function parseIntentWithClaude(text: string, config: PraxisServerCo
 
 export function parseIntentLocallyForDemo(text: string): ParsedIntent {
   const cleaned = text.trim().replace(/\s+/g, " ");
-  const send = cleaned.match(/^s(?:end|nd)\s+([0-9]+(?:\.[0-9]+)?)\s*(sol)?\s+(?:to|2)\s+(.+)$/i);
+  const send = cleaned.match(/^s(?:end|nd)\s+([0-9]+(?:\.[0-9]+)?)\s*([a-z0-9$]+)?\s+(?:to|2)\s+(.+)$/i);
   if (send) {
     return {
       outcome: "actions",
       actions: [
         {
           kind: "transfer",
-          asset: "SOL",
+          asset: (send[2] ?? "sol").replace(/^\$/, "").toUpperCase(),
           amountHuman: send[1],
           recipient: send[3].trim(),
         },
@@ -222,9 +224,12 @@ function normalizeAction(input: unknown, index: number): ParsedAction {
   const value = input as Record<string, unknown>;
 
   if (value.kind === "transfer") {
+    const asset = typeof value.asset === "string" && value.asset.trim()
+      ? value.asset.trim().replace(/^\$/, "").toUpperCase()
+      : "SOL";
     return {
       kind: "transfer",
-      asset: "SOL",
+      asset,
       amountHuman: readRequiredString(value.amountHuman, "amountHuman"),
       recipient: readRequiredString(value.recipient, "recipient"),
     };

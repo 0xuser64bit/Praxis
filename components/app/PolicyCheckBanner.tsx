@@ -11,7 +11,7 @@ import type { ActionProposal } from "@praxis/shared";
 import { REJECT_REASON_LABEL } from "@praxis/shared";
 import { IconShieldCheck, IconShieldX } from "@tabler/icons-react";
 
-import { formatSol, percentOf } from "./lib/units";
+import { formatUnits, percentOf } from "./lib/units";
 
 export function PolicyCheckBanner({ proposal }: { proposal: ActionProposal }) {
   const { check, detail } = proposal;
@@ -52,13 +52,15 @@ export function PolicyCheckBanner({ proposal }: { proposal: ActionProposal }) {
         {allowed ? <AllowedSummary proposal={proposal} /> : check.reason}
       </p>
 
-      {/* Daily-limit meter — shown for transfers (the SOL-cap accounting) */}
+      {/* Daily-limit meter — shown for transfers (the per-asset cap accounting) */}
       {detail.kind === "transfer" && (
         <div className="mt-3.5 pl-[38px]">
           <DailyMeter
             spent={check.spentToday}
             amount={detail.amount}
             daily={check.dailyLimit}
+            decimals={detail.asset.decimals}
+            symbol={detail.asset.symbol}
             allowed={allowed}
           />
         </div>
@@ -78,13 +80,15 @@ function AllowedSummary({ proposal }: { proposal: ActionProposal }) {
   const { check, detail } = proposal;
   if (detail.kind === "transfer") {
     const after = check.remaining - detail.amount;
+    const sym = detail.asset.symbol;
+    const fmt = (v: bigint) => formatUnits(v, detail.asset.decimals, { maxFrac: 4 });
     return (
       <>
-        {formatSol(check.dailyLimit)} SOL daily cap · {formatSol(check.remaining)} SOL left today
+        {fmt(check.dailyLimit)} {sym} daily cap · {fmt(check.remaining)} {sym} left today
         {after >= 0n && (
           <>
             {" "}
-            — <span className="text-[var(--text-primary)]">{formatSol(after)} SOL</span> after this send
+            — <span className="text-[var(--text-primary)]">{fmt(after)} {sym}</span> after this send
           </>
         )}
         .
@@ -102,11 +106,15 @@ function DailyMeter({
   spent,
   amount,
   daily,
+  decimals,
+  symbol,
   allowed,
 }: {
   spent: bigint;
   amount: bigint;
   daily: bigint;
+  decimals: number;
+  symbol: string;
   allowed: boolean;
 }) {
   const spentPct = percentOf(spent, daily);
@@ -133,8 +141,8 @@ function DailyMeter({
         )}
       </div>
       <div className="mt-1.5 flex items-center justify-between [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
-        <span>{formatSol(spent)} spent today</span>
-        <span>{formatSol(daily)} SOL cap</span>
+        <span>{formatUnits(spent, decimals, { maxFrac: 4 })} spent today</span>
+        <span>{formatUnits(daily, decimals, { maxFrac: 4 })} {symbol} cap</span>
       </div>
     </div>
   );

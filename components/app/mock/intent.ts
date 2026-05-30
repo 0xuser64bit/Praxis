@@ -20,7 +20,7 @@ import type {
 import { remaining } from "@praxis/shared";
 
 import { formatUsd, shortenAddress, toBaseUnits } from "../lib/units";
-import { effectiveSpentToday, checkTransfer } from "./policy";
+import { effectiveSpentToday, checkTransfer, checkTokenTransfer } from "./policy";
 import { ADDR, MINT, SOL_DECIMALS, type StoreState } from "./seed";
 
 export interface ParseResult {
@@ -39,7 +39,7 @@ export interface ParseCtx {
   genId: (prefix: string) => string;
 }
 
-const SEND_RE = /^send\s+([0-9]+(?:\.[0-9]+)?)\s*(sol|usdc)?\s+to\s+(.+)$/i;
+const SEND_RE = /^send\s+([0-9]+(?:\.[0-9]+)?)\s*([a-z0-9$]+)?\s+to\s+(.+)$/i;
 const SWAP_RE =
   /^swap\s+([0-9]+(?:\.[0-9]+)?)\s*([a-z0-9$]+)\s+(?:for|into|to)\s+(\S+)/i;
 
@@ -96,18 +96,19 @@ export function parse(text: string, ctx: ParseCtx): ParseResult {
 
 function parseSend(m: RegExpMatchArray, ctx: ParseCtx): ParseResult {
   const amountStr = m[1];
-  const unit = (m[2] ?? "sol").toLowerCase();
+  const sym = (m[2] ?? "sol").replace(/^\$/, "").toUpperCase();
   const namePart = m[3].trim().toLowerCase().replace(/[.?!]+$/, "");
   const { state, now } = ctx;
 
-  if (unit === "usdc") {
+  const token = findToken(state.tokens, sym);
+  if (!token) {
     return prose(
-      "Token (SPL) transfers are a v2 instruction. The transfer Aegis enforces today moves " +
-        "**native SOL** — try “send 0.5 sol to maya”.",
+      `I don't recognize the asset “${sym}”. I can send **SOL** or a configured SPL token like **USDC** — try “send 100 usdc to maya”.`,
     );
   }
 
   const matches = resolveContacts(namePart, state.addressBook);
+  const unit = token.symbol.toLowerCase();
 
   if (matches.length === 0) {
     return clarify(
@@ -115,7 +116,7 @@ function parseSend(m: RegExpMatchArray, ctx: ParseCtx): ParseResult {
       uniqueContacts(state.addressBook).map((e) => ({
         label: e.name,
         hint: shortenAddress(e.address),
-        value: `send ${amountStr} sol to ${e.name.toLowerCase()}`,
+        value: `send ${amountStr} ${unit} to ${e.name.toLowerCase()}`,
       })),
     );
   }
@@ -126,25 +127,32 @@ function parseSend(m: RegExpMatchArray, ctx: ParseCtx): ParseResult {
       matches.map((e) => ({
         label: e.name,
         hint: `${shortenAddress(e.address)}${e.note ? ` · ${e.note}` : ""}`,
-        value: `send ${amountStr} sol to ${e.name.toLowerCase()}`,
+        value: `send ${amountStr} ${unit} to ${e.name.toLowerCase()}`,
       })),
     );
   }
 
   const contact = matches[0];
-  const amount = parseHumanAmount(amountStr, SOL_DECIMALS);
+  const amount = parseHumanAmount(amountStr, token.decimals);
   if (amount === null) {
-    return prose("That SOL amount has too many decimal places. Use lamport precision or round the amount.");
+    return prose(
+      `That ${token.symbol} amount has too many decimal places (max ${token.decimals}). Round it and try again.`,
+    );
   }
-  const check = checkTransfer(state.policy, amount, contact.address, now);
-  const sol = state.tokens[0];
+
+  // Native SOL routes through agent_transfer; an SPL token through the dedicated
+  // token envelope (agent_transfer_spl) — distinct on-chain caps + mint check.
+  const isSol = token.symbol === "SOL";
+  const check = isSol
+    ? checkTransfer(state.policy, amount, contact.address, now)
+    : checkTokenTransfer(state.policy, token, amount, now);
 
   const proposal: ActionProposal = {
     id: ctx.genId("p"),
     detail: {
       kind: "transfer",
       amount,
-      asset: sol,
+      asset: token,
       recipientName: contact.name,
       recipientAddress: contact.address,
       recipientNote: contact.note,
@@ -171,9 +179,9 @@ function parseSend(m: RegExpMatchArray, ctx: ParseCtx): ParseResult {
           id: ctx.genId("a"),
           kind: "transfer",
           label: contact.name,
-          asset: "SOL",
+          asset: token.symbol,
           amount,
-          decimals: SOL_DECIMALS,
+          decimals: token.decimals,
           result: "rejected",
           reason: check.reason,
           reasonCode: check.reasonCode,

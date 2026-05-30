@@ -15,6 +15,11 @@ export const SYSTEM_PROGRAM_ID = new PublicKey("11111111111111111111111111111111
 /** SPL Token program — an allow-listed program for token-touching actions. */
 export const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 
+/** SPL Associated Token Account program — derives a wallet's canonical ATA. */
+export const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey(
+  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+);
+
 /**
  * Jupiter aggregator (v6). Used by the agent-layer swap allow-list check: a swap
  * is only routable if Jupiter is in the policy's `allowed_programs`. NOTE: the

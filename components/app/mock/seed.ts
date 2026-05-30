@@ -78,6 +78,7 @@ const DAY = 86_400;
 export function createInitialState(): StoreState {
   const now = Math.floor(Date.now() / 1000);
   const sol = (h: string) => toBaseUnits(h, SOL_DECIMALS);
+  const usdc = (h: string) => toBaseUnits(h, 6);
 
   const policy: PolicyView = {
     address: ADDR.policy,
@@ -93,12 +94,12 @@ export function createInitialState(): StoreState {
     expiryTs: now + 7 * DAY,
     paused: false,
     vaultBalance: sol("6.25"),
-    // SPL-token envelope disabled by default (no token configured), mirroring a
-    // fresh on-chain policy. The agent moves native SOL today; the dashboard's
-    // token-transfer surface is a later wiring step.
-    tokenMint: ADDR.system,
-    tokenMaxPerTx: 0n,
-    tokenDailyLimit: 0n,
+    // SPL-token envelope: a configured USDC envelope with its OWN caps (in USDC
+    // base units), separate from the SOL caps above. The agent can move USDC
+    // within these limits via agent_transfer_spl.
+    tokenMint: MINT.usdc,
+    tokenMaxPerTx: usdc("200"),
+    tokenDailyLimit: usdc("500"),
     tokenSpentToday: 0n,
     tokenDayStartTs: now,
   };

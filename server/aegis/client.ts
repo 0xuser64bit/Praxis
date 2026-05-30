@@ -15,6 +15,8 @@ import {
 import { decodeActionLog, decodePolicyAccount } from "./codec";
 import {
   buildAgentTransferIx,
+  buildAgentTransferSplIx,
+  buildConfigureTokenIx,
   buildFundVaultIx,
   buildInitializePolicyIx,
   buildRevokeAgentIx,
@@ -22,7 +24,7 @@ import {
   buildUpdatePolicyIx,
   type AegisAddresses,
 } from "./instructions";
-import { findActionLogPda, findPolicyPda, findVaultPda } from "./pdas";
+import { findActionLogPda, findAssociatedTokenAddress, findPolicyPda, findVaultPda } from "./pdas";
 import {
   getServerConfig,
   requireAgentKeypair,
@@ -32,9 +34,14 @@ import {
   type PraxisServerConfig,
 } from "../env";
 import { PraxisConfigError, PraxisNotFoundError } from "../errors";
-import { checkFromAegisReason, checkTransferPolicy } from "../agent/policy";
-import type { ActionLogEntry, PolicyCheckResult } from "@praxis/shared";
-import { formatSol } from "../units";
+import {
+  checkFromAegisReason,
+  checkTokenFromAegisReason,
+  checkTokenTransferPolicy,
+  checkTransferPolicy,
+} from "../agent/policy";
+import type { ActionLogEntry, PolicyCheckResult, TokenInfo } from "@praxis/shared";
+import { formatSol, formatUnits } from "../units";
 
 export interface TransferSimulation {
   check: PolicyCheckResult;
@@ -208,6 +215,141 @@ export class AegisClient {
     }
   }
 
+  async simulateAgentTransferSpl(
+    recipient: PublicKey,
+    token: TokenInfo,
+    amount: bigint,
+  ): Promise<TransferSimulation> {
+    const agent = requireAgentKeypair(this.config);
+    const policy = await this.getPolicy();
+    const now = await this.chainTime();
+    const mirrored = checkTokenTransferPolicy(policy, token, amount, now);
+    const ix = await this.agentTransferSplIx(agent.publicKey, recipient, token, amount);
+    const { tx } = await this.buildTransaction([ix], agent.publicKey);
+    tx.sign(agent);
+
+    const sim = await this.conn.simulateTransaction(tx);
+    const logs = sim.value.logs ?? [];
+    const fee = await this.estimateFee(tx);
+    const customCode = extractCustomErrorCode(sim.value.err, logs);
+    const reasonCode = customCode === undefined ? undefined : reasonFromAegisErrorCode(customCode);
+
+    if (reasonCode !== undefined) {
+      const check = checkTokenFromAegisReason(policy, token, reasonCode, amount, now);
+      return { check, simulation: `Rejected by Aegis simulation: ${check.reason}`, networkFee: fee, logs };
+    }
+    if (sim.value.err) {
+      const reason = customCode ? AEGIS_OPERATIONAL_ERROR[customCode] : undefined;
+      return {
+        check: {
+          allowed: false,
+          reason: reason
+            ? `Aegis rejected the operation: ${reason}.`
+            : "Token-transfer simulation failed (the vault or recipient token account may not exist yet).",
+          spentToday: mirrored.spentToday,
+          dailyLimit: mirrored.dailyLimit,
+          remaining: mirrored.remaining,
+        },
+        simulation: "Simulation failed",
+        networkFee: fee,
+        logs,
+      };
+    }
+
+    const remainingAfter = mirrored.remaining > amount ? mirrored.remaining - amount : 0n;
+    return {
+      check: mirrored,
+      simulation: mirrored.allowed
+        ? `Simulation passed through Aegis; within your ${formatUnits(mirrored.dailyLimit, token.decimals)} ${token.symbol} daily limit; ${formatUnits(remainingAfter, token.decimals)} ${token.symbol} remaining after this transfer.`
+        : `Would be rejected by Aegis: ${mirrored.reason}`,
+      networkFee: fee,
+      logs,
+    };
+  }
+
+  async executeAgentTransferSpl(
+    recipient: PublicKey,
+    token: TokenInfo,
+    amount: bigint,
+    opts: { skipPreflight?: boolean } = {},
+  ): Promise<TransferExecution> {
+    const agent = requireAgentKeypair(this.config);
+    const policy = await this.getPolicy();
+    const now = await this.chainTime();
+    const ix = await this.agentTransferSplIx(agent.publicKey, recipient, token, amount);
+    const { tx, latestBlockhash } = await this.buildTransaction([ix], agent.publicKey);
+    tx.sign(agent);
+
+    const tokenRemaining = (): bigint =>
+      policy.tokenDailyLimit > policy.tokenSpentToday ? policy.tokenDailyLimit - policy.tokenSpentToday : 0n;
+
+    try {
+      const sig = await this.conn.sendRawTransaction(tx.serialize(), {
+        skipPreflight: Boolean(opts.skipPreflight),
+        preflightCommitment: this.config.commitment,
+      });
+      const confirmation = await this.conn.confirmTransaction(
+        { signature: sig, ...latestBlockhash },
+        this.config.commitment,
+      );
+      const logs = await this.logsForSignature(sig);
+      const customCode = extractCustomErrorCode(confirmation.value.err, logs);
+      const reasonCode = customCode === undefined ? undefined : reasonFromAegisErrorCode(customCode);
+
+      if (reasonCode !== undefined || confirmation.value.err) {
+        const check = reasonCode !== undefined
+          ? checkTokenFromAegisReason(policy, token, reasonCode, amount, now)
+          : {
+              allowed: false,
+              reason: "Transaction was rejected by the cluster.",
+              spentToday: policy.tokenSpentToday,
+              dailyLimit: policy.tokenDailyLimit,
+              remaining: tokenRemaining(),
+            };
+        return { sig, check, status: "rejected", logs };
+      }
+
+      return {
+        sig,
+        check: checkTokenTransferPolicy(policy, token, amount, now),
+        status: "confirmed",
+        logs,
+      };
+    } catch (error) {
+      const logs = await logsFromError(error, this.conn);
+      const customCode = extractCustomErrorCode(error, logs);
+      const reasonCode = customCode === undefined ? undefined : reasonFromAegisErrorCode(customCode);
+      const check = reasonCode !== undefined
+        ? checkTokenFromAegisReason(policy, token, reasonCode, amount, now)
+        : {
+            allowed: false,
+            reason: error instanceof Error ? error.message : "Transaction failed",
+            spentToday: policy.tokenSpentToday,
+            dailyLimit: policy.tokenDailyLimit,
+            remaining: tokenRemaining(),
+          };
+      return { check, status: "rejected", logs };
+    }
+  }
+
+  async configureToken(args: {
+    tokenMint: string;
+    tokenMaxPerTx: bigint;
+    tokenDailyLimit: bigint;
+  }): Promise<string> {
+    const owner = requireOwnerKeypair(this.config);
+    const policy = this.policyForOwner(owner.publicKey);
+    const ix = buildConfigureTokenIx(
+      { ...this.addresses({ policy }), owner: owner.publicKey },
+      {
+        tokenMint: new PublicKey(args.tokenMint),
+        tokenMaxPerTx: args.tokenMaxPerTx,
+        tokenDailyLimit: args.tokenDailyLimit,
+      },
+    );
+    return this.sendOwnerTransaction([ix], owner);
+  }
+
   async initializePolicy(args: {
     maxPerTx: bigint;
     dailyLimit: bigint;
@@ -297,6 +439,25 @@ export class AegisClient {
     return buildAgentTransferIx(
       { ...this.addresses({ policy }), agentAuthority },
       recipient,
+      amount,
+    );
+  }
+
+  private async agentTransferSplIx(
+    agentAuthority: PublicKey,
+    recipient: PublicKey,
+    token: TokenInfo,
+    amount: bigint,
+  ): Promise<TransactionInstruction> {
+    const policy = requirePolicyAddress(this.config);
+    const mint = new PublicKey(token.mint);
+    const vault = findVaultPda(policy, this.config.programId);
+    return buildAgentTransferSplIx(
+      { ...this.addresses({ policy }), agentAuthority },
+      {
+        vaultTokenAccount: findAssociatedTokenAddress(vault, mint),
+        recipientTokenAccount: findAssociatedTokenAddress(recipient, mint),
+      },
       amount,
     );
   }

@@ -1,5 +1,6 @@
 import { PublicKey } from "@solana/web3.js";
 import {
+  ActionKind,
   type ActionProposal,
   type ActivityEntry,
   type AddressBookEntry,
@@ -26,7 +27,7 @@ import {
 import { researchToken } from "../agent/research";
 import { getConnection } from "../aegis/client";
 import { getServerConfig, validatePublicKey, type PraxisServerConfig } from "../env";
-import { PraxisInputError, PraxisNotFoundError } from "../errors";
+import { PraxisNotFoundError } from "../errors";
 import { parseHumanUnits, SOL_DECIMALS } from "../units";
 
 interface StoreState {
@@ -79,16 +80,20 @@ export class PraxisServerProvider implements PraxisProvider {
 
   async refreshActivity(): Promise<ActivityEntry[]> {
     const logs = await this.aegis.getActionLog();
+    // The on-chain ActionRecord stores no mint; for an SPL transfer the asset is
+    // the policy's single configured token_mint, resolved to a known token.
+    const tokenAsset = this.tokenForMint(this.state.policy?.tokenMint);
     const onChain = logs.map((entry, index): ActivityEntry => {
+      const isSpl = entry.kind === ActionKind.TransferSpl;
       return {
         id: `chain-${entry.sig ?? entry.ts}-${index}`,
-        // Phase 1: the on-chain ActionLog records transfers only (agent_swap is
-        // v2 / not on-chain), so every decoded entry maps to "transfer".
+        // Both native and SPL transfers render as a "transfer" row; the ASSET is
+        // what distinguishes them (agent_swap is v2 / not on-chain).
         kind: "transfer",
         label: this.addressBook.labelFor(entry.target),
-        asset: "SOL",
+        asset: isSpl ? tokenAsset?.symbol ?? "TOKEN" : "SOL",
         amount: entry.amount,
-        decimals: SOL_DECIMALS,
+        decimals: isSpl ? tokenAsset?.decimals ?? SOL_DECIMALS : SOL_DECIMALS,
         result: entry.result,
         reason: entry.reason,
         reasonCode: entry.reasonCode,
@@ -185,12 +190,16 @@ export class PraxisServerProvider implements PraxisProvider {
     }
 
     const recipient = new PublicKey(proposal.detail.recipientAddress);
-    const execution = await this.aegis.executeAgentTransfer(recipient, proposal.detail.amount);
+    const asset = proposal.detail.asset;
+    const isSol = asset.symbol === "SOL";
+    const execution = isSol
+      ? await this.aegis.executeAgentTransfer(recipient, proposal.detail.amount)
+      : await this.aegis.executeAgentTransferSpl(recipient, asset, proposal.detail.amount);
     proposal.check = execution.check;
     proposal.sig = execution.sig;
     proposal.state = execution.status === "confirmed" ? "signed" : "blocked";
     proposal.simulation = execution.status === "confirmed"
-      ? "Confirmed through Aegis agent_transfer"
+      ? `Confirmed through Aegis ${isSol ? "agent_transfer" : "agent_transfer_spl"}`
       : "Rejected by Aegis during execution";
 
     this.state.activity = [
@@ -198,9 +207,9 @@ export class PraxisServerProvider implements PraxisProvider {
         id: this.id("a"),
         kind: "transfer",
         label: proposal.detail.recipientName,
-        asset: "SOL",
+        asset: asset.symbol,
         amount: proposal.detail.amount,
-        decimals: SOL_DECIMALS,
+        decimals: asset.decimals,
         result: execution.status === "confirmed" ? "allowed" : "rejected",
         reason: execution.check.reason,
         reasonCode: execution.check.reasonCode,
@@ -293,10 +302,6 @@ export class PraxisServerProvider implements PraxisProvider {
   }
 
   private async transferBlock(action: Extract<ParsedAction, { kind: "transfer" }>): Promise<{ blocks: AgentBlock[]; title?: string }> {
-    if (action.asset !== "SOL") {
-      throw new PraxisInputError("Aegis phase 1 only supports native SOL transfers.");
-    }
-
     const resolved = this.addressBook.resolve(action.recipient);
     if (resolved.kind !== "exact") {
       return {
@@ -310,16 +315,23 @@ export class PraxisServerProvider implements PraxisProvider {
       };
     }
 
-    const amount = parseHumanUnits(action.amountHuman, SOL_DECIMALS);
+    // Native SOL routes through agent_transfer; an SPL token through the
+    // dedicated token envelope (agent_transfer_spl). The asset's own decimals
+    // drive amount parsing and display.
+    const token = this.token(action.asset);
+    const isSol = token.symbol === "SOL";
+    const amount = parseHumanUnits(action.amountHuman, token.decimals);
     const recipient = new PublicKey(resolved.entry.address);
-    const preview = await this.aegis.simulateAgentTransfer(recipient, amount);
-    const sol = this.solToken();
+    const preview = isSol
+      ? await this.aegis.simulateAgentTransfer(recipient, amount)
+      : await this.aegis.simulateAgentTransferSpl(recipient, token, amount);
+
     const proposal: ActionProposal = {
       id: this.id("p"),
       detail: {
         kind: "transfer",
         amount,
-        asset: sol,
+        asset: token,
         recipientName: resolved.entry.name,
         recipientAddress: resolved.entry.address,
         recipientNote: resolved.entry.note,
@@ -337,9 +349,9 @@ export class PraxisServerProvider implements PraxisProvider {
           id: this.id("a"),
           kind: "transfer",
           label: resolved.entry.name,
-          asset: "SOL",
+          asset: token.symbol,
           amount,
-          decimals: SOL_DECIMALS,
+          decimals: token.decimals,
           result: "rejected",
           reason: preview.check.reason,
           reasonCode: preview.check.reasonCode,
@@ -475,8 +487,10 @@ export class PraxisServerProvider implements PraxisProvider {
     return thread;
   }
 
-  private solToken(): TokenInfo {
-    return this.token("SOL");
+  /** Resolve the policy's configured token mint to a known TokenInfo. */
+  private tokenForMint(mint: string | undefined): TokenInfo | undefined {
+    if (!mint) return undefined;
+    return this.config.tokens.find((item) => item.mint === mint);
   }
 
   private token(symbol: string): TokenInfo {

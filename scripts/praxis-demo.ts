@@ -29,6 +29,7 @@ async function main() {
   const book = new AddressBook(config.addressBook);
 
   await ensureDemoPolicy(client);
+  await ensureDemoTokenAccounts(client, config);
 
   const allowed = await parseTransfer(ALLOWED_LINE, config);
   const allowedRecipient = resolve(book, allowed.recipient);
@@ -97,6 +98,14 @@ async function ensureDemoPolicy(client: AegisClient) {
       tokenDailyLimit: parseHumanUnits("500", usdc.decimals),
     });
   }
+}
+
+async function ensureDemoTokenAccounts(client: AegisClient, config = getServerConfig()) {
+  const policy = await client.getPolicy();
+  if (policy.tokenMint === PublicKey.default.toBase58()) return;
+  await client.ensureConfiguredTokenAccounts(
+    config.addressBook.map((entry) => new PublicKey(entry.address)),
+  );
 }
 
 async function parseTransfer(line: string, config = getServerConfig()): Promise<Extract<ParsedAction, { kind: "transfer" }>> {

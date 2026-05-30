@@ -42,6 +42,7 @@ const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 export function PolicyDashboard() {
   const policy = usePolicy();
   const provider = useProvider();
+  const addressBook = useAddressBook();
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const now = useNow();
@@ -139,6 +140,12 @@ export function PolicyDashboard() {
           now={now}
           onConfigure={(config) => {
             runMutation(() => provider.configureToken(config), "Token configuration failed.");
+          }}
+          onPrepareAccounts={() => {
+            runMutation(
+              () => provider.prepareTokenAccounts(addressBook.map((entry) => entry.address)),
+              "Token account setup failed.",
+            );
           }}
         />
 
@@ -261,10 +268,12 @@ function TokenEnvelopeCard({
   policy,
   now,
   onConfigure,
+  onPrepareAccounts,
 }: {
   policy: PolicyView;
   now: number;
   onConfigure: (config: TokenEnvelopeConfig) => void;
+  onPrepareAccounts: () => void;
 }) {
   const configured = policy.tokenMint !== SYSTEM_PROGRAM;
   const decimals = mintDecimals(policy.tokenMint);
@@ -357,6 +366,14 @@ function TokenEnvelopeCard({
                 {m.label}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={onPrepareAccounts}
+              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)]"
+            >
+              <IconWallet size={11} />
+              prepare accounts
+            </button>
           </div>
         </div>
       )}

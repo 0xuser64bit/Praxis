@@ -101,6 +101,21 @@ export function readNullableString(value: unknown, name: string, opts: { maxLeng
   return readString(value, name, opts);
 }
 
+export function readStringArray(
+  value: unknown,
+  name: string,
+  opts: { maxLength?: number; maxItems?: number } = {},
+): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    throw new PraxisInputError(`${name} must be an array`);
+  }
+  if (opts.maxItems !== undefined && value.length > opts.maxItems) {
+    throw new PraxisInputError(`${name} must have ${opts.maxItems} items or fewer`);
+  }
+  return value.map((item, index) => readString(item, `${name}[${index}]`, { maxLength: opts.maxLength }));
+}
+
 export function readPolicyPatch(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new PraxisInputError("patch must be an object");

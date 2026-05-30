@@ -101,6 +101,11 @@ export class RemotePraxisProvider implements PraxisProvider {
     await this.refreshAll();
   };
 
+  prepareTokenAccounts = async (recipientAddresses: string[] = []): Promise<void> => {
+    await this.mutate(() => this.post("/api/praxis/prepare-token-accounts", { recipientAddresses }));
+    await this.refreshAll();
+  };
+
   revokeAgent = async (): Promise<void> => {
     await this.mutate(() => this.post("/api/praxis/revoke-agent", {}));
     await this.refreshAll();

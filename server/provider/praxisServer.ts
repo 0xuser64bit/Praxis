@@ -269,7 +269,15 @@ export class PraxisServerProvider implements PraxisProvider {
       tokenMaxPerTx: config.tokenMaxPerTx,
       tokenDailyLimit: config.tokenDailyLimit,
     });
+    await this.aegis.ensureSplTokenAccounts(config.tokenMint);
     await this.refreshOnChain();
+  };
+
+  prepareTokenAccounts = async (recipientAddresses: string[] = []): Promise<void> => {
+    this.assertBackendOwnerSigningAvailable();
+    const recipients = recipientAddresses.map((address) => validatePublicKey(address));
+    await this.aegis.ensureConfiguredTokenAccounts(recipients);
+    this.notify();
   };
 
   revokeAgent = async (): Promise<void> => {

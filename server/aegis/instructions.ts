@@ -1,6 +1,10 @@
 import { PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
 
-import { INSTRUCTION_DISCRIMINATOR, TOKEN_PROGRAM_ID } from "./constants";
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  INSTRUCTION_DISCRIMINATOR,
+  TOKEN_PROGRAM_ID,
+} from "./constants";
 import { writeI64, writePubkeyVec, writeU64 } from "./codec";
 
 export interface AegisAddresses {
@@ -71,6 +75,44 @@ export function buildAgentTransferSplIx(
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ],
     data: Buffer.concat([INSTRUCTION_DISCRIMINATOR.agentTransferSpl, writeU64(amount)]),
+  });
+}
+
+export function buildCreateAssociatedTokenAccountIdempotentIx(args: {
+  payer: PublicKey;
+  owner: PublicKey;
+  mint: PublicKey;
+  ata: PublicKey;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: ASSOCIATED_TOKEN_PROGRAM_ID,
+    keys: [
+      { pubkey: args.payer, isSigner: true, isWritable: true },
+      { pubkey: args.ata, isSigner: false, isWritable: true },
+      { pubkey: args.owner, isSigner: false, isWritable: false },
+      { pubkey: args.mint, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    // Associated Token Account program: CreateIdempotent.
+    data: Buffer.from([1]),
+  });
+}
+
+export function buildTokenTransferIx(args: {
+  source: PublicKey;
+  destination: PublicKey;
+  authority: PublicKey;
+  amount: bigint;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: TOKEN_PROGRAM_ID,
+    keys: [
+      { pubkey: args.source, isSigner: false, isWritable: true },
+      { pubkey: args.destination, isSigner: false, isWritable: true },
+      { pubkey: args.authority, isSigner: true, isWritable: false },
+    ],
+    data: Buffer.concat([Buffer.from([3]), writeU64(args.amount)]),
   });
 }
 

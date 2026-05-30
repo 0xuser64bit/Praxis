@@ -259,6 +259,8 @@ export interface PraxisProvider {
   updatePolicy(patch: PolicyUpdate): Promise<void>;
   /** Configure the SPL-token envelope (mint + token caps). */
   configureToken(config: TokenEnvelopeConfig): Promise<void>;
+  /** Create missing vault/recipient associated token accounts for the configured SPL token. */
+  prepareTokenAccounts(recipientAddresses?: Address[]): Promise<void>;
   /** The kill switch — zeroes the agent key and pauses the policy. */
   revokeAgent(): Promise<void>;
   /** Issue a fresh session key and unpause. */

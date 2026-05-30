@@ -293,6 +293,11 @@ export class MockPraxisProvider implements PraxisProvider {
     this.notify();
   };
 
+  prepareTokenAccounts = async (): Promise<void> => {
+    await delay(150);
+    this.notify();
+  };
+
   revokeAgent = async (): Promise<void> => {
     await delay(SIGN_MS);
     this.state.policy = { ...this.state.policy, paused: true, agentAuthority: SYSTEM_PROGRAM };

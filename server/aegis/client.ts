@@ -17,10 +17,12 @@ import {
   buildAgentTransferIx,
   buildAgentTransferSplIx,
   buildConfigureTokenIx,
+  buildCreateAssociatedTokenAccountIdempotentIx,
   buildFundVaultIx,
   buildInitializePolicyIx,
   buildRevokeAgentIx,
   buildRotateAgentIx,
+  buildTokenTransferIx,
   buildUpdatePolicyIx,
   type AegisAddresses,
 } from "./instructions";
@@ -56,6 +58,15 @@ export interface TransferExecution {
   check: PolicyCheckResult;
   status: "confirmed" | "rejected";
   logs: string[];
+}
+
+export interface TokenAccountSetupResult {
+  mint: string;
+  vaultTokenAccount: string;
+  recipientTokenAccounts: string[];
+  created: string[];
+  existing: string[];
+  sig?: string;
 }
 
 interface BuiltTransaction {
@@ -352,6 +363,88 @@ export class AegisClient {
     return this.sendOwnerTransaction([ix], owner);
   }
 
+  async ensureSplTokenAccounts(
+    tokenMint: string,
+    recipientOwners: PublicKey[] = [],
+  ): Promise<TokenAccountSetupResult> {
+    const owner = requireOwnerKeypair(this.config);
+    const mint = new PublicKey(tokenMint);
+    const policy = this.policyForOwner(owner.publicKey);
+    const vault = findVaultPda(policy, this.config.programId);
+    const vaultTokenAccount = findAssociatedTokenAddress(vault, mint);
+
+    const uniqueRecipientOwners = uniquePublicKeys(recipientOwners);
+    const recipientTokenAccounts = uniqueRecipientOwners.map((recipient) => findAssociatedTokenAddress(recipient, mint));
+    const accountTargets = [
+      { owner: vault, ata: vaultTokenAccount },
+      ...uniqueRecipientOwners.map((recipient, index) => ({
+        owner: recipient,
+        ata: recipientTokenAccounts[index],
+      })),
+    ];
+
+    const infos = await this.conn.getMultipleAccountsInfo(
+      accountTargets.map((target) => target.ata),
+      this.config.commitment,
+    );
+    const missing = accountTargets.filter((_, index) => !infos[index]);
+    const existing = accountTargets
+      .filter((_, index) => Boolean(infos[index]))
+      .map((target) => target.ata.toBase58());
+
+    let sig: string | undefined;
+    if (missing.length > 0) {
+      const ixs = missing.map((target) => buildCreateAssociatedTokenAccountIdempotentIx({
+        payer: owner.publicKey,
+        owner: target.owner,
+        mint,
+        ata: target.ata,
+      }));
+      sig = await this.sendOwnerTransaction(ixs, owner);
+    }
+
+    return {
+      mint: mint.toBase58(),
+      vaultTokenAccount: vaultTokenAccount.toBase58(),
+      recipientTokenAccounts: recipientTokenAccounts.map((ata) => ata.toBase58()),
+      created: missing.map((target) => target.ata.toBase58()),
+      existing,
+      sig,
+    };
+  }
+
+  async ensureConfiguredTokenAccounts(recipientOwners: PublicKey[] = []): Promise<TokenAccountSetupResult> {
+    const policy = await this.getPolicy();
+    if (policy.tokenMint === PublicKey.default.toBase58()) {
+      throw new PraxisConfigError("Configure the SPL token envelope before preparing token accounts.");
+    }
+    return this.ensureSplTokenAccounts(policy.tokenMint, recipientOwners);
+  }
+
+  async fundTokenVault(tokenMint: string, amount: bigint): Promise<string> {
+    const owner = requireOwnerKeypair(this.config);
+    const mint = new PublicKey(tokenMint);
+    const policy = this.policyForOwner(owner.publicKey);
+    const vault = findVaultPda(policy, this.config.programId);
+    const ownerTokenAccount = findAssociatedTokenAddress(owner.publicKey, mint);
+    const vaultTokenAccount = findAssociatedTokenAddress(vault, mint);
+
+    await this.ensureSplTokenAccounts(tokenMint);
+    const createOwnerAta = buildCreateAssociatedTokenAccountIdempotentIx({
+      payer: owner.publicKey,
+      owner: owner.publicKey,
+      mint,
+      ata: ownerTokenAccount,
+    });
+    const transfer = buildTokenTransferIx({
+      source: ownerTokenAccount,
+      destination: vaultTokenAccount,
+      authority: owner.publicKey,
+      amount,
+    });
+    return this.sendOwnerTransaction([createOwnerAta, transfer], owner);
+  }
+
   async initializePolicy(args: {
     maxPerTx: bigint;
     dailyLimit: bigint;
@@ -540,6 +633,18 @@ export class AegisClient {
   private finality(): "confirmed" | "finalized" {
     return this.config.commitment === "finalized" ? "finalized" : "confirmed";
   }
+}
+
+function uniquePublicKeys(values: PublicKey[]): PublicKey[] {
+  const out: PublicKey[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const key = value.toBase58();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
 }
 
 function extractCustomErrorCode(errorLike: unknown, logs: string[] = []): number | undefined {

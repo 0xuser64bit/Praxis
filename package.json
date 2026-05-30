@@ -12,6 +12,7 @@
     "praxis:demo": "bun scripts/praxis-demo.ts",
     "praxis:moneyshots": "bun scripts/moneyshots.ts",
     "praxis:swapcheck": "bun scripts/swapcheck.ts",
+    "praxis:setup-token-accounts": "bun scripts/setup-token-accounts.ts",
     "praxis:tokencheck": "bun scripts/tokencheck.ts"
   },
   "dependencies": {

@@ -97,6 +97,13 @@ bun run praxis:setup-token-accounts
 Set `PRAXIS_TOKEN_VAULT_FUND_AMOUNT` to transfer tokens from the owner ATA into
 the vault ATA during setup.
 
+## Deploy
+
+To put Praxis live for a demo (judges + testers) for **$0**, see
+[docs/DEPLOY.md](docs/DEPLOY.md). It covers two paths: a zero-config mock
+walkthrough on Vercel, and the full live API flow on Solana devnet with faucet
+SOL — both free.
+
 ## Production Gap
 
 This repo is a strong local/devnet MVP candidate. Managed state storage is now

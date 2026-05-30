@@ -34,7 +34,9 @@ fn sol(n: u64) -> u64 {
 
 /// SPL Token program (classic), loaded by LiteSVM's default programs.
 fn spl_token_id() -> Pubkey {
-    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".parse().unwrap()
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        .parse()
+        .unwrap()
 }
 
 /// Demo token base units (6 decimals, USDC-style): `tok(1)` == 1_000_000.
@@ -658,8 +660,9 @@ fn t6_admin_invariants() -> Result<String, String> {
 
 // --------------------------------------------------------------------------
 // T7 — SPL token envelope: not-configured reject; on-chain mint allow-list
-//      (wrong mint reject); token per-tx + daily caps in token units; and the
-//      token counter is INDEPENDENT of the SOL counter (different assets).
+//      (wrong mint reject); recipient allow-list; token per-tx + daily caps in
+//      token units; and the token counter is INDEPENDENT of the SOL counter
+//      (different assets).
 // --------------------------------------------------------------------------
 fn t7_spl_token() -> Result<String, String> {
     let far = 10_000_000_000i64;
@@ -690,7 +693,10 @@ fn t7_spl_token() -> Result<String, String> {
     )?;
 
     // Owner configures the token envelope: per-tx 100, daily 250 (token units).
-    expect_ok(&c.configure_token(mint, tok(100), tok(250)), "T7 configure_token")?;
+    expect_ok(
+        &c.configure_token(mint, tok(100), tok(250)),
+        "T7 configure_token",
+    )?;
 
     // (b) ON-CHAIN MINT ALLOW-LIST: a token account of a DIFFERENT mint → reject.
     let wrong_vault_ta = Pubkey::new_unique();
@@ -704,7 +710,35 @@ fn t7_spl_token() -> Result<String, String> {
         "T7 wrong mint",
     )?;
 
-    // (c) token per-tx boundary: == max ok, max+1 reject.
+    // (c) RECIPIENT ALLOW-LIST: token-account owner is the policy target.
+    let allowed_recipient = Pubkey::new_unique();
+    let blocked_recipient = Pubkey::new_unique();
+    let mut r = Ctx::setup(sol(2), sol(5), vec![allowed_recipient], far, 1_000, sol(10));
+    let r_agent = r.agent.insecure_clone();
+    let r_vault = r.vault;
+    r.svm.airdrop(&r_vault, sol(1)).unwrap();
+    let r_vault_ta = Pubkey::new_unique();
+    let allowed_recipient_ta = Pubkey::new_unique();
+    let blocked_recipient_ta = Pubkey::new_unique();
+    r.set_token_account(r_vault_ta, &mint, &r_vault, tok(1000));
+    r.set_token_account(allowed_recipient_ta, &mint, &allowed_recipient, 0);
+    r.set_token_account(blocked_recipient_ta, &mint, &blocked_recipient, 0);
+    expect_ok(
+        &r.configure_token(mint, tok(100), tok(250)),
+        "T7 recipient configure_token",
+    )?;
+    expect_ok(
+        &r.agent_transfer_spl(tok(1), r_vault_ta, allowed_recipient_ta, &r_agent),
+        "T7 token allowed recipient",
+    )?;
+    expect_reject(
+        &r.agent_transfer_spl(tok(1), r_vault_ta, blocked_recipient_ta, &r_agent),
+        ecode(AegisError::RecipientNotAllowed),
+        "RecipientNotAllowed",
+        "T7 token non-allowed recipient",
+    )?;
+
+    // (d) token per-tx boundary: == max ok, max+1 reject.
     expect_ok(
         &c.agent_transfer_spl(tok(100), vault_ta, recipient_ta, &agent),
         "T7 token per-tx == max",
@@ -716,7 +750,7 @@ fn t7_spl_token() -> Result<String, String> {
         "T7 token per-tx max+1",
     )?;
 
-    // (d) token daily cap (separate counter): 100 ok (→200), 100 → 300 > 250 reject.
+    // (e) token daily cap (separate counter): 100 ok (→200), 100 → 300 > 250 reject.
     expect_ok(
         &c.agent_transfer_spl(tok(100), vault_ta, recipient_ta, &agent),
         "T7 token daily within",
@@ -728,14 +762,20 @@ fn t7_spl_token() -> Result<String, String> {
         "T7 token daily over",
     )?;
 
-    // (e) INDEPENDENCE: token spend left the SOL counter at 0; a SOL transfer
+    // (f) INDEPENDENCE: token spend left the SOL counter at 0; a SOL transfer
     //     still works and does not touch the token counter.
     let st = c.policy_state();
     if st.spent_today != 0 {
-        return Err(format!("T7 independence: SOL spent_today should be 0, got {}", st.spent_today));
+        return Err(format!(
+            "T7 independence: SOL spent_today should be 0, got {}",
+            st.spent_today
+        ));
     }
     if st.token_spent_today != tok(200) {
-        return Err(format!("T7 token_spent_today expected 200 tok, got {}", st.token_spent_today));
+        return Err(format!(
+            "T7 token_spent_today expected 200 tok, got {}",
+            st.token_spent_today
+        ));
     }
     let to = Pubkey::new_unique();
     expect_ok(
@@ -744,17 +784,24 @@ fn t7_spl_token() -> Result<String, String> {
     )?;
     let st2 = c.policy_state();
     if st2.spent_today != sol(1) {
-        return Err(format!("T7 SOL spent_today expected 1 SOL, got {}", st2.spent_today));
+        return Err(format!(
+            "T7 SOL spent_today expected 1 SOL, got {}",
+            st2.spent_today
+        ));
     }
     if st2.token_spent_today != tok(200) {
-        return Err(format!("T7 token counter moved by a SOL transfer: {}", st2.token_spent_today));
+        return Err(format!(
+            "T7 token counter moved by a SOL transfer: {}",
+            st2.token_spent_today
+        ));
     }
 
     // Vault token account actually debited by the two successful transfers (200).
     Ok(format!(
-        "not-configured→Custom({}); wrong mint→Custom({}) mint_not_allowed; token per-tx {{100 ok, 101→Custom({})}}; token daily {{→200 ok, →300→Custom({})}}; SOL/token counters independent (SOL=1, token=200)",
+        "not-configured→Custom({}); wrong mint→Custom({}) mint_not_allowed; non-allowed recipient→Custom({}); token per-tx {{100 ok, 101→Custom({})}}; token daily {{→200 ok, →300→Custom({})}}; SOL/token counters independent (SOL=1, token=200)",
         ecode(AegisError::SplNotConfigured),
         ecode(AegisError::MintNotAllowed),
+        ecode(AegisError::RecipientNotAllowed),
         ecode(AegisError::ExceedsPerTxLimit),
         ecode(AegisError::ExceedsDailyLimit),
     ))

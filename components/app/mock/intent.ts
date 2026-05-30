@@ -141,11 +141,11 @@ function parseSend(m: RegExpMatchArray, ctx: ParseCtx): ParseResult {
   }
 
   // Native SOL routes through agent_transfer; an SPL token through the dedicated
-  // token envelope (agent_transfer_spl) — distinct on-chain caps + mint check.
+  // token envelope (agent_transfer_spl) — distinct on-chain caps + mint and recipient checks.
   const isSol = token.symbol === "SOL";
   const check = isSol
     ? checkTransfer(state.policy, amount, contact.address, now)
-    : checkTokenTransfer(state.policy, token, amount, now);
+    : checkTokenTransfer(state.policy, token, amount, contact.address, now);
 
   const proposal: ActionProposal = {
     id: ctx.genId("p"),

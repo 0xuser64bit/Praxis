@@ -109,13 +109,15 @@ export function checkTransfer(
 /**
  * The token-transfer policy check, mirrored off-chain from `agent_transfer_spl`:
  * paused/expiry → token configured → mint == token_mint (the on-chain mint
- * allow-list) → token per-tx → token daily (rolling). Caps are in the TOKEN's
- * own base units, tracked independently of the SOL envelope.
+ * allow-list) → recipient allow-list → token per-tx → token daily (rolling).
+ * Caps are in the TOKEN's own base units, tracked independently of the SOL
+ * envelope.
  */
 export function checkTokenTransfer(
   policy: PolicyView,
   token: TokenInfo,
   amount: bigint,
+  recipient: string,
   now: number,
 ): PolicyCheckResult {
   const spent = effectiveTokenSpentToday(policy, now);
@@ -155,6 +157,15 @@ export function checkTokenTransfer(
     return reject(
       RejectReason.MintNotAllowed,
       `${token.symbol} is not the policy's configured token mint, so Aegis won't let the agent move it.`,
+      spent,
+      dailyLimit,
+    );
+  }
+
+  if (policy.allowedRecipients.length > 0 && !policy.allowedRecipients.includes(recipient)) {
+    return reject(
+      RejectReason.RecipientNotAllowed,
+      "Aegis rejected this recipient because it is not in the policy allow-list.",
       spent,
       dailyLimit,
     );

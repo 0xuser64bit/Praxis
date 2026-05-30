@@ -86,20 +86,36 @@ struct TokenAccountView {
 /// mint/owner/amount. Errors (InvalidTokenAccount) if it isn't an initialized
 /// token account owned by the SPL Token program.
 fn read_token_account(acct: &AccountInfo) -> Result<TokenAccountView> {
-    require_keys_eq!(*acct.owner, SPL_TOKEN_PROGRAM_ID, AegisError::InvalidTokenAccount);
+    require_keys_eq!(
+        *acct.owner,
+        SPL_TOKEN_PROGRAM_ID,
+        AegisError::InvalidTokenAccount
+    );
     let data = acct.try_borrow_data()?;
-    require!(data.len() == TOKEN_ACCOUNT_LEN, AegisError::InvalidTokenAccount);
+    require!(
+        data.len() == TOKEN_ACCOUNT_LEN,
+        AegisError::InvalidTokenAccount
+    );
     // state byte at offset 108 (mint 32 + owner 32 + amount 8 + delegate 36).
-    require!(data[108] == STATE_INITIALIZED, AegisError::InvalidTokenAccount);
+    require!(
+        data[108] == STATE_INITIALIZED,
+        AegisError::InvalidTokenAccount
+    );
 
-    let mint = Pubkey::try_from(&data[0..32]).map_err(|_| error!(AegisError::InvalidTokenAccount))?;
-    let owner = Pubkey::try_from(&data[32..64]).map_err(|_| error!(AegisError::InvalidTokenAccount))?;
+    let mint =
+        Pubkey::try_from(&data[0..32]).map_err(|_| error!(AegisError::InvalidTokenAccount))?;
+    let owner =
+        Pubkey::try_from(&data[32..64]).map_err(|_| error!(AegisError::InvalidTokenAccount))?;
     let amount = u64::from_le_bytes(
         data[64..72]
             .try_into()
             .map_err(|_| error!(AegisError::InvalidTokenAccount))?,
     );
-    Ok(TokenAccountView { mint, owner, amount })
+    Ok(TokenAccountView {
+        mint,
+        owner,
+        amount,
+    })
 }
 
 pub fn handler(ctx: Context<AgentTransferSpl>, amount: u64) -> Result<()> {
@@ -108,17 +124,35 @@ pub fn handler(ctx: Context<AgentTransferSpl>, amount: u64) -> Result<()> {
 
     // 1. signer == agent_authority (the single most important line).
     if ctx.accounts.agent_authority.key() != ctx.accounts.policy.agent_authority {
-        emit_rejected(policy_key, RejectReason::Unauthorized, amount, Pubkey::default(), now);
+        emit_rejected(
+            policy_key,
+            RejectReason::Unauthorized,
+            amount,
+            Pubkey::default(),
+            now,
+        );
         return err!(AegisError::UnauthorizedAgent);
     }
 
     // 2. !paused && now < expiry_ts.
     if ctx.accounts.policy.paused {
-        emit_rejected(policy_key, RejectReason::Paused, amount, Pubkey::default(), now);
+        emit_rejected(
+            policy_key,
+            RejectReason::Paused,
+            amount,
+            Pubkey::default(),
+            now,
+        );
         return err!(AegisError::PolicyPaused);
     }
     if now >= ctx.accounts.policy.expiry_ts {
-        emit_rejected(policy_key, RejectReason::Expired, amount, Pubkey::default(), now);
+        emit_rejected(
+            policy_key,
+            RejectReason::Expired,
+            amount,
+            Pubkey::default(),
+            now,
+        );
         return err!(AegisError::SessionExpired);
     }
 
@@ -138,7 +172,13 @@ pub fn handler(ctx: Context<AgentTransferSpl>, amount: u64) -> Result<()> {
 
     // 5. ON-CHAIN MINT ALLOW-LIST: both accounts must be the configured mint.
     if source.mint != token_mint || dest.mint != token_mint {
-        emit_rejected(policy_key, RejectReason::MintNotAllowed, amount, target, now);
+        emit_rejected(
+            policy_key,
+            RejectReason::MintNotAllowed,
+            amount,
+            target,
+            now,
+        );
         return err!(AegisError::MintNotAllowed);
     }
     // Source must be the vault's own token account (vault is the authority).
@@ -148,13 +188,26 @@ pub fn handler(ctx: Context<AgentTransferSpl>, amount: u64) -> Result<()> {
         AegisError::InvalidTokenAccount
     );
 
-    // 6. amount <= token_max_per_tx (boundary == is allowed).
+    // 6. if allowed_recipients non-empty -> token-account owner must be in it.
+    let recipients = &ctx.accounts.policy.allowed_recipients;
+    if !recipients.is_empty() && !recipients.contains(&target) {
+        emit_rejected(
+            policy_key,
+            RejectReason::RecipientNotAllowed,
+            amount,
+            target,
+            now,
+        );
+        return err!(AegisError::RecipientNotAllowed);
+    }
+
+    // 7. amount <= token_max_per_tx (boundary == is allowed).
     if amount > ctx.accounts.policy.token_max_per_tx {
         emit_rejected(policy_key, RejectReason::OverPerTx, amount, target, now);
         return err!(AegisError::ExceedsPerTxLimit);
     }
 
-    // 7. token day rollover (independent of the SOL window).
+    // 8. token day rollover (independent of the SOL window).
     let window_end = ctx
         .accounts
         .policy
@@ -166,7 +219,7 @@ pub fn handler(ctx: Context<AgentTransferSpl>, amount: u64) -> Result<()> {
         ctx.accounts.policy.token_day_start_ts = now;
     }
 
-    // 8. token_spent_today + amount <= token_daily_limit.
+    // 9. token_spent_today + amount <= token_daily_limit.
     let new_spent = match ctx.accounts.policy.token_spent_today.checked_add(amount) {
         Some(v) => v,
         None => {
@@ -180,7 +233,10 @@ pub fn handler(ctx: Context<AgentTransferSpl>, amount: u64) -> Result<()> {
     }
 
     // Operational: the vault token account must hold the funds.
-    require!(source.amount >= amount, AegisError::InsufficientVaultBalance);
+    require!(
+        source.amount >= amount,
+        AegisError::InsufficientVaultBalance
+    );
 
     // ---- Passed: commit spend, CPI the token transfer, audit ----
     ctx.accounts.policy.token_spent_today = new_spent;

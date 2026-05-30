@@ -98,13 +98,14 @@ export function checkFromAegisReason(
 /**
  * Token-transfer policy check, mirrored from `agent_transfer_spl`: paused →
  * expiry → token configured → mint == token_mint (the on-chain mint allow-list)
- * → token per-tx → token daily (rolling). Caps are in the TOKEN's base units,
- * tracked independently of the SOL envelope.
+ * → recipient allow-list → token per-tx → token daily (rolling). Caps are in
+ * the TOKEN's base units, tracked independently of the SOL envelope.
  */
 export function checkTokenTransferPolicy(
   policy: PolicyView,
   token: TokenInfo,
   amount: bigint,
+  recipient: string,
   now: number,
 ): PolicyCheckResult {
   const spentToday = effectiveTokenSpentToday(policy, now);
@@ -127,6 +128,14 @@ export function checkTokenTransferPolicy(
   if (token.mint !== policy.tokenMint) {
     return { allowed: false, reason: `${token.symbol} is not the policy's configured token mint, so Aegis will not move it.`, reasonCode: RejectReason.MintNotAllowed, ...base };
   }
+  if (policy.allowedRecipients.length > 0 && !policy.allowedRecipients.includes(recipient)) {
+    return {
+      allowed: false,
+      reason: "Aegis rejected this recipient because it is not in the policy allow-list.",
+      reasonCode: RejectReason.RecipientNotAllowed,
+      ...base,
+    };
+  }
   if (amount > policy.tokenMaxPerTx) {
     return { allowed: false, reason: `${fmt(amount)} ${token.symbol} exceeds the ${fmt(policy.tokenMaxPerTx)} ${token.symbol} per-transaction cap.`, reasonCode: RejectReason.OverPerTx, ...base };
   }
@@ -141,9 +150,10 @@ export function checkTokenFromAegisReason(
   token: TokenInfo,
   reasonCode: RejectReason,
   amount: bigint,
+  recipient: string,
   now: number,
 ): PolicyCheckResult {
-  const mirrored = checkTokenTransferPolicy(policy, token, amount, now);
+  const mirrored = checkTokenTransferPolicy(policy, token, amount, recipient, now);
   if (!mirrored.allowed && mirrored.reasonCode === reasonCode) return mirrored;
   const spentToday = effectiveTokenSpentToday(policy, now);
   return {

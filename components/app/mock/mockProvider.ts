@@ -149,7 +149,7 @@ export class MockPraxisProvider implements PraxisProvider {
       const isSol = p.detail.asset.symbol === "SOL";
       const check = isSol
         ? checkTransfer(this.state.policy, p.detail.amount, p.detail.recipientAddress, ts)
-        : checkTokenTransfer(this.state.policy, p.detail.asset, p.detail.amount, ts);
+        : checkTokenTransfer(this.state.policy, p.detail.asset, p.detail.amount, p.detail.recipientAddress, ts);
       if (!check.allowed) {
         p.check = check;
         p.state = "blocked";

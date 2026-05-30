@@ -223,7 +223,8 @@ export class AegisClient {
     const agent = requireAgentKeypair(this.config);
     const policy = await this.getPolicy();
     const now = await this.chainTime();
-    const mirrored = checkTokenTransferPolicy(policy, token, amount, now);
+    const recipientAddress = recipient.toBase58();
+    const mirrored = checkTokenTransferPolicy(policy, token, amount, recipientAddress, now);
     const ix = await this.agentTransferSplIx(agent.publicKey, recipient, token, amount);
     const { tx } = await this.buildTransaction([ix], agent.publicKey);
     tx.sign(agent);
@@ -235,7 +236,7 @@ export class AegisClient {
     const reasonCode = customCode === undefined ? undefined : reasonFromAegisErrorCode(customCode);
 
     if (reasonCode !== undefined) {
-      const check = checkTokenFromAegisReason(policy, token, reasonCode, amount, now);
+      const check = checkTokenFromAegisReason(policy, token, reasonCode, amount, recipientAddress, now);
       return { check, simulation: `Rejected by Aegis simulation: ${check.reason}`, networkFee: fee, logs };
     }
     if (sim.value.err) {
@@ -298,7 +299,7 @@ export class AegisClient {
 
       if (reasonCode !== undefined || confirmation.value.err) {
         const check = reasonCode !== undefined
-          ? checkTokenFromAegisReason(policy, token, reasonCode, amount, now)
+              ? checkTokenFromAegisReason(policy, token, reasonCode, amount, recipient.toBase58(), now)
           : {
               allowed: false,
               reason: "Transaction was rejected by the cluster.",
@@ -311,7 +312,7 @@ export class AegisClient {
 
       return {
         sig,
-        check: checkTokenTransferPolicy(policy, token, amount, now),
+        check: checkTokenTransferPolicy(policy, token, amount, recipient.toBase58(), now),
         status: "confirmed",
         logs,
       };
@@ -320,7 +321,7 @@ export class AegisClient {
       const customCode = extractCustomErrorCode(error, logs);
       const reasonCode = customCode === undefined ? undefined : reasonFromAegisErrorCode(customCode);
       const check = reasonCode !== undefined
-        ? checkTokenFromAegisReason(policy, token, reasonCode, amount, now)
+        ? checkTokenFromAegisReason(policy, token, reasonCode, amount, recipient.toBase58(), now)
         : {
             allowed: false,
             reason: error instanceof Error ? error.message : "Transaction failed",

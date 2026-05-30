@@ -20,6 +20,8 @@ const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const BONK_MINT = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
 const JUP_MINT = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN";
 const DEFAULT_MINT = "11111111111111111111111111111111";
+const MAYA = "Maya111111111111111111111111111111111111111";
+const RANDO = "Rando11111111111111111111111111111111111111";
 const now = 1_900_000_000;
 
 let failures = 0;
@@ -63,25 +65,28 @@ console.log("┌──── SPL TOKEN TRANSFER WIRING ────────�
 
 console.log("│ A. server checkTokenTransferPolicy (mirrors agent_transfer_spl)");
 {
-  const within = checkTokenTransferPolicy(policy(), usdcToken, usdc(100), now);
+  const within = checkTokenTransferPolicy(policy(), usdcToken, usdc(100), MAYA, now);
   assert("100 USDC within caps → allowed", within.allowed === true);
 
-  const perTx = checkTokenTransferPolicy(policy(), usdcToken, usdc(201), now);
+  const perTx = checkTokenTransferPolicy(policy(), usdcToken, usdc(201), MAYA, now);
   assert("201 USDC > 200 per-tx → OverPerTx", perTx.allowed === false && perTx.reasonCode === RejectReason.OverPerTx);
 
-  const daily = checkTokenTransferPolicy(policy({ tokenSpentToday: usdc(400) }), usdcToken, usdc(150), now);
+  const daily = checkTokenTransferPolicy(policy({ tokenSpentToday: usdc(400) }), usdcToken, usdc(150), MAYA, now);
   assert("400 spent + 150 > 500 daily → OverDaily", daily.allowed === false && daily.reasonCode === RejectReason.OverDaily);
 
-  const wrongMint = checkTokenTransferPolicy(policy(), bonkToken, usdc(1), now);
+  const wrongMint = checkTokenTransferPolicy(policy(), bonkToken, usdc(1), MAYA, now);
   assert("BONK (wrong mint) → MintNotAllowed", wrongMint.allowed === false && wrongMint.reasonCode === RejectReason.MintNotAllowed);
 
-  const notConfigured = checkTokenTransferPolicy(policy({ tokenMint: DEFAULT_MINT }), usdcToken, usdc(1), now);
+  const notConfigured = checkTokenTransferPolicy(policy({ tokenMint: DEFAULT_MINT }), usdcToken, usdc(1), MAYA, now);
   assert("no token configured → blocked, no on-chain reasonCode", notConfigured.allowed === false && notConfigured.reasonCode === undefined);
 
-  const paused = checkTokenTransferPolicy(policy({ paused: true }), usdcToken, usdc(1), now);
+  const paused = checkTokenTransferPolicy(policy({ paused: true }), usdcToken, usdc(1), MAYA, now);
   assert("paused → Paused", paused.allowed === false && paused.reasonCode === RejectReason.Paused);
 
-  const counter = checkTokenTransferPolicy(policy(), usdcToken, usdc(100), now);
+  const recipientBlocked = checkTokenTransferPolicy(policy({ allowedRecipients: [MAYA] }), usdcToken, usdc(1), RANDO, now);
+  assert("non-allow-listed recipient → RecipientNotAllowed", recipientBlocked.allowed === false && recipientBlocked.reasonCode === RejectReason.RecipientNotAllowed);
+
+  const counter = checkTokenTransferPolicy(policy(), usdcToken, usdc(100), MAYA, now);
   assert("token check reports the TOKEN envelope (500 daily)", counter.dailyLimit === usdc(500));
 }
 

@@ -35,6 +35,11 @@ import {
 } from "../env";
 import { PraxisConfigError, PraxisNotFoundError } from "../errors";
 import { parseHumanUnits, SOL_DECIMALS } from "../units";
+import {
+  loadProviderState,
+  saveProviderState,
+  type StoredProviderState,
+} from "./stateStore";
 
 interface StoreState {
   threads: Thread[];
@@ -71,6 +76,7 @@ export class PraxisServerProvider implements PraxisProvider {
   private readonly config: PraxisServerConfig;
   private readonly aegis: AegisClient;
   private readonly addressBook: AddressBook;
+  private readonly ownerKey: string;
   private readonly listeners = new Set<() => void>();
   private state: StoreState;
   private version = 0;
@@ -79,10 +85,12 @@ export class PraxisServerProvider implements PraxisProvider {
     this.config = config;
     this.aegis = aegis;
     this.addressBook = new AddressBook(config.addressBook);
+    this.ownerKey = config.ownerAddress?.toBase58() ?? config.policyAddress?.toBase58() ?? "default";
+    const stored = loadProviderState(this.ownerKey);
     this.state = {
-      threads: [welcomeThread(nowSeconds())],
-      proposals: {},
-      activity: [],
+      threads: stored?.threads.length ? stored.threads : [welcomeThread(nowSeconds())],
+      proposals: stored?.proposals ?? {},
+      activity: stored?.activity ?? [],
       thinking: {},
     };
   }
@@ -555,8 +563,22 @@ export class PraxisServerProvider implements PraxisProvider {
   }
 
   private notify() {
+    this.persist();
     this.version++;
     for (const listener of this.listeners) listener();
+  }
+
+  private persist() {
+    const state: StoredProviderState = {
+      threads: this.state.threads,
+      proposals: this.state.proposals,
+      activity: this.state.activity,
+    };
+    try {
+      saveProviderState(this.ownerKey, state);
+    } catch (error) {
+      console.warn("Praxis state persistence failed", error);
+    }
   }
 }
 

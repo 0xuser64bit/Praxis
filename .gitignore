@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/.praxis/
 
 # next.js
 /.next/

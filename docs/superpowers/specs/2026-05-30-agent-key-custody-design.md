@@ -66,21 +66,50 @@ export interface AgentSigner {
    Uses `fetchWithTimeout`. **Fails closed**: any signing error throws and the
    action is rejected — it never falls back to a local key.
 
-### Remote signer contract (the service is out-of-repo)
+### Remote signer contract
 
 ```
 POST {PRAXIS_AGENT_SIGNER_URL}
 Authorization: Bearer {PRAXIS_AGENT_SIGNER_TOKEN}
 Content-Type: application/json
-{ "message": "<base64 tx message>", "programId": "<aegis program id>", "walletAddress": "<owner>" }
+{ "message": "<base64 tx message>" }
 
 200 -> { "signature": "<base64 64-byte ed25519 signature>" }
+4xx -> { "error": "..." }   (bad token, malformed message, or policy rejected)
 ```
 
-`programId` and `walletAddress` are sent as **context** so the signer service
-can enforce its own policy (e.g. only sign `agent_transfer` /
-`agent_transfer_spl` to the Aegis program). Enforcement lives in the service;
-this repo documents the recommended policy but does not implement the service.
+The client stays minimal — it posts only the serialized message. The signer
+service decodes the message itself and enforces policy against its own configured
+Aegis program id: it signs only when the message has exactly one instruction,
+to that program, with the `agent_transfer` / `agent_transfer_spl` discriminator.
+Enforcement lives in the service (defense in depth; the on-chain program remains
+authoritative).
+
+### Reference signer service (`signer/`)
+
+To make the remote path actually runnable at zero cost — not just an interface —
+a minimal standalone signer service is included. It is a separate process from
+the Next.js app and is the custody boundary: it is the **only** place the agent
+private key lives.
+
+- A small Bun HTTP server (`Bun.serve`) with one route, `POST /sign`.
+- Loads the agent keypair from its own env/file (reusing the repo's keypair
+  parsing), independent of the app.
+- Bearer-token auth (constant-time compare); rejects without/with a wrong token.
+- Decodes the posted message and **enforces policy**: the transaction must
+  contain exactly one instruction, to the configured Aegis program id, whose
+  discriminator is `agent_transfer` or `agent_transfer_spl`. Anything else is
+  refused. (Defense in depth — the on-chain program is still authoritative.)
+- Signs the raw message bytes (ed25519, same bytes `Keypair` signs) and returns
+  the base64 signature.
+- Stateless, no database, no outbound calls. Can later be reworked internally to
+  delegate to a real KMS/HSM without changing the app or the wire contract.
+
+**Deployment (≈$0):** runs on a small always-free VM (e.g. Oracle Cloud Always
+Free, ARM Ampere). Expose it over HTTPS with a **Cloudflare Tunnel** (free TLS,
+no open inbound ports / static IP needed). The app reaches it via
+`PRAXIS_AGENT_SIGNER_URL` with the bearer token. This keeps the private key off
+the Vercel app entirely while staying free.
 
 ### Resolution & configuration
 
@@ -131,13 +160,21 @@ fall back to signing-on-simulate through the same `AgentSigner` and note it.
 - **New:** `server/agent/agentSigner.ts` — `AgentSigner` interface,
   `LocalKeypairSigner`, `HttpRemoteAgentSigner`, `getAgentSigner` /
   `requireAgentSigner`, `resetAgentSignerForTests`.
+- **New:** `signer/index.ts` — the reference signer service (Bun server).
+- **New:** `signer/README.md` — run + Oracle/Cloudflare-Tunnel deploy notes.
+- **New (shared):** `server/agent/agentTxPolicy.ts` — pure helper that inspects a
+  serialized message and decides whether it is a single Aegis `agent_transfer` /
+  `agent_transfer_spl` to the program. Used by the signer service; lives in the
+  repo so it is unit-tested with the rest.
 - **Edit:** `server/env.ts` — resolve `agentSigner` into config; production guard;
   keep `agentKeypair` for `LocalKeypairSigner` + scripts.
 - **Edit:** `server/aegis/client.ts` — use `agentSigner` for the 4 sign sites and
   pubkey reads; execute-only signing; simulate with `sigVerify: false`.
+- **Edit:** `package.json` — `signer` script to run the service.
 - **Edit:** `.env.example`, `README.md`, `docs/ROADMAP.md` — document the signer
   env and that custody is no longer a gap when configured.
-- **New tests:** `server/agent/__tests__/agentSigner.test.ts`; update
+- **New tests:** `server/agent/__tests__/agentSigner.test.ts`,
+  `server/agent/__tests__/agentTxPolicy.test.ts`; update
   `server/aegis/__tests__/client.test.ts` and
   `server/provider/__tests__/praxisServer.test.ts` to inject an `AgentSigner`.
 

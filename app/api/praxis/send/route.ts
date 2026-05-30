@@ -13,8 +13,8 @@ export async function POST(request: Request) {
   return withProvider(async (provider) => {
     requireMutationAuth(request);
     const body = await readJson(request);
-    const threadId = readNullableString(body.threadId, "threadId");
-    const text = readString(body.text, "text");
+    const threadId = readNullableString(body.threadId, "threadId", { maxLength: 128 });
+    const text = readString(body.text, "text", { maxLength: 2_000 });
     return provider.send(threadId, text);
   });
 }

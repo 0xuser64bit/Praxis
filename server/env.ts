@@ -234,12 +234,20 @@ function parseAddressBook(raw: string | undefined): AddressBookEntry[] {
 function parseTokens(raw: string | undefined): TokenInfo[] {
   if (!raw?.trim()) return DEFAULT_TOKENS;
   const parsed = parseJsonArray<TokenInfo>(raw, "PRAXIS_TOKENS");
-  return parsed.map((token) => ({
-    symbol: String(token.symbol ?? "").trim().toUpperCase(),
-    mint: validatePublicKey(String(token.mint ?? ""), `token ${token.symbol}`).toBase58(),
-    decimals: Number(token.decimals),
-    verified: Boolean(token.verified),
-  }));
+  return parsed.map((token) => {
+    const symbol = String(token.symbol ?? "").trim().toUpperCase();
+    if (!symbol) throw new PraxisConfigError("token entries require a symbol");
+    const decimals = Number(token.decimals);
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
+      throw new PraxisConfigError(`token ${symbol || "(unknown)"} decimals must be an integer from 0 to 18`);
+    }
+    return {
+      symbol,
+      mint: validatePublicKey(String(token.mint ?? ""), `token ${symbol}`).toBase58(),
+      decimals,
+      verified: Boolean(token.verified),
+    };
+  });
 }
 
 function parseJsonArray<T>(raw: string, name: string): T[] {

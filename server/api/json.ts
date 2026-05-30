@@ -13,6 +13,7 @@ export const routeRuntime = "nodejs";
 export const routeDynamic = "force-dynamic";
 const U64_MAX = 2n ** 64n - 1n;
 const DEMO_TOKEN_HEADER = "x-praxis-demo-token";
+const MAX_JSON_BODY_BYTES = 64 * 1024;
 
 export function jsonOk(value: unknown = { ok: true }): Response {
   return Response.json(toWire(value), { headers: noStoreHeaders() });
@@ -56,7 +57,15 @@ export async function withApi<T>(fn: () => Promise<T> | T): Promise<Response> {
 }
 
 export async function readJson(request: Request): Promise<Record<string, unknown>> {
+  const declaredLength = request.headers.get("content-length");
+  if (declaredLength && Number(declaredLength) > MAX_JSON_BODY_BYTES) {
+    throw new PraxisInputError(`Request body must be ${MAX_JSON_BODY_BYTES} bytes or smaller`);
+  }
+
   const body = await request.text();
+  if (Buffer.byteLength(body, "utf8") > MAX_JSON_BODY_BYTES) {
+    throw new PraxisInputError(`Request body must be ${MAX_JSON_BODY_BYTES} bytes or smaller`);
+  }
   if (!body.trim()) return {};
   let parsed: unknown;
   try {
@@ -70,16 +79,20 @@ export async function readJson(request: Request): Promise<Record<string, unknown
   return parsed as Record<string, unknown>;
 }
 
-export function readString(value: unknown, name: string): string {
+export function readString(value: unknown, name: string, opts: { maxLength?: number } = {}): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new PraxisInputError(`${name} must be a non-empty string`);
   }
-  return value.trim();
+  const trimmed = value.trim();
+  if (opts.maxLength !== undefined && trimmed.length > opts.maxLength) {
+    throw new PraxisInputError(`${name} must be ${opts.maxLength} characters or fewer`);
+  }
+  return trimmed;
 }
 
-export function readNullableString(value: unknown, name: string): string | null {
+export function readNullableString(value: unknown, name: string, opts: { maxLength?: number } = {}): string | null {
   if (value === null || value === undefined) return null;
-  return readString(value, name);
+  return readString(value, name, opts);
 }
 
 export function readPolicyPatch(value: unknown) {

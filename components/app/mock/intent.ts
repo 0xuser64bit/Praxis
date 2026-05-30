@@ -21,7 +21,7 @@ import { remaining } from "@praxis/shared";
 
 import { formatUsd, shortenAddress, toBaseUnits } from "../lib/units";
 import { effectiveSpentToday, checkTransfer, checkTokenTransfer } from "./policy";
-import { ADDR, MINT, SOL_DECIMALS, type StoreState } from "./seed";
+import { ADDR, MINT, type StoreState } from "./seed";
 
 export interface ParseResult {
   blocks: AgentBlock[];

@@ -115,9 +115,9 @@ function ReadyAppShell() {
 
         {/* mobile surface switcher (sidebar is hidden on small screens) */}
         <div className="hidden gap-1 px-4 py-2 [border-bottom:0.5px_solid_var(--border)] max-[760px]:flex">
-          <MobileTab icon={<IconMessages size={15} />} active={view === "chat"} onClick={() => setView("chat")} />
-          <MobileTab icon={<IconShieldLock size={15} />} active={view === "policy"} onClick={() => setView("policy")} />
-          <MobileTab icon={<IconHistory size={15} />} active={view === "activity"} onClick={() => setView("activity")} />
+          <MobileTab label="Conversation" icon={<IconMessages size={15} />} active={view === "chat"} onClick={() => setView("chat")} />
+          <MobileTab label="Policy" icon={<IconShieldLock size={15} />} active={view === "policy"} onClick={() => setView("policy")} />
+          <MobileTab label="Activity" icon={<IconHistory size={15} />} active={view === "activity"} onClick={() => setView("activity")} />
         </div>
 
         {view === "chat" && (
@@ -174,10 +174,12 @@ function ApiStateScreen({
 }
 
 function MobileTab({
+  label,
   icon,
   active,
   onClick,
 }: {
+  label: string;
   icon: React.ReactNode;
   active: boolean;
   onClick: () => void;
@@ -185,6 +187,8 @@ function MobileTab({
   return (
     <button
       type="button"
+      aria-label={label}
+      aria-current={active ? "page" : undefined}
       onClick={onClick}
       className={`flex flex-1 items-center justify-center rounded-md py-2 [transition:background_0.15s,color_0.15s] ${
         active

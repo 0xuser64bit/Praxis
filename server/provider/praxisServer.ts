@@ -289,6 +289,12 @@ export class PraxisServerProvider implements PraxisProvider {
   };
 
   // --- policy dashboard ---
+  bootstrapPolicy = async (): Promise<void> => {
+    this.assertBackendOwnerSigningAvailable();
+    await this.aegis.bootstrapPolicy();
+    await this.refreshOnChain();
+  };
+
   updatePolicy = async (patch: PolicyUpdate): Promise<void> => {
     this.assertBackendOwnerSigningAvailable();
     await this.aegis.updatePolicy(patch);
@@ -338,8 +344,8 @@ export class PraxisServerProvider implements PraxisProvider {
 
   /** Submit a wallet-signed owner transaction, then refresh on-chain state. */
   submitOwnerAction = async (input: UnsignedOwnerTransaction): Promise<{ signature: string }> => {
-    this.requireOwnerWallet();
-    const signature = await this.aegis.submitSignedTransaction(input);
+    const owner = this.requireOwnerWallet();
+    const signature = await this.aegis.submitSignedTransaction(input, { expectedFeePayer: owner });
     await this.refreshOnChain();
     return { signature };
   };

@@ -266,6 +266,11 @@ export class MockPraxisProvider implements PraxisProvider {
   }
 
   // --- policy (owner) ---
+  bootstrapPolicy = async (): Promise<void> => {
+    await delay(150);
+    this.notify();
+  };
+
   updatePolicy = async (patch: PolicyUpdate): Promise<void> => {
     await delay(250);
     this.state.policy = {

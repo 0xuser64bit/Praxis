@@ -21,6 +21,9 @@ The signed-in wallet derives the live policy PDA and scopes the off-chain
 workspace. Backend owner-key routes are allowed only when `PRAXIS_OWNER_KEYPAIR`
 matches the signed-in wallet; browser flows build wallet-signed owner/admin
 transactions so the backend does not need the owner private key.
+Fresh wallets can use the same wallet-signed transaction path with
+`{ "kind": "bootstrapPolicy" }` to initialize their policy PDA and fund the SOL
+vault.
 
 ## Routes
 
@@ -44,11 +47,12 @@ transactions so the backend does not need the owner private key.
 - `POST /api/praxis/update-policy` with `{ "patch": { "maxPerTx"?: string, "dailyLimit"?: string, "expiryTs"?: number, "paused"?: boolean } }`
 - `POST /api/praxis/configure-token` with `{ "config": { "tokenMint": string, "tokenMaxPerTx": string, "tokenDailyLimit": string } }`
 - `POST /api/praxis/prepare-token-accounts` with `{ "recipientAddresses"?: string[] }`
+- `POST /api/praxis/bootstrap-policy`
 - `POST /api/praxis/revoke-agent`
 - `POST /api/praxis/rotate-agent`
 - `POST /api/praxis/add-to-allow-list` with `{ "kind": "programs" | "recipients" | "mints", "address": string }`
 - `POST /api/praxis/remove-from-allow-list` with the same body as add
-- `POST /api/praxis/owner/build` with a typed owner action; returns an unsigned transaction for the wallet
+- `POST /api/praxis/owner/build` with a typed owner action (`bootstrapPolicy`, `updatePolicy`, `allowList`, `revoke`, or `rotate`); returns an unsigned transaction for the wallet
 - `POST /api/praxis/owner/submit` with the wallet-signed transaction and blockhash metadata
 
 Request bodies are capped at 64 KiB. `send.text` is capped at 2,000 characters,
@@ -64,6 +68,9 @@ Copy `.env.example` and fill in:
 - `PRAXIS_STATE_BACKEND=postgres` and `DATABASE_URL` for production state
   persistence. Use `PRAXIS_STATE_DIR` only for local/devnet filesystem state.
 - `PRAXIS_AGENT_KEYPAIR_PATH` or `PRAXIS_AGENT_KEYPAIR` for the scoped agent signer.
+- `PRAXIS_ALLOW_LOCAL_AGENT_KEY=1` only for devnet/judge deployments that
+  intentionally keep the agent key in-process; production custody should use
+  `PRAXIS_AGENT_SIGNER_URL`.
 - `PRAXIS_NEXT_AGENT_KEYPAIR_PATH` or `PRAXIS_NEXT_AGENT_KEYPAIR` for `rotate-agent`; it must be different from the current agent key.
 - Optional `PRAXIS_OWNER_KEYPAIR_PATH` / `PRAXIS_OWNER_KEYPAIR` for local/devnet server-side policy admin routes. It must match the signed-in wallet.
 - Optional `PRAXIS_ADDRESS_BOOK` for off-chain labels.

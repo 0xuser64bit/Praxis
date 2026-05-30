@@ -31,7 +31,23 @@ export type View = "chat" | "policy" | "activity";
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 
 export function AppShell() {
+  const provider = useProvider();
   const connection = useConnectionState();
+  const [bootstrapping, setBootstrapping] = useState(false);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const canBootstrap = connection.phase === "error" && isMissingPolicyError(connection.message);
+
+  const bootstrapPolicy = async () => {
+    setBootstrapping(true);
+    setBootstrapError(null);
+    try {
+      await provider.bootstrapPolicy();
+    } catch (error) {
+      setBootstrapError(error instanceof Error ? error.message : "Could not initialize the devnet policy.");
+    } finally {
+      setBootstrapping(false);
+    }
+  };
 
   if (connection.phase === "loading") {
     return (
@@ -48,6 +64,12 @@ export function AppShell() {
         error
         title="Praxis API is not ready"
         message={connection.message ?? "Check the backend environment and reload the app."}
+        detail={bootstrapError}
+        action={canBootstrap ? {
+          label: bootstrapping ? "Waiting for wallet" : "Initialize devnet policy",
+          busy: bootstrapping,
+          onClick: bootstrapPolicy,
+        } : undefined}
       />
     );
   }
@@ -155,18 +177,26 @@ function shortAddress(address: string): string {
   return `${address.slice(0, 4)}...${address.slice(-4)}`;
 }
 
+function isMissingPolicyError(message?: string): boolean {
+  return Boolean(message?.includes("Aegis policy account not found"));
+}
+
 function ApiStateScreen({
   title,
   message,
+  detail,
+  action,
   error = false,
 }: {
   title: string;
   message: string;
+  detail?: string | null;
+  action?: { label: string; busy?: boolean; onClick: () => void };
   error?: boolean;
 }) {
   return (
     <div className="flex h-[100dvh] items-center justify-center bg-[var(--bg)] px-6">
-      <div className="max-w-[460px] rounded-xl bg-[var(--bg-card)] p-6 [border:0.5px_solid_var(--border-strong)]">
+      <div className="w-full max-w-[460px] rounded-lg bg-[var(--bg-card)] p-6 [border:0.5px_solid_var(--border-strong)]">
         <div className="mb-4 flex items-center gap-3">
           <span
             className="flex h-9 w-9 items-center justify-center rounded-lg"
@@ -188,6 +218,26 @@ function ApiStateScreen({
         <p className="text-[13.5px] leading-[1.6] text-[var(--text-secondary)]">
           {message}
         </p>
+        {detail && (
+          <div className="mt-4 rounded-md bg-[rgba(199,91,91,0.12)] p-3 text-[12.5px] leading-[1.5] text-[var(--danger)]">
+            {detail}
+          </div>
+        )}
+        {action && (
+          <button
+            type="button"
+            disabled={action.busy}
+            onClick={action.onClick}
+            className="mt-5 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--bg)] [transition:opacity_0.15s] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {action.busy ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+            ) : (
+              <IconShieldLock size={16} />
+            )}
+            {action.label}
+          </button>
+        )}
         {error && (
           <p className="mt-3 [font-family:var(--font-mono)] text-[11px] leading-[1.5] text-[var(--text-tertiary)]">
             API mode intentionally does not fall back to mock state. Check the live backend configuration and wallet session.

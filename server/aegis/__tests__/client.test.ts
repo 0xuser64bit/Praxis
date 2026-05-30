@@ -4,7 +4,7 @@ import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
 import { AegisClient } from "../client";
 import { DEFAULT_AEGIS_PROGRAM_ID } from "../constants";
 import { findPolicyPda } from "../pdas";
-import { PraxisConfigError } from "../../errors";
+import { PraxisConfigError, PraxisInputError } from "../../errors";
 import { DEFAULT_TOKENS, type PraxisServerConfig } from "../../env";
 import type { AgentSigner } from "../../agent/agentSigner";
 import { encodePolicyAccount, policyFixture } from "../../testing/fixtures";
@@ -69,6 +69,30 @@ describe("buildUnsignedOwnerTransaction", () => {
     expect(embedded.equals(config.nextAgentKeypair!.publicKey)).toBe(true);
   });
 
+  test("builds a bootstrap tx that initializes and funds the wallet policy", async () => {
+    const config = makeConfig({ policyAddress: undefined });
+    const wallet = config.ownerAddress!;
+    const client = new AegisClient(config, fakeConnection({
+      getAccountInfo: async () => null,
+      getSlot: async () => 1,
+      getBlockTime: async () => 1_700_000_000,
+    }));
+
+    const draft = await client.buildUnsignedOwnerTransaction(wallet, { kind: "bootstrapPolicy" });
+    const tx = Transaction.from(Uint8Array.from(Buffer.from(draft.transaction, "base64")));
+
+    expect(tx.feePayer?.equals(wallet)).toBe(true);
+    expect(tx.instructions).toHaveLength(2);
+    expect(tx.instructions.every((ix) => ix.programId.equals(DEFAULT_AEGIS_PROGRAM_ID))).toBe(true);
+    expect(tx.instructions.every((ix) => ix.keys.some((key) => key.pubkey.equals(wallet) && key.isSigner))).toBe(true);
+    expect(tx.signatures.every((s) => s.signature === null)).toBe(true);
+
+    const embeddedAgent = new PublicKey(tx.instructions[0].data.subarray(8, 40));
+    expect(embeddedAgent.equals(config.agentKeypair!.publicKey)).toBe(true);
+    const fundedLamports = tx.instructions[1].data.readBigUInt64LE(8);
+    expect(fundedLamports).toBe(1_000_000_000n);
+  });
+
   test("refuses to rotate to the current agent key", async () => {
     const agent = Keypair.generate();
     const config = makeConfig({ agentKeypair: agent, nextAgentKeypair: agent });
@@ -124,5 +148,13 @@ describe("submitSignedTransaction", () => {
       fakeConnection({ confirmTransaction: async () => ({ value: { err: { InstructionError: [0, "Custom"] } } }) }),
     );
     await expect(client.submitSignedTransaction(input)).rejects.toThrow(/owner transaction failed/);
+  });
+
+  test("validates the signed transaction shape when an owner is expected", async () => {
+    const config = makeConfig();
+    const client = new AegisClient(config, fakeConnection());
+    await expect(
+      client.submitSignedTransaction(input, { expectedFeePayer: config.ownerAddress }),
+    ).rejects.toBeInstanceOf(PraxisInputError);
   });
 });

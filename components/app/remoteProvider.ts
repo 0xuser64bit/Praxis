@@ -17,6 +17,7 @@ import { getOwnerWalletSigner } from "./lib/walletSigner";
 
 /** Client mirror of the server's owner-action request shape (validated server-side). */
 type OwnerActionRequest =
+  | { kind: "bootstrapPolicy" }
   | { kind: "updatePolicy"; patch: PolicyUpdate }
   | { kind: "allowList"; listKind: AllowListKind; address: string; mode: "add" | "remove" }
   | { kind: "revoke" }
@@ -103,6 +104,14 @@ export class RemotePraxisProvider implements PraxisProvider {
 
   cancelProposal = async (proposalId: string): Promise<void> => {
     await this.mutate(() => this.post("/api/praxis/cancel-proposal", { proposalId }));
+    await this.refreshAll();
+  };
+
+  bootstrapPolicy = async (): Promise<void> => {
+    await this.ownerAction(
+      { kind: "bootstrapPolicy" },
+      () => this.post("/api/praxis/bootstrap-policy", {}),
+    );
     await this.refreshAll();
   };
 

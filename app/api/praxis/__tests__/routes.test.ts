@@ -8,6 +8,7 @@ import { GET as getPolicy } from "../get-policy/route";
 import { GET as getProposal } from "../get-proposal/route";
 import { GET as getThread } from "../get-thread/route";
 import { POST as sendRoute } from "../send/route";
+import { POST as bootstrapPolicy } from "../bootstrap-policy/route";
 import { POST as ownerBuild } from "../owner/build/route";
 import { POST as ownerSubmit } from "../owner/submit/route";
 import { createSessionCookie } from "@/server/auth/session";
@@ -84,6 +85,13 @@ describe("mutation auth gating", () => {
 });
 
 describe("wallet-signed owner routes", () => {
+  test("bootstrap-policy: 401 without a session", async () => {
+    const res = await bootstrapPolicy(
+      makeRequest(`${ORIGIN}/api/praxis/bootstrap-policy`, { origin: ORIGIN, body: {} }),
+    );
+    expect(res.status).toBe(401);
+  });
+
   test("owner/build: 401 without a session", async () => {
     const res = await ownerBuild(
       makeRequest(`${ORIGIN}/api/praxis/owner/build`, { origin: ORIGIN, body: { action: { kind: "revoke" } } }),

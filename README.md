@@ -40,6 +40,8 @@ scopes the off-chain workspace state. Copy `.env.example`, then configure:
 - `PRAXIS_STATE_DIR` for local/devnet workspace persistence
 - `SOLANA_RPC_URL`
 - `PRAXIS_AGENT_KEYPAIR_PATH` or `PRAXIS_AGENT_KEYPAIR`
+- `PRAXIS_ALLOW_LOCAL_AGENT_KEY=1` only when deploying a devnet judge build with
+  an in-process agent key; otherwise use `PRAXIS_AGENT_SIGNER_URL`
 - `PRAXIS_NEXT_AGENT_KEYPAIR_PATH` or `PRAXIS_NEXT_AGENT_KEYPAIR` for
   rotate/re-enable; it must be different from the current agent key
 - `PRAXIS_OWNER_KEYPAIR_PATH` is optional and only for the local/devnet
@@ -54,6 +56,10 @@ backend never holds the owner key. The backend owner keypair remains only as a
 local/devnet fallback when no browser wallet can sign (and for scripts). Token
 envelope setup/funding still uses the backend keypair and stays a local/devnet
 convenience.
+
+For a fresh devnet wallet, open `/app` after sign-in and initialize the missing
+Aegis policy from the prompt. The wallet-signed bootstrap transaction creates
+the policy PDA and funds the SOL vault with 1 devnet SOL.
 
 ```bash
 bun run dev

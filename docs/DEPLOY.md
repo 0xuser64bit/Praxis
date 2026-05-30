@@ -31,11 +31,8 @@ Open `http://localhost:3000/app`.
 ## Path B — Live API mode on devnet ($0, real on-chain)
 
 This runs the real `agent_transfer` flow through the deployed Aegis program on
-Solana **devnet** (free faucet SOL). The signed-in wallet is the policy owner.
-
-> **Single-owner caveat:** the policy PDA is derived from the signed-in wallet,
-> and there is no self-serve "initialize policy" UI yet. Bootstrap one owner
-> wallet, then sign in as that owner.
+Solana **devnet** (free faucet SOL). The signed-in wallet is the policy owner,
+and first-run policy initialization is wallet-signed from `/app`.
 
 ### 0. Prerequisites (all free)
 
@@ -66,24 +63,23 @@ Use that program id as `AEGIS_PROGRAM_ID` below. (If you already hold the keypai
 for `7qRKV1dNPCixKWDLHsuHa5puFsNPtNCzC1sX6P1kpFgb`, you can skip `keys sync` and
 keep that id.)
 
-### 2. Create and fund the owner + agent keypairs
+### 2. Create and fund the agent keypair
 
 ```bash
 mkdir -p keys
-solana-keygen new --no-bip39-passphrase -o keys/owner.json
 solana-keygen new --no-bip39-passphrase -o keys/agent.json
 # Optional, only if you'll demo rotate:
 solana-keygen new --no-bip39-passphrase -o keys/next-agent.json
 
-solana airdrop 2 $(solana-keygen pubkey keys/owner.json) --url devnet
 solana airdrop 2 $(solana-keygen pubkey keys/agent.json)  --url devnet
 ```
 
-The **owner** pays for policy init + vault funding; the **agent** is the fee
-payer for `agent_transfer`, so both need a little devnet SOL. (`keys/` is
-git-ignored — never commit keypairs.)
+The connected browser wallet pays for policy init + vault funding; the
+**agent** is the fee payer for `agent_transfer`, so both need devnet SOL. Airdrop
+at least 2 SOL to the browser wallet in Phantom/Solflare devnet before first
+launch. (`keys/` is git-ignored — never commit keypairs.)
 
-### 3. Configure `.env` and bootstrap the policy
+### 3. Configure `.env`
 
 ```bash
 cp .env.example .env
@@ -95,7 +91,6 @@ Set in `.env` (everything else can stay default):
 NEXT_PUBLIC_PRAXIS_PROVIDER=api
 SOLANA_RPC_URL=https://api.devnet.solana.com
 AEGIS_PROGRAM_ID=<your program id from step 1>
-PRAXIS_OWNER_KEYPAIR_PATH=./keys/owner.json
 PRAXIS_AGENT_KEYPAIR_PATH=./keys/agent.json
 PRAXIS_NEXT_AGENT_KEYPAIR_PATH=./keys/next-agent.json   # only if demoing rotate
 PRAXIS_LOCAL_INTENT=1                                    # $0 — no Anthropic key needed
@@ -103,26 +98,26 @@ PRAXIS_SESSION_SECRET=<run: openssl rand -base64 32>
 PRAXIS_STATE_BACKEND=fs                                  # local; see persistence note below
 ```
 
-Bootstrap the on-chain policy (initializes the policy, funds the vault with 1
-SOL, configures the USDC envelope, and prepares token accounts):
-
-```bash
-bun run praxis:demo
-# For SPL sends, also:  bun run praxis:setup-token-accounts
-```
-
-`praxis:demo` is idempotent — if the policy already exists it just runs the
-allow/over-cap money-shots.
-
 ### 4. Verify locally
 
 ```bash
 bun run dev
 ```
 
-Open `http://localhost:3000/app`, connect Phantom (**set to devnet**, using the
-**owner** wallet so its address matches the initialized policy), and try
+Open `http://localhost:3000/app`, connect a wallet on **devnet**, and click
+**Initialize devnet policy** if prompted. The wallet signs a transaction that
+creates its Aegis policy PDA and funds the vault with 1 SOL. Then try
 `send 0.5 sol to maya`.
+
+For scripted local/devnet demos, you can still configure
+`PRAXIS_OWNER_KEYPAIR_PATH=./keys/owner.json`, airdrop to that owner, and run:
+
+```bash
+solana-keygen new --no-bip39-passphrase -o keys/owner.json
+solana airdrop 2 $(solana-keygen pubkey keys/owner.json) --url devnet
+bun run praxis:demo
+# For SPL sends, also:  bun run praxis:setup-token-accounts
+```
 
 ### 5. Deploy Live API to Vercel
 
@@ -136,12 +131,15 @@ Import the repo on Vercel and set these Environment Variables.
 | `AEGIS_PROGRAM_ID` | your program id |
 | `PRAXIS_SESSION_SECRET` | a random 32+ char string |
 | `PRAXIS_AGENT_KEYPAIR` | the **contents** of `keys/agent.json` (the JSON array) |
-| `PRAXIS_OWNER_KEYPAIR` | local/devnet fallback only; omit when all owner actions are wallet-signed |
+| `PRAXIS_ALLOW_LOCAL_AGENT_KEY` | `1` for devnet judging only; use the remote signer for real production |
+| `PRAXIS_OWNER_KEYPAIR` | local/devnet fallback only; omit for judge/self-serve wallet bootstrap |
 | `PRAXIS_LOCAL_INTENT` | `1` |
 | `PRAXIS_STATE_BACKEND` | `postgres` |
 | `DATABASE_URL` | Neon or another Postgres-compatible URL |
+| `PRAXIS_ADDRESS_BOOK` | `[{"label":"maya","name":"Maya Patel","address":"ALUMw7kSn9xn67suHr2ti21CXBQVNMuRk7uWSM1WuXEt","note":"saved contact"}]` |
 
-Deploy, open `/app`, connect the **owner** wallet on devnet.
+Deploy, open `/app`, connect a devnet-funded wallet, and initialize the policy
+from the prompt.
 
 > On Vercel, `fs` state is per-instance and ephemeral. Use a free **Neon**
 > database (Vercel Marketplace) and set `PRAXIS_STATE_BACKEND=postgres` +
@@ -186,9 +184,9 @@ These are all env toggles — flip them when you want, no code changes:
 
 ## Troubleshooting
 
-- **"Aegis policy account not found"** → run `bun run praxis:demo` (the policy
-  isn't initialized for that owner), and make sure the wallet you sign in with
-  matches the owner that initialized it.
+- **"Aegis policy account not found"** → click **Initialize devnet policy** from
+  `/app`. If the wallet prompt never appears, confirm the wallet supports
+  transaction signing and is connected to **devnet**.
 - **Sign-in fails / no wallet** → Phantom must be installed and switched to
   **devnet**.
 - **`PRAXIS_SESSION_SECRET is required in production`** → set it in Vercel env.

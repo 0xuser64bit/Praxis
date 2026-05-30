@@ -105,6 +105,10 @@ describe("scalar readers", () => {
 });
 
 describe("readOwnerAction", () => {
+  test("accepts bootstrapPolicy", () => {
+    expect(readOwnerAction({ kind: "bootstrapPolicy" })).toEqual({ kind: "bootstrapPolicy" });
+  });
+
   test("accepts revoke and rotate", () => {
     expect(readOwnerAction({ kind: "revoke" })).toEqual({ kind: "revoke" });
     expect(readOwnerAction({ kind: "rotate" })).toEqual({ kind: "rotate" });
@@ -130,7 +134,9 @@ describe("readOwnerAction", () => {
   });
 
   test("rejects an unknown kind and non-objects", () => {
-    expect(() => readOwnerAction({ kind: "selfDestruct" })).toThrow(/updatePolicy, allowList, revoke, or rotate/);
+    expect(() => readOwnerAction({ kind: "selfDestruct" })).toThrow(
+      /bootstrapPolicy, updatePolicy, allowList, revoke, or rotate/,
+    );
     expect(() => readOwnerAction("revoke")).toThrow(/must be an object/);
   });
 });

@@ -256,6 +256,8 @@ export interface PraxisProvider {
   newThread(): string;
 
   // --- policy dashboard (owner) ---
+  /** Initialize a missing wallet-owned Aegis policy and fund its SOL vault. */
+  bootstrapPolicy(): Promise<void>;
   updatePolicy(patch: PolicyUpdate): Promise<void>;
   /** Configure the SPL-token envelope (mint + token caps). */
   configureToken(config: TokenEnvelopeConfig): Promise<void>;

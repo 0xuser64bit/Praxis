@@ -7,11 +7,19 @@ import {
   TransactionInstruction,
   VersionedTransaction,
 } from "@solana/web3.js";
-import type { AllowListKind, PolicyUpdate, PolicyView } from "@praxis/shared";
+import {
+  MAX_ALLOWED_MINTS,
+  type AllowListKind,
+  type PolicyUpdate,
+  type PolicyView,
+} from "@praxis/shared";
 
 import {
   AEGIS_OPERATIONAL_ERROR,
+  JUPITER_PROGRAM_ID,
   reasonFromAegisErrorCode,
+  SYSTEM_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
 } from "./constants";
 import { decodeActionLog, decodePolicyAccount } from "./codec";
 import {
@@ -40,7 +48,7 @@ import {
   resolveNextAgentPublicKey,
   type AgentSigner,
 } from "../agent/agentSigner";
-import { PraxisConfigError, PraxisNotFoundError } from "../errors";
+import { PraxisConfigError, PraxisInputError, PraxisNotFoundError } from "../errors";
 import {
   checkFromAegisReason,
   checkTokenFromAegisReason,
@@ -48,7 +56,7 @@ import {
   checkTransferPolicy,
 } from "../agent/policy";
 import type { ActionLogEntry, PolicyCheckResult, TokenInfo } from "@praxis/shared";
-import { formatSol, formatUnits } from "../units";
+import { formatSol, formatUnits, parseHumanUnits, SOL_DECIMALS } from "../units";
 
 /**
  * An owner/admin policy action. Built server-side as an unsigned transaction the
@@ -56,6 +64,7 @@ import { formatSol, formatUnits } from "../units";
  * keypair (local/devnet fallback). Token setup actions stay on the keypair path.
  */
 export type OwnerAction =
+  | { kind: "bootstrapPolicy" }
   | { kind: "updatePolicy"; patch: PolicyUpdate }
   | { kind: "allowList"; listKind: AllowListKind; address: string; mode: "add" | "remove" }
   | { kind: "revoke" }
@@ -99,6 +108,11 @@ interface BuiltTransaction {
     lastValidBlockHeight: number;
   };
 }
+
+const BOOTSTRAP_POLICY_TTL_SECONDS = 7 * 86_400;
+const BOOTSTRAP_MAX_PER_TX = parseHumanUnits("50", SOL_DECIMALS);
+const BOOTSTRAP_DAILY_LIMIT = parseHumanUnits("5", SOL_DECIMALS);
+const BOOTSTRAP_VAULT_FUNDING = parseHumanUnits("1", SOL_DECIMALS);
 
 let connection: Connection | undefined;
 
@@ -534,6 +548,10 @@ export class AegisClient {
     return this.sendOwnerAction({ kind: "rotate" });
   }
 
+  async bootstrapPolicy(): Promise<string> {
+    return this.sendOwnerAction({ kind: "bootstrapPolicy" });
+  }
+
   /**
    * Build the instruction(s) for an owner action against an explicit owner
    * public key (the signed-in WALLET in production, or the backend owner keypair
@@ -543,6 +561,40 @@ export class AegisClient {
     ownerPubkey: PublicKey,
     action: OwnerAction,
   ): Promise<TransactionInstruction[]> {
+    if (action.kind === "bootstrapPolicy") {
+      const policy = findPolicyPda(ownerPubkey, this.config.programId);
+      const existing = await this.conn.getAccountInfo(policy, this.config.commitment);
+      if (existing) {
+        throw new PraxisInputError(`Aegis policy already exists for wallet: ${ownerPubkey.toBase58()}`);
+      }
+
+      const addresses = {
+        ...this.addresses({ policy }),
+        owner: ownerPubkey,
+        agentAuthority: this.agentSigner().publicKey,
+      };
+      const verifiedMints = uniqueStrings(
+        this.config.tokens.filter((token) => token.verified).map((token) => token.mint),
+      );
+      if (verifiedMints.length > MAX_ALLOWED_MINTS) {
+        throw new PraxisConfigError(`Bootstrap policy allows at most ${MAX_ALLOWED_MINTS} verified mints.`);
+      }
+      const initialize = buildInitializePolicyIx(addresses, {
+        maxPerTx: BOOTSTRAP_MAX_PER_TX,
+        dailyLimit: BOOTSTRAP_DAILY_LIMIT,
+        allowedPrograms: [
+          SYSTEM_PROGRAM_ID.toBase58(),
+          TOKEN_PROGRAM_ID.toBase58(),
+          JUPITER_PROGRAM_ID.toBase58(),
+        ],
+        allowedRecipients: [],
+        allowedMints: verifiedMints,
+        expiryTs: (await this.chainTime()) + BOOTSTRAP_POLICY_TTL_SECONDS,
+      });
+      const fund = buildFundVaultIx({ ...addresses, owner: ownerPubkey }, BOOTSTRAP_VAULT_FUNDING);
+      return [initialize, fund];
+    }
+
     if (action.kind === "revoke") {
       const policy = this.policyForOwner(ownerPubkey);
       return [buildRevokeAgentIx({ ...this.addresses({ policy }), owner: ownerPubkey })];
@@ -626,8 +678,25 @@ export class AegisClient {
   }
 
   /** Submit a wallet-signed owner transaction and wait for confirmation. */
-  async submitSignedTransaction(input: UnsignedOwnerTransaction): Promise<string> {
+  async submitSignedTransaction(
+    input: UnsignedOwnerTransaction,
+    opts: { expectedFeePayer?: PublicKey } = {},
+  ): Promise<string> {
     const raw = Buffer.from(input.transaction, "base64");
+    if (opts.expectedFeePayer) {
+      let tx: Transaction;
+      try {
+        tx = Transaction.from(Uint8Array.from(raw));
+      } catch {
+        throw new PraxisInputError("Signed owner transaction must be a valid legacy Solana transaction.");
+      }
+      if (!tx.feePayer?.equals(opts.expectedFeePayer)) {
+        throw new PraxisInputError("Signed owner transaction fee payer does not match the authenticated wallet.");
+      }
+      if (tx.recentBlockhash !== input.blockhash) {
+        throw new PraxisInputError("Signed owner transaction blockhash does not match the unsigned draft.");
+      }
+    }
     const sig = await this.conn.sendRawTransaction(raw, {
       preflightCommitment: this.config.commitment,
     });
@@ -761,6 +830,10 @@ function uniquePublicKeys(values: PublicKey[]): PublicKey[] {
     out.push(value);
   }
   return out;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function extractCustomErrorCode(errorLike: unknown, logs: string[] = []): number | undefined {

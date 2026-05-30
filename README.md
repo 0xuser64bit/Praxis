@@ -6,13 +6,14 @@ program that enforces a scoped agent policy on-chain.
 The current product supports:
 
 - A polished standalone mock walkthrough at `/app`.
-- A live API mode for native SOL `agent_transfer` through Aegis.
+- A live API mode for native SOL `agent_transfer` and configured SPL-token
+  `agent_transfer_spl` through Aegis.
 - Policy dashboard controls for caps, expiry, allow-lists, revoke, and rotate.
 - Activity and proposal surfaces that show Aegis policy verdicts.
 - Read-only token research through Solana RPC and a configured indexer.
 
 Swaps are intentionally a typed stub. No Jupiter CPI or owner-signed swap flow is
-implemented yet.
+implemented yet, and the mock refuses to sign swaps too.
 
 ## Modes
 
@@ -37,6 +38,8 @@ then configure:
 - `NEXT_PUBLIC_PRAXIS_DEMO_MUTATION_TOKEN` with the same local-demo value
 - `SOLANA_RPC_URL`
 - `PRAXIS_AGENT_KEYPAIR_PATH` or `PRAXIS_AGENT_KEYPAIR`
+- `PRAXIS_NEXT_AGENT_KEYPAIR_PATH` or `PRAXIS_NEXT_AGENT_KEYPAIR` for
+  rotate/re-enable; it must be different from the current agent key
 - `AEGIS_POLICY_ADDRESS`, `AEGIS_OWNER_ADDRESS`, or `PRAXIS_OWNER_KEYPAIR_PATH`
 - `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`, unless using `PRAXIS_LOCAL_INTENT=1`
 

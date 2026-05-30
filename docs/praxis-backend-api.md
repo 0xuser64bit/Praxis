@@ -29,12 +29,16 @@ transactions.
 - `POST /api/praxis/send` with `{ "threadId": string | null, "text": string }`
 - `POST /api/praxis/sign-proposal` with `{ "proposalId": string }`
 - `POST /api/praxis/cancel-proposal` with `{ "proposalId": string }`
-- `POST /api/praxis/new-thread`
+- `POST /api/praxis/new-thread` with optional `{ "threadId": string }`
 - `POST /api/praxis/update-policy` with `{ "patch": { "maxPerTx"?: string, "dailyLimit"?: string, "expiryTs"?: number, "paused"?: boolean } }`
+- `POST /api/praxis/configure-token` with `{ "config": { "tokenMint": string, "tokenMaxPerTx": string, "tokenDailyLimit": string } }`
 - `POST /api/praxis/revoke-agent`
 - `POST /api/praxis/rotate-agent`
 - `POST /api/praxis/add-to-allow-list` with `{ "kind": "programs" | "recipients" | "mints", "address": string }`
 - `POST /api/praxis/remove-from-allow-list` with the same body as add
+
+Request bodies are capped at 64 KiB. `send.text` is capped at 2,000 characters,
+and client-supplied thread ids are capped at 128 characters.
 
 ## Environment
 
@@ -43,13 +47,15 @@ Copy `.env.example` and fill in:
 - `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` for Messages API intent parsing.
 - `SOLANA_RPC_URL` for the target cluster.
 - `PRAXIS_AGENT_KEYPAIR_PATH` or `PRAXIS_AGENT_KEYPAIR` for the scoped agent signer.
+- `PRAXIS_NEXT_AGENT_KEYPAIR_PATH` or `PRAXIS_NEXT_AGENT_KEYPAIR` for `rotate-agent`; it must be different from the current agent key.
 - `AEGIS_POLICY_ADDRESS`, or `AEGIS_OWNER_ADDRESS`, or an owner keypair so the server can locate the policy PDA.
 - Optional `PRAXIS_OWNER_KEYPAIR_PATH` / `PRAXIS_OWNER_KEYPAIR` for server-side policy admin routes.
 - Optional `PRAXIS_ADDRESS_BOOK` for off-chain labels.
 - `PRAXIS_DEMO_MUTATION_TOKEN` and `NEXT_PUBLIC_PRAXIS_DEMO_MUTATION_TOKEN` for local API-mode demos.
 
-The agent executor only signs `agent_transfer` through Aegis. It never builds a raw system transfer.
-Swaps are represented as a typed `swap` proposal stub; no Jupiter CPI is built.
+The agent executor only signs `agent_transfer` and `agent_transfer_spl` through
+Aegis. It never builds raw transfers outside the program. Swaps are represented
+as typed, blocked `swap` proposal stubs; no Jupiter CPI is built or signed.
 
 ## Demo
 

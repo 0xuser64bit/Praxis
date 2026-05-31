@@ -49,7 +49,7 @@ export function Composer({
       )}
 
       <div
-        className={`flex items-center gap-2.5 rounded-lg bg-[var(--bg-card)] px-3.5 py-2.5 [border:0.5px_solid_var(--border-strong)] [transition:border-color_0.15s] focus-within:[border-color:var(--border-bright)] ${
+        className={`flex items-center gap-2.5 rounded-lg bg-[var(--bg-card)] px-3.5 py-2.5 [transition:border-color_0.15s] focus-within:[border-color:var(--border-bright)] ${
           disabled ? "opacity-60" : ""
         }`}
       >

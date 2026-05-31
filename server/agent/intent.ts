@@ -24,6 +24,15 @@ export type ParsedAction =
       amountHuman: string;
       assetIn: string;
       assetOut: string;
+    }
+  | {
+      kind: "policy_question";
+      topic: "caps" | "expiry" | "allowlist" | "pause" | "general";
+    }
+  | {
+      kind: "save_contact";
+      label: string;
+      address: string;
     };
 
 const INTENT_TOOL_NAME = "parse_praxis_intent";
@@ -56,7 +65,7 @@ const intentTool = {
           properties: {
             kind: {
               type: "string",
-              enum: ["transfer", "research", "swap_stub"],
+              enum: ["transfer", "research", "swap_stub", "policy_question", "save_contact"],
             },
             asset: {
               type: "string",
@@ -78,6 +87,20 @@ const intentTool = {
             },
             assetIn: { type: "string" },
             assetOut: { type: "string" },
+            topic: {
+              type: "string",
+              enum: ["caps", "expiry", "allowlist", "pause", "general"],
+              description:
+                "For policy_question: which aspect the user asked about; 'general' for an overall explanation.",
+            },
+            label: {
+              type: "string",
+              description: "For save_contact: the human alias to save the address under.",
+            },
+            address: {
+              type: "string",
+              description: "For save_contact: the base58 address to save.",
+            },
           },
         },
       },
@@ -91,9 +114,12 @@ const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 const INTENT_SYSTEM_PROMPT = [
   "You parse user text for Praxis, a Solana agent protected by Aegis.",
   "Return exactly one tool call.",
-  "Supported actions: native SOL transfer, read-only token research, and swap_stub.",
+  "Supported actions: native SOL transfer, read-only token research, swap_stub, policy_question, and save_contact.",
   "Swaps are not executable yet; emit swap_stub, never pretend agent_swap exists.",
   "Never emit buy/sell/hold advice. Research is neutral data only.",
+  "policy_question: when the user asks about their own policy, limits, caps, session expiry, pause state, allow-lists, or how Praxis keeps them safe. Pick the closest topic, or 'general'.",
+  "save_contact: when the user asks to save/remember an address under a name. Extract the base58 address and the label separately.",
+  "Decompose multi-step requests in order. 'send X to ADDR and save as LABEL' is TWO actions: a transfer (recipient = ADDR) and a save_contact (address = ADDR, label = LABEL). Never fold 'and save as ...' into the recipient.",
   "Handle misspellings, shorthand, slang, and multiple steps in order.",
   "If the amount, recipient, asset, token, or action is ambiguous, outcome must be clarify.",
   "Never guess. One clarifying question is safer than one wrong transaction.",
@@ -222,33 +248,48 @@ function matchResearch(text: string): string | null {
 
 export function parseIntentLocallyForDemo(text: string): ParsedIntent {
   const cleaned = text.trim().replace(/\s+/g, " ");
+
   const send = cleaned.match(/^s(?:end|nd)\s+([0-9]+(?:\.[0-9]+)?)\s*([a-z0-9$]+)?\s+(?:to|2)\s+(.+)$/i);
   if (send) {
+    const asset = (send[2] ?? "sol").replace(/^\$/, "").toUpperCase();
+    const amountHuman = send[1];
+    // "ADDR and save (this address) as LABEL" → transfer + save_contact.
+    const saveTail = send[3].match(/^(.*?)\s+(?:and\s+)?save\s+(?:this\s+address\s+|it\s+|that\s+)?as\s+(.+)$/i);
+    if (saveTail) {
+      const address = saveTail[1].trim();
+      const label = saveTail[2].trim().replace(/[.?!]+$/, "");
+      return {
+        outcome: "actions",
+        actions: [
+          { kind: "save_contact", address, label },
+          { kind: "transfer", asset, amountHuman, recipient: address },
+        ],
+      };
+    }
     return {
       outcome: "actions",
-      actions: [
-        {
-          kind: "transfer",
-          asset: (send[2] ?? "sol").replace(/^\$/, "").toUpperCase(),
-          amountHuman: send[1],
-          recipient: send[3].trim(),
-        },
-      ],
+      actions: [{ kind: "transfer", asset, amountHuman, recipient: send[3].trim() }],
     };
+  }
+
+  const save = cleaned.match(/^save\s+(\S+)\s+as\s+(.+)$/i);
+  if (save) {
+    return {
+      outcome: "actions",
+      actions: [{ kind: "save_contact", address: save[1].trim(), label: save[2].trim().replace(/[.?!]+$/, "") }],
+    };
+  }
+
+  const policyTopic = matchPolicyQuestion(cleaned);
+  if (policyTopic) {
+    return { outcome: "actions", actions: [{ kind: "policy_question", topic: policyTopic }] };
   }
 
   const swap = cleaned.match(/^swap\s+([0-9]+(?:\.[0-9]+)?)\s+([a-z0-9$]+)\s+(?:for|into|to)\s+([a-z0-9$]+)/i);
   if (swap) {
     return {
       outcome: "actions",
-      actions: [
-        {
-          kind: "swap_stub",
-          amountHuman: swap[1],
-          assetIn: swap[2],
-          assetOut: swap[3],
-        },
-      ],
+      actions: [{ kind: "swap_stub", amountHuman: swap[1], assetIn: swap[2], assetOut: swap[3] }],
     };
   }
 
@@ -259,8 +300,19 @@ export function parseIntentLocallyForDemo(text: string): ParsedIntent {
 
   return {
     outcome: "clarify",
-    question: "Do you want to send SOL, research a token, or preview a swap stub?",
+    question: "Do you want to send SOL, research a token, save a contact, ask about your policy, or preview a swap stub?",
   };
+}
+
+/** Classify a policy question into a topic, or null if it isn't one. */
+function matchPolicyQuestion(text: string): "caps" | "expiry" | "allowlist" | "pause" | "general" | null {
+  const t = text.toLowerCase();
+  if (/\bexpir|\bsession\b/.test(t)) return "expiry";
+  if (/\bpaus/.test(t)) return "pause";
+  if (/\ballow.?list|allowed (recipient|address|program)/.test(t)) return "allowlist";
+  if (/\b(daily )?(limit|cap)\b|how much can/.test(t)) return "caps";
+  if (/\bpolicy\b|keep me safe|how (does|do|am i).*safe|am i safe/.test(t)) return "general";
+  return null;
 }
 
 function normalizeIntent(input: unknown): ParsedIntent {
@@ -330,6 +382,22 @@ function normalizeAction(input: unknown, index: number): ParsedAction {
       amountHuman: readRequiredString(value.amountHuman, "amountHuman"),
       assetIn: readRequiredString(value.assetIn, "assetIn").toUpperCase(),
       assetOut: readRequiredString(value.assetOut, "assetOut").toUpperCase(),
+    };
+  }
+
+  if (value.kind === "policy_question") {
+    const allowed = ["caps", "expiry", "allowlist", "pause", "general"] as const;
+    const topic = typeof value.topic === "string" && (allowed as readonly string[]).includes(value.topic)
+      ? (value.topic as (typeof allowed)[number])
+      : "general";
+    return { kind: "policy_question", topic };
+  }
+
+  if (value.kind === "save_contact") {
+    return {
+      kind: "save_contact",
+      label: readRequiredString(value.label, "label"),
+      address: readRequiredString(value.address, "address"),
     };
   }
 

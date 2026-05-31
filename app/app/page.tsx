@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { PraxisApp } from "@/components/app/PraxisApp";
+import { ToastProvider } from "@/components/app/Toast";
 
 export const metadata: Metadata = {
   title: "Praxis — App",
@@ -9,5 +10,9 @@ export const metadata: Metadata = {
 };
 
 export default function AppPage() {
-  return <PraxisApp />;
+  return (
+    <ToastProvider>
+      <PraxisApp />
+    </ToastProvider>
+  );
 }

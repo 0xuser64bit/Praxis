@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Composer } from "./Composer";
 import { MessageItem } from "./MessageItem";
 import { useProvider, useThinking, useThread } from "./ProviderContext";
+import { useToast } from "./Toast";
 
 export function Conversation({
   threadId,
@@ -16,6 +17,8 @@ export function Conversation({
   const provider = useProvider();
   const thread = useThread(threadId);
   const thinking = useThinking(threadId);
+  const { toast } = useToast();
+  const toasted = useRef<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -24,6 +27,20 @@ export function Conversation({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messageCount, thinking]);
+
+  // Surface a toast when a new agent reply carries a notice block (e.g. a saved
+  // contact). Deduped by message id so re-renders don't re-fire.
+  useEffect(() => {
+    if (!thread) return;
+    for (const m of thread.messages) {
+      if (m.role !== "agent" || toasted.current.has(m.id)) continue;
+      const notice = m.blocks.find((b) => b.type === "notice");
+      if (notice && notice.type === "notice") {
+        toasted.current.add(m.id);
+        toast(notice.text, notice.tone);
+      }
+    }
+  }, [thread, toast]);
 
   if (!thread) return null;
 

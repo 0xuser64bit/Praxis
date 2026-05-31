@@ -148,7 +148,8 @@ export type AgentBlock =
   | { type: "prose"; text: string }
   | { type: "clarify"; text: string; options: ClarifyOption[] }
   | { type: "proposal"; text: string; proposalId: string }
-  | { type: "research"; text: string; data: ResearchData };
+  | { type: "research"; text: string; data: ResearchData }
+  | { type: "notice"; tone: "success" | "info"; text: string };
 
 export type Message =
   | { id: string; role: "user"; ts: number; text: string }

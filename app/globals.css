@@ -137,6 +137,15 @@ body::after {
   outline-offset: 2px;
 }
 
+/* Opt-out for controls whose focus is shown by a parent wrapper instead (e.g.
+   the composer input — its container handles focus-within). This lives here,
+   unlayered, so it beats Tailwind's `focus-visible:outline-none` utility, which
+   sits in a cascade layer and would otherwise lose to the rule above. */
+[data-focus-ring="none"]:focus,
+[data-focus-ring="none"]:focus-visible {
+  outline: none;
+}
+
 /* Interactive affordances: a pointer on anything clickable, and a clear
    not-allowed cursor on disabled controls — applied globally so individual
    call sites don't have to remember `cursor-pointer`. */

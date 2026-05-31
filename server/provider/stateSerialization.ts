@@ -1,6 +1,7 @@
 import type {
   ActionProposal,
   ActivityEntry,
+  AddressBookEntry,
   AgentBlock,
   Thread,
 } from "@praxis/shared";
@@ -15,6 +16,7 @@ export interface StoredProviderState {
   threads: Thread[];
   proposals: Record<string, ActionProposal>;
   activity: ActivityEntry[];
+  contacts: AddressBookEntry[];
 }
 
 export const STORE_VERSION = 1;
@@ -48,7 +50,7 @@ export function compactState(state: StoredProviderState): StoredProviderState {
     if (proposal) proposals[id] = proposal;
   }
 
-  return { threads, proposals, activity };
+  return { threads, proposals, activity, contacts: state.contacts ?? [] };
 }
 
 function collectProposalId(block: AgentBlock, out: Set<string>) {
@@ -66,6 +68,7 @@ export function normalizeStoredState(raw: unknown): StoredProviderState | undefi
     threads: Array.isArray(state.threads) ? state.threads : [],
     proposals: isRecord(state.proposals) ? state.proposals : {},
     activity: Array.isArray(state.activity) ? state.activity : [],
+    contacts: Array.isArray(state.contacts) ? state.contacts : [],
   };
 }
 

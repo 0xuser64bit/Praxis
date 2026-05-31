@@ -35,7 +35,7 @@ export function HowItWorks() {
       <Container>
         <div className="mb-20 max-w-[720px]">
           <Eyebrow accent className="mb-5 block">
-            — 03 / How it works
+            — 04 / How it works
           </Eyebrow>
           <h2 className="[font-family:var(--font-serif)] text-[clamp(40px,5.5vw,72px)] leading-[1.02] tracking-[-0.03em] [&_em]:text-[var(--accent)] [&_em]:italic">
             Three steps.

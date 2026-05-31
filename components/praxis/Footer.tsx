@@ -10,9 +10,9 @@ const FOOTER_COLS: FooterColumn[] = [
     title: "Product",
     links: [
       { label: "Demo app", href: "/app" },
-      { label: "Product walkthrough", href: "#product" },
+      { label: "Why Praxis", href: "#why" },
       { label: "How it works", href: "#how" },
-      { label: "Principles", href: "#principles" },
+      { label: "Vision", href: "#vision" },
     ],
   },
   {

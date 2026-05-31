@@ -5,9 +5,10 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/praxis/Button";
 
 const NAV_LINKS = [
-  { href: "#product", label: "Product" },
+  { href: "#why", label: "Why Praxis" },
   { href: "#how", label: "How it works" },
   { href: "#principles", label: "Principles" },
+  { href: "#vision", label: "Vision" },
 ] as const;
 
 export function Nav() {

@@ -11,11 +11,13 @@ import { Nav } from "@/components/praxis/Nav";
 import { Principles } from "@/components/praxis/Principles";
 import { TrustStrip } from "@/components/praxis/TrustStrip";
 import { UseCases } from "@/components/praxis/UseCases";
+import { Vision } from "@/components/praxis/Vision";
+import { WhyPraxis } from "@/components/praxis/WhyPraxis";
 
 export const metadata: Metadata = {
-  title: "Praxis — A conversational agent for Solana",
+  title: { absolute: "Praxis — Give an agent your wallet, not your trust" },
   description:
-    "Praxis is a conversational agent for Solana. Send SOL, transfer configured tokens, preview policy, and research on-chain data by writing what you want.",
+    "Praxis is a conversational agent for Solana with an on-chain policy envelope. Delegate signing power without delegating trust — every action is checked against caps and allow-lists you control, and you can revoke it in one transaction.",
 };
 
 export default function Home() {
@@ -24,11 +26,13 @@ export default function Home() {
       <Nav />
       <Hero />
       <CommandDemo />
+      <WhyPraxis />
       <UseCases />
       <AppPreview />
       <HowItWorks />
       <Capabilities />
       <Principles />
+      <Vision />
       <TrustStrip />
       <FinalCTA />
       <Footer />

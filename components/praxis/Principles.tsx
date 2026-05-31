@@ -41,7 +41,7 @@ export function Principles() {
       <ContainerNarrow>
         <div className="mb-20 max-w-[720px]">
           <Eyebrow accent className="mb-5 block">
-            — 05 / Principles
+            — 06 / Principles
           </Eyebrow>
           <h2 className="[font-family:var(--font-serif)] text-[clamp(40px,5.5vw,72px)] leading-[1.02] tracking-[-0.03em] [&_em]:text-[var(--accent)] [&_em]:italic">
             What we

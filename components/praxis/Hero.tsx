@@ -1,9 +1,9 @@
 import {
   IconArrowRight,
-  IconBolt,
+  IconKey,
   IconLock,
   IconPlayerPlay,
-  IconShieldCheck,
+  IconShieldLock,
 } from "@tabler/icons-react";
 import { Fragment } from "react";
 
@@ -12,9 +12,9 @@ import { Container } from "@/components/praxis/Container";
 import { Eyebrow } from "@/components/praxis/Eyebrow";
 
 const META_ITEMS = [
-  { Icon: IconShieldCheck, label: "Non-custodial" },
-  { Icon: IconBolt, label: "Built on Solana" },
-  { Icon: IconLock, label: "Your keys, always" },
+  { Icon: IconShieldLock, label: "Caps enforced on-chain" },
+  { Icon: IconKey, label: "Revoke in one transaction" },
+  { Icon: IconLock, label: "Can't exceed your limits" },
 ] as const;
 
 export function Hero() {
@@ -28,15 +28,17 @@ export function Hero() {
           </div>
 
           <h1 className="mb-10 [font-family:var(--font-serif)] text-[clamp(56px,9vw,124px)] leading-[0.96] font-normal tracking-[-0.04em] [animation:fadeUp_0.8s_0.1s_ease_both] [&_em]:text-[var(--accent)] [&_em]:italic">
-            Your wallet,
+            Give it your wallet.
             <br />
-            in <em>plain English.</em>
+            Not your <em>trust.</em>
           </h1>
 
-          <p className="mb-11 max-w-[600px] text-[22px] leading-[1.55] font-normal text-[var(--text-secondary)] [animation:fadeUp_0.8s_0.2s_ease_both]">
-            Praxis is a conversational agent for Solana. Send SOL through an
-            on-chain policy envelope, preview blocked actions before signing,
-            and research tokens without handing the agent unrestricted power.
+          <p className="mb-11 max-w-[620px] text-[22px] leading-[1.55] font-normal text-[var(--text-secondary)] [animation:fadeUp_0.8s_0.2s_ease_both]">
+            Praxis is a conversational agent for Solana you can safely hand
+            signing power to. An on-chain policy — not a backend promise —
+            decides what it can do. Say what you want in plain English; every
+            action is checked against your limits before you sign, and you can
+            revoke it in one transaction.
           </p>
 
           <div className="flex flex-wrap gap-3 [animation:fadeUp_0.8s_0.3s_ease_both]">

@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { Container } from "@/components/praxis/Container";
 import { TxCard } from "@/components/praxis/TxCard";
 
-const CMD = "send 50 sol to maya";
+const CMD = "send 50 sol to savings";
 const START_DELAY_MS = 1200;
 const REVEAL_DELAY_MS = 400;
 const MIN_KEY_MS = 45;
@@ -105,7 +105,7 @@ export function CommandDemo() {
                 PRAXIS · 2:14 PM
               </div>
               <div className="mb-4 text-[14px] leading-[1.6] text-[var(--text-secondary)] [&_strong]:font-medium [&_strong]:text-[var(--text-primary)]">
-                Resolved <strong>Maya Patel</strong>, then checked the request
+                Resolved <strong>savings</strong>, then checked the request
                 against the live Aegis policy before signing.
               </div>
 
@@ -119,7 +119,7 @@ export function CommandDemo() {
                 }}
                 to={{
                   label: "To",
-                  primary: "Maya Patel",
+                  primary: "savings",
                   sub: "9bLm…K3pQ",
                   compact: true,
                 }}

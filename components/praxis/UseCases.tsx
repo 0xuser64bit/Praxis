@@ -23,7 +23,7 @@ export function UseCases() {
 
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl bg-[var(--border)] [border:0.5px_solid_var(--border)] max-[960px]:grid-cols-1">
           {USE_CASES.map((uc) => (
-            <UseCaseTile key={uc.title.accent} {...uc} />
+            <UseCaseTile key={uc.prompt} {...uc} />
           ))}
         </div>
       </Container>

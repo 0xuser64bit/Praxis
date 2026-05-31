@@ -34,7 +34,6 @@ export async function researchToken(
 
   const pairs = indexer.filter((pair) => pair.chainId === "solana");
   const primary = pairs.sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0];
-  const concentration = chain.concentrationBps;
 
   const metrics: ResearchMetric[] = [
     { label: "Price", value: primary?.priceUsd ? `$${primary.priceUsd}` : "unavailable" },
@@ -48,17 +47,23 @@ export async function researchToken(
       value: primary?.volume?.h24 === undefined ? "unavailable" : formatUsd(primary.volume.h24),
       trend: primary?.volume?.h24 ? "up" : "flat",
     },
-    {
-      label: "Top 10 concentration",
-      value: concentration === undefined ? "unavailable" : formatBps(concentration),
-      trend: "flat",
-    },
-    {
-      label: "Supply",
-      value: chain.supply ?? "unavailable",
-      trend: "flat",
-    },
   ];
+
+  // Holder concentration is an SPL-token notion; native SOL has no clean RPC
+  // source, so the row is shown only when it actually applies to this mint.
+  if (chain.concentrationApplies) {
+    metrics.push({
+      label: "Top 10 concentration",
+      value: chain.concentrationBps === undefined ? "unavailable" : formatBps(chain.concentrationBps),
+      trend: "flat",
+    });
+  }
+
+  metrics.push({
+    label: "Supply",
+    value: chain.supply ?? "unavailable",
+    trend: "flat",
+  });
 
   if (primary?.marketCap || primary?.fdv) {
     metrics.push({
@@ -78,12 +83,24 @@ export async function researchToken(
   };
 }
 
+const WSOL_MINT = "So11111111111111111111111111111111111111112";
+
+type OnChainStats = {
+  supply?: string;
+  concentrationBps?: bigint;
+  /** Whether holder concentration is a meaningful metric for this mint. */
+  concentrationApplies: boolean;
+};
+
 /**
- * On-chain supply + holder concentration are best-effort: public mainnet RPCs
- * rate-limit getTokenLargestAccounts, and a mint that doesn't exist on the
- * configured cluster throws "not a Token mint". Either way we degrade to
- * "unavailable" rather than failing the whole research card — the indexer
- * (price/volume) still renders.
+ * On-chain supply + holder concentration are best-effort and resilient:
+ *  - Native SOL (wrapped-SOL mint) reports real circulating supply via
+ *    getSupply, and skips holder concentration (no clean RPC source; wrapped-SOL
+ *    accounts are meaningless as "SOL holders").
+ *  - SPL tokens fetch supply and largest accounts INDEPENDENTLY, so a failing
+ *    getTokenLargestAccounts (public RPCs commonly rate-limit it) no longer
+ *    blanks out the supply figure too.
+ * Anything that fails degrades to "unavailable" without failing the whole card.
  */
 async function fetchOnChainStats(
   connection: Connection,
@@ -91,35 +108,55 @@ async function fetchOnChainStats(
   commitment: Commitment,
   timeoutMs: number,
   symbol: string,
-): Promise<{ supply?: string; concentrationBps?: bigint }> {
-  try {
-    const [largest, supply] = await Promise.all([
-      withTimeout(
-        connection.getTokenLargestAccounts(mint, commitment),
+): Promise<OnChainStats> {
+  if (mint.toBase58() === WSOL_MINT) {
+    try {
+      const supply = await withTimeout(
+        connection.getSupply({ commitment, excludeNonCirculatingAccountsList: true }),
         timeoutMs,
-        "Solana largest token accounts lookup",
-      ),
-      withTimeout(
-        connection.getTokenSupply(mint, commitment),
-        timeoutMs,
-        "Solana token supply lookup",
-      ),
-    ]);
-    return {
-      supply: supply.value.uiAmountString ?? supply.value.amount,
-      concentrationBps: topHolderBps(
-        largest.value.map((account) => BigInt(account.amount)),
-        BigInt(supply.value.amount),
-      ),
-    };
-  } catch (error) {
-    logger.warn("research.onchain_unavailable", {
-      symbol,
-      mint: mint.toBase58(),
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return {};
+        "Solana native supply lookup",
+      );
+      const circulatingSol = Number(supply.value.circulating) / 1e9;
+      return {
+        supply: `${Math.round(circulatingSol).toLocaleString("en-US")} SOL circulating`,
+        concentrationApplies: false,
+      };
+    } catch (error) {
+      logger.warn("research.onchain_unavailable", { symbol, mint: WSOL_MINT, ...errToField(error) });
+      return { concentrationApplies: false };
+    }
   }
+
+  const [supplyResult, largestResult] = await Promise.allSettled([
+    withTimeout(connection.getTokenSupply(mint, commitment), timeoutMs, "Solana token supply lookup"),
+    withTimeout(connection.getTokenLargestAccounts(mint, commitment), timeoutMs, "Solana largest token accounts lookup"),
+  ]);
+
+  if (supplyResult.status === "rejected") {
+    logger.warn("research.supply_unavailable", { symbol, mint: mint.toBase58(), ...errToField(supplyResult.reason) });
+  }
+  if (largestResult.status === "rejected") {
+    logger.warn("research.holders_unavailable", { symbol, mint: mint.toBase58(), ...errToField(largestResult.reason) });
+  }
+
+  const supply = supplyResult.status === "fulfilled" ? supplyResult.value : undefined;
+  const concentrationBps =
+    supply && largestResult.status === "fulfilled"
+      ? topHolderBps(
+          largestResult.value.value.map((account) => BigInt(account.amount)),
+          BigInt(supply.value.amount),
+        )
+      : undefined;
+
+  return {
+    supply: supply ? supply.value.uiAmountString ?? supply.value.amount : undefined,
+    concentrationBps,
+    concentrationApplies: true,
+  };
+}
+
+function errToField(error: unknown): { error: string } {
+  return { error: error instanceof Error ? error.message : String(error) };
 }
 
 function resolveToken(input: string, tokens: TokenInfo[]): TokenInfo {

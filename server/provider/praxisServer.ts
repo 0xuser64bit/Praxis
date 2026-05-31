@@ -23,6 +23,7 @@ import {
 import { JUPITER_PROGRAM_ID } from "../aegis/constants";
 import { AddressBook } from "../agent/addressBook";
 import { checkSwapPolicy } from "../agent/policy";
+import { explainPolicy } from "../agent/policyExplainer";
 import {
   parseIntentLocallyForDemo,
   parseIntentWithGemini,
@@ -47,6 +48,7 @@ interface StoreState {
   threads: Thread[];
   proposals: Record<string, ActionProposal>;
   activity: ActivityEntry[];
+  contacts: AddressBookEntry[];
   policy?: PolicyView;
   thinking: Record<string, boolean>;
 }
@@ -112,12 +114,14 @@ export class PraxisServerProvider implements PraxisProvider {
     this.config = config;
     this.aegis = aegis;
     this.repository = getStateRepository();
-    this.addressBook = new AddressBook(config.addressBook);
+    const savedContacts = initialState?.contacts ?? [];
+    this.addressBook = new AddressBook([...savedContacts, ...config.addressBook]);
     this.ownerKey = ownerKeyForConfig(config);
     this.state = {
       threads: initialState?.threads.length ? initialState.threads : [welcomeThread(nowSeconds())],
       proposals: initialState?.proposals ?? {},
       activity: initialState?.activity ?? [],
+      contacts: savedContacts,
       thinking: {},
     };
   }
@@ -434,7 +438,12 @@ export class PraxisServerProvider implements PraxisProvider {
 
     const blocks: AgentBlock[] = [];
     let title: string | undefined;
-    for (const action of intent.actions) {
+    // Process save_contact first so a sibling transfer can resolve the freshly
+    // saved label to a friendly name on its proposal card.
+    const ordered = [...intent.actions].sort(
+      (a, b) => (a.kind === "save_contact" ? -1 : 0) - (b.kind === "save_contact" ? -1 : 0),
+    );
+    for (const action of ordered) {
       const result = await this.blockForAction(action);
       blocks.push(...result.blocks);
       title ??= result.title;
@@ -445,7 +454,61 @@ export class PraxisServerProvider implements PraxisProvider {
   private async blockForAction(action: ParsedAction): Promise<{ blocks: AgentBlock[]; title?: string }> {
     if (action.kind === "transfer") return this.transferBlock(action);
     if (action.kind === "research") return this.researchBlock(action.token);
+    if (action.kind === "policy_question") return this.policyQuestionBlock(action.topic);
+    if (action.kind === "save_contact") return this.saveContactBlock(action.label, action.address);
     return this.swapStubBlock(action);
+  }
+
+  private async policyQuestionBlock(
+    topic: "caps" | "expiry" | "allowlist" | "pause" | "general",
+  ): Promise<{ blocks: AgentBlock[]; title?: string }> {
+    const policy = await this.ensurePolicy();
+    if (!policy) {
+      return {
+        blocks: [{
+          type: "prose",
+          text: "I can't read your policy right now. Make sure your wallet is connected and your policy is initialized.",
+        }],
+      };
+    }
+    return { blocks: explainPolicy(policy, nowSeconds(), topic), title: "Your policy" };
+  }
+
+  private async saveContactBlock(
+    label: string,
+    address: string,
+  ): Promise<{ blocks: AgentBlock[]; title?: string }> {
+    let pubkey: PublicKey;
+    try {
+      pubkey = new PublicKey(address);
+    } catch {
+      return {
+        blocks: [{
+          type: "clarify",
+          text: `"${address}" is not a valid Solana address, so I didn't save it. Paste a base58 address and try again.`,
+          options: [],
+        }],
+      };
+    }
+    const cleanLabel = label.trim();
+    const entry: AddressBookEntry = {
+      label: cleanLabel.toLowerCase(),
+      name: cleanLabel,
+      address: pubkey.toBase58(),
+    };
+    this.addressBook.add(entry);
+    this.state.contacts = [
+      entry,
+      ...this.state.contacts.filter((c) => c.address !== entry.address && c.label !== entry.label),
+    ];
+    const short = `${entry.address.slice(0, 4)}…${entry.address.slice(-4)}`;
+    return {
+      blocks: [{
+        type: "notice",
+        tone: "success",
+        text: `Saved "${entry.name}" → ${short}. Rename or remove it in Policy → Address book.`,
+      }],
+    };
   }
 
   private async transferBlock(action: Extract<ParsedAction, { kind: "transfer" }>): Promise<{ blocks: AgentBlock[]; title?: string }> {
@@ -702,6 +765,7 @@ export class PraxisServerProvider implements PraxisProvider {
       threads: this.state.threads,
       proposals: this.state.proposals,
       activity: this.state.activity,
+      contacts: this.state.contacts,
     };
     await this.repository.save(this.ownerKey, state);
   }

@@ -201,3 +201,43 @@ describe("owner-action signing gate", () => {
     expect(fake.calls).toContain("revokeAgent");
   });
 });
+
+describe("policy questions", () => {
+  test("explains the policy from real numbers", async () => {
+    const { provider } = build();
+    const { threadId } = await provider.send(null, "how does my policy keep me safe");
+    const msg = provider.getThread(threadId)!.messages.at(-1) as { blocks: Array<{ type: string; text?: string }> };
+    const proseText = msg.blocks.filter((b) => b.type === "prose").map((b) => b.text).join("\n").toLowerCase();
+    expect(proseText).toContain("per-transaction cap");
+    expect(proseText).toContain("keeps you safe");
+  });
+});
+
+describe("save contact", () => {
+  const ADDR = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
+
+  test("saves a contact and confirms with a notice block", async () => {
+    const { provider } = build();
+    const { threadId } = await provider.send(null, `save ${ADDR} as backpack`);
+    const msg = provider.getThread(threadId)!.messages.at(-1) as { blocks: Array<{ type: string }> };
+    expect(msg.blocks.some((b) => b.type === "notice")).toBe(true);
+    expect(provider.getAddressBook().some((e) => e.label === "backpack" && e.address === ADDR)).toBe(true);
+  });
+
+  test("compound send + save: saves the contact and previews the transfer", async () => {
+    const { provider } = build();
+    const { threadId } = await provider.send(null, `send 0.1 sol to ${ADDR} and save this address as backpack`);
+    const blocks = (provider.getThread(threadId)!.messages.at(-1) as { blocks: Array<{ type: string }> }).blocks;
+    expect(blocks.some((b) => b.type === "notice")).toBe(true);
+    expect(blocks.some((b) => b.type === "proposal")).toBe(true);
+    expect(provider.getAddressBook().some((e) => e.label === "backpack")).toBe(true);
+  });
+
+  test("rejects an invalid address with a clarify block, saves nothing", async () => {
+    const { provider } = build();
+    const { threadId } = await provider.send(null, "save not-an-address as oops");
+    const blocks = (provider.getThread(threadId)!.messages.at(-1) as { blocks: Array<{ type: string }> }).blocks;
+    expect(blocks.some((b) => b.type === "clarify")).toBe(true);
+    expect(provider.getAddressBook().some((e) => e.label === "oops")).toBe(false);
+  });
+});

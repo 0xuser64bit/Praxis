@@ -54,39 +54,32 @@ interface StoreState {
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 
 let singleton: PraxisServerProvider | undefined;
-const providersByWallet = new Map<string, PraxisServerProvider>();
-const inflightByWallet = new Map<string, Promise<PraxisServerProvider>>();
 
 function ownerKeyForConfig(config: PraxisServerConfig): string {
   return config.ownerAddress?.toBase58() ?? config.policyAddress?.toBase58() ?? "default";
 }
 
 /**
- * Acquire the cached provider for a wallet, hydrating its durable state from the
- * configured {@link StateRepository} on first acquisition. Async because a
- * managed-database backend loads over the network; in-flight loads are coalesced
- * so concurrent requests for the same wallet share one hydration.
+ * Build a provider for a wallet, loading its durable state from the configured
+ * {@link StateRepository} on every call. Async because a managed-database backend
+ * loads over the network.
+ *
+ * The provider is intentionally NOT cached across requests. On serverless
+ * (multiple Fluid Compute instances), a cached in-memory provider serves stale
+ * state and never observes writes made by another instance — the symptom is an
+ * "unknown thread" error when a thread created on instance A is sent to on
+ * instance B. The repository is the single source of truth; each request gets a
+ * fresh, isolated view of it (which also avoids shared mutable state between
+ * concurrent requests on the same instance).
  */
 export async function getPraxisServerProvider(walletAddress?: string): Promise<PraxisServerProvider> {
   const repository = getStateRepository();
 
   if (walletAddress) {
     const normalized = validatePublicKey(walletAddress, "walletAddress").toBase58();
-    const existing = providersByWallet.get(normalized);
-    if (existing) return existing;
-    const inflight = inflightByWallet.get(normalized);
-    if (inflight) return inflight;
-
-    const promise = (async () => {
-      const config = configForWalletOwner(new PublicKey(normalized));
-      const stored = await repository.load(ownerKeyForConfig(config));
-      const provider = new PraxisServerProvider(config, new AegisClient(config), stored);
-      providersByWallet.set(normalized, provider);
-      return provider;
-    })().finally(() => inflightByWallet.delete(normalized));
-
-    inflightByWallet.set(normalized, promise);
-    return promise;
+    const config = configForWalletOwner(new PublicKey(normalized));
+    const stored = await repository.load(ownerKeyForConfig(config));
+    return new PraxisServerProvider(config, new AegisClient(config), stored);
   }
 
   if (!singleton) {
@@ -99,8 +92,6 @@ export async function getPraxisServerProvider(walletAddress?: string): Promise<P
 
 export function resetPraxisServerProviderForTests() {
   singleton = undefined;
-  providersByWallet.clear();
-  inflightByWallet.clear();
 }
 
 export class PraxisServerProvider implements PraxisProvider {
@@ -197,7 +188,12 @@ export class PraxisServerProvider implements PraxisProvider {
   };
 
   send = async (threadId: string | null, text: string): Promise<{ threadId: string }> => {
-    const tid = threadId ?? this.newThread();
+    // `newThread` is idempotent: it returns the id if the thread already exists,
+    // and creates it otherwise. Passing the caller's id through it (rather than
+    // requiring the thread to pre-exist) means a thread created in a prior
+    // request — possibly persisted by a different serverless instance — is never
+    // rejected as "unknown" here; at worst we re-materialize an empty thread.
+    const tid = this.newThread(threadId ?? undefined);
     const thread = this.requireThread(tid);
     const ts = nowSeconds();
 

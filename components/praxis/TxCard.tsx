@@ -6,7 +6,7 @@ import { Eyebrow } from "@/components/praxis/Eyebrow";
 
 export type TxFlow = {
   label: string;
-  /** Main display text — an amount string ("100.00") or a name ("Maya Patel"). */
+  /** Main display text — an amount string ("100.00") or a label ("savings"). */
   primary: string;
   /** Optional suffix in --text-tertiary, used for the amount + unit case. */
   unit?: string;

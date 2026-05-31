@@ -20,7 +20,7 @@ export type UseCase = {
 export const USE_CASES: UseCase[] = [
   {
     icon: IconSend,
-    prompt: "send 0.5 sol to maya for dinner",
+    prompt: "send 0.5 sol to savings",
     title: { lead: "Send to ", accent: "anyone." },
     description:
       "Aliases, .sol domains, or pasted addresses. Praxis remembers who you've transacted with and surfaces them by name.",

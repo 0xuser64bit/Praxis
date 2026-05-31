@@ -9,7 +9,7 @@ import {
 } from "@tabler/icons-react";
 
 import { Dot } from "./ui";
-import { formatSol, shortenAddress } from "./lib/units";
+import { formatSol } from "./lib/units";
 import type { View } from "./AppShell";
 
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
@@ -119,8 +119,8 @@ export function AppSidebar({
 
       {/* footer: agent + vault */}
       <div className="mt-auto flex items-center gap-2.5 px-1.5 pt-4 [border-top:0.5px_solid_var(--border)]">
-        <div className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[var(--bg-card)] [font-family:var(--font-mono)] text-[11px] text-[var(--text-primary)] [border:0.5px_solid_var(--border-strong)]">
-          {shortenAddress(policy.owner, 2, 0).replace("…", "")}
+        <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--bg-card)] [font-family:var(--font-mono)] text-[11px] text-[var(--text-primary)] uppercase [border:0.5px_solid_var(--border-strong)]">
+          {policy.owner.slice(0, 2)}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">

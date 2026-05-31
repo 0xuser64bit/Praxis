@@ -89,7 +89,9 @@ export function formatUsd(units: bigint, decimals: number, symbol: string): stri
 /** first4…last4 address shortener. */
 export function shortenAddress(address: string, lead = 4, tail = 4): string {
   if (address.length <= lead + tail + 1) return address;
-  return `${address.slice(0, lead)}…${address.slice(-tail)}`;
+  // `slice(-0)` is `slice(0)` (returns the whole string), so guard tail === 0.
+  const end = tail > 0 ? address.slice(-tail) : "";
+  return `${address.slice(0, lead)}…${end}`;
 }
 
 /** Percentage of `part` against `whole`, clamped to [0,100], for meters. */

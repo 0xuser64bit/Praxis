@@ -12,7 +12,7 @@ export const THREAD_GROUPS: ThreadGroup[] = [
   {
     label: "Today",
     items: [
-      { label: "Send to Maya", active: true },
+      { label: "Send to savings", active: true },
       { label: "Swap preview" },
       { label: "Bonk check-in" },
     ],

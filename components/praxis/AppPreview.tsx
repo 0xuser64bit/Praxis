@@ -53,7 +53,7 @@ export function AppPreview() {
                     size={12}
                     className="text-[var(--text-tertiary)]"
                   />
-                  <span className="font-medium">Send to Maya</span>
+                  <span className="font-medium">Send to savings</span>
                 </div>
                 <div className="flex items-center gap-2.5">
                   <span className="inline-flex items-center gap-[7px] rounded-full bg-[var(--bg-elevated)] px-[11px] py-1 [font-family:var(--font-mono)] text-[12px] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)]">
@@ -81,11 +81,11 @@ export function AppPreview() {
                   </div>
                   <div className="mb-[22px] flex items-center gap-3 [font-family:var(--font-mono)] text-[14px]">
                     <span className="text-[var(--accent)]">›</span>
-                    <span>send 100 usdc to maya</span>
+                    <span>send 100 usdc to savings</span>
                   </div>
                   <Receipt meta="3vK2…X9aF · confirmed in 0.5s · slot 311,482,871">
                     Sent <strong>100.00 USDC</strong> to{" "}
-                    <strong>Maya Patel</strong>
+                    <strong>savings</strong>
                   </Receipt>
                 </div>
 
@@ -101,14 +101,14 @@ export function AppPreview() {
                   </div>
                   <div className="mb-[22px] flex items-center gap-3 [font-family:var(--font-mono)] text-[14px]">
                     <span className="text-[var(--accent)]">›</span>
-                    <span>send 0.5 sol to maya</span>
+                    <span>send 0.5 sol to savings</span>
                   </div>
 
                   <div className="mb-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
                     Praxis · 2:14 PM
                   </div>
                   <div className="mb-4 text-[14px] leading-[1.6] text-[var(--text-secondary)] [&_strong]:font-medium [&_strong]:text-[var(--text-primary)]">
-                    Found <strong>Maya Patel</strong> ·{" "}
+                    Found <strong>savings</strong> ·{" "}
                     <span className="[font-family:var(--font-mono)] text-[12px]">
                       9bLm…K3pQ
                     </span>{" "}
@@ -125,7 +125,7 @@ export function AppPreview() {
                     }}
                     to={{
                       label: "To",
-                      primary: "Maya Patel",
+                      primary: "savings",
                       sub: "9bLm…K3pQ",
                       compact: true,
                     }}
@@ -153,7 +153,7 @@ export function AppPreview() {
                     ›
                   </span>
                   <span className="flex-1 [font-family:var(--font-mono)] text-[13px] text-[var(--text-primary)]">
-                    send 50 sol to maya
+                    send 50 sol to savings
                     <span className="border-r-[1.5px] border-r-[var(--text-primary)] [animation:caretBlink_1s_steps(2)_infinite]">
                       {" "}
                     </span>

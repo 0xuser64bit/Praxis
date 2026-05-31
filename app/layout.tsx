@@ -30,13 +30,52 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
 });
 
+// `||` (not `??`) so an empty NEXT_PUBLIC_SITE_URL also falls back, rather than
+// producing `new URL("")` → Invalid URL.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+const SITE_NAME = "Praxis";
+const SITE_TAGLINE = "A conversational agent for Solana";
+const SITE_DESCRIPTION =
+  "Praxis turns plain-language intent into Solana transactions — every action policy-checked against an on-chain Aegis envelope before you sign. You set the caps, you keep custody, you can revoke instantly.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: "Praxis",
-    template: "%s",
+    default: `${SITE_NAME} — ${SITE_TAGLINE}`,
+    template: `%s · ${SITE_NAME}`,
   },
-  description:
-    "Praxis is a conversational agent for Solana with an on-chain Aegis policy envelope.",
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  keywords: [
+    "Solana",
+    "AI agent",
+    "crypto agent",
+    "on-chain policy",
+    "Aegis",
+    "wallet automation",
+    "self-custody",
+    "policy envelope",
+  ],
+  authors: [{ name: SITE_NAME }],
+  creator: SITE_NAME,
+  publisher: SITE_NAME,
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    url: SITE_URL,
+    title: `${SITE_NAME} — ${SITE_TAGLINE}`,
+    description: SITE_DESCRIPTION,
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${SITE_NAME} — ${SITE_TAGLINE}`,
+    description: SITE_DESCRIPTION,
+  },
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({

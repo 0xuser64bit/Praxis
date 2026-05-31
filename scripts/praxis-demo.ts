@@ -8,7 +8,7 @@ import {
   TOKEN_PROGRAM_ID,
 } from "../server/aegis/constants";
 import { AddressBook } from "../server/agent/addressBook";
-import { parseIntentLocallyForDemo, parseIntentWithClaude, type ParsedAction } from "../server/agent/intent";
+import { parseIntentLocallyForDemo, parseIntentWithGemini, type ParsedAction } from "../server/agent/intent";
 import { checkTransferPolicy } from "../server/agent/policy";
 import {
   getServerConfig,
@@ -110,8 +110,8 @@ async function ensureDemoTokenAccounts(client: AegisClient, config = getServerCo
 
 async function parseTransfer(line: string, config = getServerConfig()): Promise<Extract<ParsedAction, { kind: "transfer" }>> {
   let parsed;
-  if (process.env.PRAXIS_DEMO_USE_CLAUDE === "1") {
-    parsed = await parseIntentWithClaude(line, config);
+  if (process.env.PRAXIS_DEMO_USE_LLM === "1") {
+    parsed = await parseIntentWithGemini(line, config);
   } else {
     parsed = parseIntentLocallyForDemo(line);
   }

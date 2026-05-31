@@ -26,6 +26,7 @@ function makeConfig(over: Partial<PraxisServerConfig> = {}): PraxisServerConfig 
   const nextAgent = Keypair.generate();
   return {
     rpcUrl: "http://127.0.0.1:8899",
+    researchRpcUrl: "http://127.0.0.1:8899",
     commitment: "confirmed",
     programId: DEFAULT_AEGIS_PROGRAM_ID,
     ownerAddress: owner.publicKey,

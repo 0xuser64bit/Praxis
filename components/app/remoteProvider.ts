@@ -95,10 +95,27 @@ export class RemotePraxisProvider implements PraxisProvider {
   };
 
   send = async (threadId: string | null, text: string): Promise<{ threadId: string }> => {
-    const result = await this.mutate(() => this.post<{ threadId: string }>("/api/praxis/send", { threadId, text }));
-    await this.refreshAll();
-    return result;
+    // Flip the thinking flag immediately so the conversation shows a working
+    // indicator while the (multi-second) intent parse + simulation run, instead
+    // of appearing frozen. Cleared in `finally` once the reply has been fetched.
+    this.setThinking(threadId, true);
+    try {
+      const result = await this.mutate(() => this.post<{ threadId: string }>("/api/praxis/send", { threadId, text }));
+      await this.refreshAll();
+      return result;
+    } finally {
+      this.setThinking(threadId, false);
+    }
   };
+
+  private setThinking(threadId: string | null, value: boolean) {
+    if (!threadId) return;
+    this.state = {
+      ...this.state,
+      thinking: { ...this.state.thinking, [threadId]: value },
+    };
+    this.notify();
+  }
 
   signProposal = async (proposalId: string): Promise<void> => {
     await this.mutate(() => this.post("/api/praxis/sign-proposal", { proposalId }));

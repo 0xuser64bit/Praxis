@@ -1,8 +1,9 @@
-import { Connection, PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey, type Commitment } from "@solana/web3.js";
 import type { ResearchData, ResearchMetric, TokenInfo } from "@praxis/shared";
 
 import type { PraxisServerConfig } from "../env";
 import { envTimeout, fetchWithTimeout, withTimeout } from "../api/timeout";
+import { logger } from "../observability/logger";
 import { formatBps } from "../units";
 
 interface DexScreenerPair {
@@ -26,26 +27,14 @@ export async function researchToken(
   const token = resolveToken(tokenInput, config.tokens);
   const mint = new PublicKey(token.mint);
   const rpcTimeout = envTimeout("PRAXIS_RPC_READ_TIMEOUT_MS", 8_000);
-  const [largest, supply, indexer] = await Promise.all([
-    withTimeout(
-      connection.getTokenLargestAccounts(mint, config.commitment),
-      rpcTimeout,
-      "Solana largest token accounts lookup",
-    ),
-    withTimeout(
-      connection.getTokenSupply(mint, config.commitment),
-      rpcTimeout,
-      "Solana token supply lookup",
-    ),
+  const [chain, indexer] = await Promise.all([
+    fetchOnChainStats(connection, mint, config.commitment, rpcTimeout, token.symbol),
     fetchIndexerPairs(token.mint, config.indexerUrl),
   ]);
 
   const pairs = indexer.filter((pair) => pair.chainId === "solana");
   const primary = pairs.sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0];
-  const concentration = topHolderBps(
-    largest.value.map((account) => BigInt(account.amount)),
-    BigInt(supply.value.amount),
-  );
+  const concentration = chain.concentrationBps;
 
   const metrics: ResearchMetric[] = [
     { label: "Price", value: primary?.priceUsd ? `$${primary.priceUsd}` : "unavailable" },
@@ -66,7 +55,7 @@ export async function researchToken(
     },
     {
       label: "Supply",
-      value: supply.value.uiAmountString ?? supply.value.amount,
+      value: chain.supply ?? "unavailable",
       trend: "flat",
     },
   ];
@@ -87,6 +76,50 @@ export async function researchToken(
       `Read-only ${token.symbol} data from Solana RPC and the configured indexer. ` +
       "No buy, sell, or hold recommendation is being made.",
   };
+}
+
+/**
+ * On-chain supply + holder concentration are best-effort: public mainnet RPCs
+ * rate-limit getTokenLargestAccounts, and a mint that doesn't exist on the
+ * configured cluster throws "not a Token mint". Either way we degrade to
+ * "unavailable" rather than failing the whole research card — the indexer
+ * (price/volume) still renders.
+ */
+async function fetchOnChainStats(
+  connection: Connection,
+  mint: PublicKey,
+  commitment: Commitment,
+  timeoutMs: number,
+  symbol: string,
+): Promise<{ supply?: string; concentrationBps?: bigint }> {
+  try {
+    const [largest, supply] = await Promise.all([
+      withTimeout(
+        connection.getTokenLargestAccounts(mint, commitment),
+        timeoutMs,
+        "Solana largest token accounts lookup",
+      ),
+      withTimeout(
+        connection.getTokenSupply(mint, commitment),
+        timeoutMs,
+        "Solana token supply lookup",
+      ),
+    ]);
+    return {
+      supply: supply.value.uiAmountString ?? supply.value.amount,
+      concentrationBps: topHolderBps(
+        largest.value.map((account) => BigInt(account.amount)),
+        BigInt(supply.value.amount),
+      ),
+    };
+  } catch (error) {
+    logger.warn("research.onchain_unavailable", {
+      symbol,
+      mint: mint.toBase58(),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {};
+  }
 }
 
 function resolveToken(input: string, tokens: TokenInfo[]): TokenInfo {

@@ -120,10 +120,18 @@ const BOOTSTRAP_DAILY_LIMIT = parseHumanUnits("5", SOL_DECIMALS);
 const BOOTSTRAP_VAULT_FUNDING = parseHumanUnits("1", SOL_DECIMALS);
 
 let connection: Connection | undefined;
+let researchConnection: Connection | undefined;
 
 export function getConnection(config = getServerConfig()): Connection {
   if (!connection) connection = new Connection(config.rpcUrl, config.commitment);
   return connection;
+}
+
+/** Read-only connection for token research. Defaults to mainnet-beta because the
+ *  configured tokens are mainnet mints, independent of where transfers execute. */
+export function getResearchConnection(config = getServerConfig()): Connection {
+  if (!researchConnection) researchConnection = new Connection(config.researchRpcUrl, config.commitment);
+  return researchConnection;
 }
 
 export class AegisClient {

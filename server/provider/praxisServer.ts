@@ -25,12 +25,12 @@ import { AddressBook } from "../agent/addressBook";
 import { checkSwapPolicy } from "../agent/policy";
 import {
   parseIntentLocallyForDemo,
-  parseIntentWithClaude,
+  parseIntentWithGemini,
   type ParsedAction,
   type ParsedIntent,
 } from "../agent/intent";
 import { researchToken } from "../agent/research";
-import { getConnection } from "../aegis/client";
+import { getConnection, getResearchConnection } from "../aegis/client";
 import {
   configForWalletOwner,
   getServerConfig,
@@ -403,8 +403,20 @@ export class PraxisServerProvider implements PraxisProvider {
   };
 
   private async parseIntent(text: string): Promise<ParsedIntent> {
-    if (process.env.PRAXIS_LOCAL_INTENT === "1") return parseIntentLocallyForDemo(text);
-    return parseIntentWithClaude(text, this.config);
+    // Prefer the real LLM so free-form phrasing ("solana price now") is actually
+    // understood. The deterministic parser is only a fallback: when explicitly
+    // forced, when no Gemini key is configured, or when a Gemini call fails
+    // (rate limit / network) so a transient hiccup still does something useful.
+    const forceLocal = process.env.PRAXIS_LOCAL_INTENT === "1";
+    if (forceLocal || !this.config.geminiApiKey) {
+      return parseIntentLocallyForDemo(text);
+    }
+    try {
+      return await parseIntentWithGemini(text, this.config);
+    } catch (error) {
+      logger.warn("intent.gemini_failed_fallback_local", errorFields(error));
+      return parseIntentLocallyForDemo(text);
+    }
   }
 
   private async blocksForIntent(intent: ParsedIntent): Promise<{ blocks: AgentBlock[]; title?: string }> {
@@ -513,7 +525,7 @@ export class PraxisServerProvider implements PraxisProvider {
   }
 
   private async researchBlock(token: string): Promise<{ blocks: AgentBlock[]; title?: string }> {
-    const data = await researchToken(token, getConnection(this.config), this.config);
+    const data = await researchToken(token, getResearchConnection(this.config), this.config);
     return {
       blocks: [
         {

@@ -85,65 +85,139 @@ const intentTool = {
   },
 };
 
-export async function parseIntentWithClaude(text: string, config: PraxisServerConfig): Promise<ParsedIntent> {
-  if (!config.anthropicApiKey) {
-    throw new PraxisConfigError("ANTHROPIC_API_KEY is required for intent parsing.");
+const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+
+const INTENT_SYSTEM_PROMPT = [
+  "You parse user text for Praxis, a Solana agent protected by Aegis.",
+  "Return exactly one tool call.",
+  "Supported actions: native SOL transfer, read-only token research, and swap_stub.",
+  "Swaps are not executable yet; emit swap_stub, never pretend agent_swap exists.",
+  "Never emit buy/sell/hold advice. Research is neutral data only.",
+  "Handle misspellings, shorthand, slang, and multiple steps in order.",
+  "If the amount, recipient, asset, token, or action is ambiguous, outcome must be clarify.",
+  "Never guess. One clarifying question is safer than one wrong transaction.",
+].join(" ");
+
+export async function parseIntentWithGemini(text: string, config: PraxisServerConfig): Promise<ParsedIntent> {
+  if (!config.geminiApiKey) {
+    throw new PraxisConfigError("GEMINI_API_KEY is required for intent parsing.");
   }
-  if (!config.anthropicModel) {
-    throw new PraxisConfigError("ANTHROPIC_MODEL is required for intent parsing.");
-  }
+  const model = config.geminiModel ?? DEFAULT_GEMINI_MODEL;
 
   const res = await fetchWithTimeout(
-    "https://api.anthropic.com/v1/messages",
+    `${GEMINI_API_BASE}/${model}:generateContent`,
     {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-api-key": config.anthropicApiKey,
-        "anthropic-version": "2023-06-01",
+        "x-goog-api-key": config.geminiApiKey,
       },
       body: JSON.stringify({
-        model: config.anthropicModel,
-        max_tokens: 700,
-        temperature: 0,
-        system: [
-          "You parse user text for Praxis, a Solana agent protected by Aegis.",
-          "Return exactly one tool call.",
-          "Supported actions: native SOL transfer, read-only token research, and swap_stub.",
-          "Swaps are not executable yet; emit swap_stub, never pretend agent_swap exists.",
-          "Never emit buy/sell/hold advice. Research is neutral data only.",
-          "Handle misspellings, shorthand, slang, and multiple steps in order.",
-          "If the amount, recipient, asset, token, or action is ambiguous, outcome must be clarify.",
-          "Never guess. One clarifying question is safer than one wrong transaction.",
-        ].join(" "),
-        tools: [intentTool],
-        tool_choice: { type: "tool", name: INTENT_TOOL_NAME },
-        messages: [{ role: "user", content: text }],
+        systemInstruction: { parts: [{ text: INTENT_SYSTEM_PROMPT }] },
+        contents: [{ role: "user", parts: [{ text }] }],
+        tools: [
+          {
+            functionDeclarations: [
+              {
+                name: INTENT_TOOL_NAME,
+                description: intentTool.description,
+                parameters: toGeminiSchema(intentTool.input_schema),
+              },
+            ],
+          },
+        ],
+        // Force exactly one call to our intent tool, mirroring Anthropic's tool_choice.
+        toolConfig: {
+          functionCallingConfig: {
+            mode: "ANY",
+            allowedFunctionNames: [INTENT_TOOL_NAME],
+          },
+        },
+        generationConfig: { temperature: 0, maxOutputTokens: 700 },
       }),
     },
     {
       ms: envTimeout("PRAXIS_LLM_TIMEOUT_MS", 15_000),
-      label: "Anthropic intent parsing",
+      label: "Gemini intent parsing",
     },
   );
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Anthropic Messages API failed (${res.status}): ${body}`);
+    throw new Error(`Gemini generateContent API failed (${res.status}): ${body}`);
   }
 
   const body = await res.json();
-  const toolUse = Array.isArray(body.content)
-    ? body.content.find((part: { type?: string; name?: string }) => {
-        return part.type === "tool_use" && part.name === INTENT_TOOL_NAME;
-      })
+  const parts: Array<{ functionCall?: { name?: string; args?: unknown } }> | undefined =
+    body?.candidates?.[0]?.content?.parts;
+  const call = Array.isArray(parts)
+    ? (parts.find((part) => part.functionCall?.name === INTENT_TOOL_NAME)
+        ?? parts.find((part) => part.functionCall))
     : undefined;
 
-  if (!toolUse?.input) {
-    throw new PraxisInputError("Claude did not return the expected intent tool output.");
+  if (!call?.functionCall?.args) {
+    throw new PraxisInputError("Gemini did not return the expected intent tool output.");
   }
 
-  return normalizeIntent(toolUse.input);
+  return normalizeIntent(call.functionCall.args);
+}
+
+/**
+ * Gemini's function-declaration schema is an OpenAPI subset: it expects uppercase
+ * `type` values and rejects `additionalProperties`. Translate our shared tool
+ * schema at the boundary so the schema stays a single source of truth.
+ */
+function toGeminiSchema(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(toGeminiSchema);
+  if (!schema || typeof schema !== "object") return schema;
+
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(schema as Record<string, unknown>)) {
+    if (key === "additionalProperties") continue;
+    if (key === "type" && typeof value === "string") {
+      out[key] = value.toUpperCase();
+      continue;
+    }
+    out[key] = toGeminiSchema(value);
+  }
+  return out;
+}
+
+/** Common token names → symbols the research resolver understands. */
+const TOKEN_ALIASES: Record<string, string> = {
+  sol: "SOL",
+  solana: "SOL",
+  usdc: "USDC",
+  jup: "JUP",
+  jupiter: "JUP",
+  bonk: "BONK",
+};
+
+function normalizeToken(word: string): string {
+  const key = word.replace(/^\$/, "").toLowerCase();
+  return TOKEN_ALIASES[key] ?? key.toUpperCase();
+}
+
+/**
+ * Best-effort research detection for the offline fallback parser. Catches
+ * verb-led ("research bonk", "what's sol", "price of jup"), token-led
+ * ("solana price now", "bonk chart"), and bare token words ("sol", "$bonk").
+ */
+function matchResearch(text: string): string | null {
+  const t = text.toLowerCase();
+  // token-led first so "solana price now" resolves to the token, not "now".
+  let m = t.match(/\$?([a-z][a-z0-9]{1,11})\s+(?:price|chart|stats|doing|now|today)\b/);
+  if (m) return normalizeToken(m[1]);
+  // verb-led: research/check/what's/how's/price/chart [of|for|is|on] TOKEN
+  m = t.match(
+    /\b(?:research|check|what'?s|how'?s|how is|price|chart|stats|tell me about)\s+(?:of\s+|for\s+|is\s+|on\s+|about\s+)?\$?([a-z][a-z0-9]{1,11})\b/,
+  );
+  if (m) return normalizeToken(m[1]);
+  // bare token word/symbol on its own.
+  const bare = t.replace(/[^a-z0-9$]/g, "").replace(/^\$/, "");
+  if (TOKEN_ALIASES[bare]) return TOKEN_ALIASES[bare];
+  return null;
 }
 
 export function parseIntentLocallyForDemo(text: string): ParsedIntent {
@@ -163,11 +237,6 @@ export function parseIntentLocallyForDemo(text: string): ParsedIntent {
     };
   }
 
-  const research = cleaned.match(/(?:what'?s|research|check)\s+([a-z0-9$]+)(?:\s|$)/i);
-  if (research) {
-    return { outcome: "actions", actions: [{ kind: "research", token: research[1] }] };
-  }
-
   const swap = cleaned.match(/^swap\s+([0-9]+(?:\.[0-9]+)?)\s+([a-z0-9$]+)\s+(?:for|into|to)\s+([a-z0-9$]+)/i);
   if (swap) {
     return {
@@ -181,6 +250,11 @@ export function parseIntentLocallyForDemo(text: string): ParsedIntent {
         },
       ],
     };
+  }
+
+  const researchToken = matchResearch(cleaned);
+  if (researchToken) {
+    return { outcome: "actions", actions: [{ kind: "research", token: researchToken }] };
   }
 
   return {

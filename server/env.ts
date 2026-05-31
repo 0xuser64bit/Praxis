@@ -70,9 +70,12 @@ export const DEFAULT_TOKENS: TokenInfo[] = [
 ];
 
 export interface PraxisServerConfig {
-  anthropicApiKey?: string;
-  anthropicModel?: string;
+  geminiApiKey?: string;
+  geminiModel?: string;
   rpcUrl: string;
+  /** Read-only RPC for token research. Tokens are mainnet mints, so this defaults
+   *  to mainnet-beta even when transfers (rpcUrl) run on devnet. */
+  researchRpcUrl: string;
   commitment: Commitment;
   programId: PublicKey;
   policyAddress?: PublicKey;
@@ -108,9 +111,10 @@ export function getServerConfig(): PraxisServerConfig {
     ?? (ownerAddress ? findPolicyPda(ownerAddress, programId) : undefined);
 
   cachedConfig = {
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-    anthropicModel: process.env.ANTHROPIC_MODEL,
+    geminiApiKey: process.env.GEMINI_API_KEY,
+    geminiModel: process.env.GEMINI_MODEL,
     rpcUrl: process.env.SOLANA_RPC_URL ?? "http://127.0.0.1:8899",
+    researchRpcUrl: process.env.PRAXIS_RESEARCH_RPC_URL ?? "https://api.mainnet-beta.solana.com",
     commitment: parseCommitment(process.env.SOLANA_COMMITMENT),
     programId,
     policyAddress,

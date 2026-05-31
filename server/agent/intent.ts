@@ -33,6 +33,17 @@ export type ParsedAction =
       kind: "save_contact";
       label: string;
       address: string;
+    }
+  | {
+      kind: "policy_change";
+      /** Which policy knob the owner wants to change. */
+      field: "daily_limit" | "max_per_tx" | "expiry" | "pause";
+      /** For daily_limit / max_per_tx: the new human SOL amount, e.g. "10". */
+      amountHuman?: string;
+      /** For expiry: hours from now to extend the agent session, e.g. 24. */
+      expiryHours?: number;
+      /** For pause: true to pause the agent, false to unpause/resume it. */
+      paused?: boolean;
     };
 
 const INTENT_TOOL_NAME = "parse_praxis_intent";
@@ -65,7 +76,7 @@ const intentTool = {
           properties: {
             kind: {
               type: "string",
-              enum: ["transfer", "research", "swap_stub", "policy_question", "save_contact"],
+              enum: ["transfer", "research", "swap_stub", "policy_question", "save_contact", "policy_change"],
             },
             asset: {
               type: "string",
@@ -101,6 +112,20 @@ const intentTool = {
               type: "string",
               description: "For save_contact: the base58 address to save.",
             },
+            field: {
+              type: "string",
+              enum: ["daily_limit", "max_per_tx", "expiry", "pause"],
+              description:
+                "For policy_change: which policy knob to change. 'daily_limit' / 'max_per_tx' use amountHuman; 'expiry' uses expiryHours; 'pause' uses paused.",
+            },
+            expiryHours: {
+              type: "number",
+              description: "For policy_change expiry: hours from now to extend the agent session.",
+            },
+            paused: {
+              type: "boolean",
+              description: "For policy_change pause: true to pause the agent, false to unpause/resume.",
+            },
           },
         },
       },
@@ -114,10 +139,11 @@ const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 const INTENT_SYSTEM_PROMPT = [
   "You parse user text for Praxis, a Solana agent protected by Aegis.",
   "Return exactly one tool call.",
-  "Supported actions: native SOL transfer, read-only token research, swap_stub, policy_question, and save_contact.",
+  "Supported actions: native SOL transfer, read-only token research, swap_stub, policy_question, save_contact, and policy_change.",
   "Swaps are not executable yet; emit swap_stub, never pretend agent_swap exists.",
   "Never emit buy/sell/hold advice. Research is neutral data only.",
-  "policy_question: when the user asks about their own policy, limits, caps, session expiry, pause state, allow-lists, or how Praxis keeps them safe. Pick the closest topic, or 'general'.",
+  "policy_question: when the user ASKS ABOUT their own policy, limits, caps, session expiry, pause state, allow-lists, or how Praxis keeps them safe. Pick the closest topic, or 'general'.",
+  "policy_change: when the user wants to CHANGE a policy setting. 'change/raise/lower/set my daily limit to N SOL' -> field=daily_limit, amountHuman=N. 'set max per tx to N SOL' -> field=max_per_tx, amountHuman=N. 'extend my session by N hours/days' or 'set expiry to N hours' -> field=expiry, expiryHours=N (convert days to hours). 'pause/freeze the agent' -> field=pause, paused=true. 'unpause/resume the agent' -> field=pause, paused=false. Distinguish a CHANGE (imperative: change/set/raise/lower/pause) from a QUESTION (what/how/is my...).",
   "save_contact: when the user asks to save/remember an address under a name. Extract the base58 address and the label separately.",
   "Decompose multi-step requests in order. 'send X to ADDR and save as LABEL' is TWO actions: a transfer (recipient = ADDR) and a save_contact (address = ADDR, label = LABEL). Never fold 'and save as ...' into the recipient.",
   "Handle misspellings, shorthand, slang, and multiple steps in order.",
@@ -280,6 +306,13 @@ export function parseIntentLocallyForDemo(text: string): ParsedIntent {
     };
   }
 
+  // policy_change (a mutation) must be checked before policy_question (a read),
+  // so imperative phrasing like "pause the agent" isn't swallowed as a question.
+  const policyChange = matchPolicyChange(cleaned);
+  if (policyChange) {
+    return { outcome: "actions", actions: [policyChange] };
+  }
+
   const policyTopic = matchPolicyQuestion(cleaned);
   if (policyTopic) {
     return { outcome: "actions", actions: [{ kind: "policy_question", topic: policyTopic }] };
@@ -302,6 +335,52 @@ export function parseIntentLocallyForDemo(text: string): ParsedIntent {
     outcome: "clarify",
     question: "Do you want to send SOL, research a token, save a contact, ask about your policy, or preview a swap stub?",
   };
+}
+
+/**
+ * Detect an imperative policy CHANGE in the offline fallback parser. Conservative
+ * on purpose: it only fires on explicit change verbs + a policy knob, so a normal
+ * transfer ("send 10 sol to alex") can never be mistaken for a limit change.
+ */
+function matchPolicyChange(text: string): Extract<ParsedAction, { kind: "policy_change" }> | null {
+  const t = text.toLowerCase().trim();
+
+  // pause / unpause the agent.
+  if (/\b(unpause|un-pause|resume|re-enable transfers)\b/.test(t) && /\b(agent|transfers?|aegis|it)\b/.test(t)) {
+    return { kind: "policy_change", field: "pause", paused: false };
+  }
+  if (/^(pause|freeze|halt|disable)\b/.test(t) && /\b(agent|transfers?|aegis|spending|it|everything)\b/.test(t)) {
+    return { kind: "policy_change", field: "pause", paused: true };
+  }
+
+  // expiry: "extend my session by 24 hours", "set expiry to 12 hours / 2 days".
+  const expiry = t.match(
+    /\b(?:extend|set|change|update)\b.*?\b(?:session|expiry|expiration)\b.*?\b(\d+(?:\.\d+)?)\s*(hour|hr|h|day|d)s?\b/,
+  ) ?? t.match(/\bextend\b.*?\b(\d+(?:\.\d+)?)\s*(hour|hr|h|day|d)s?\b/);
+  if (expiry) {
+    const n = Number(expiry[1]);
+    const isDays = /^d/.test(expiry[2]);
+    if (Number.isFinite(n) && n > 0) {
+      return { kind: "policy_change", field: "expiry", expiryHours: isDays ? n * 24 : n };
+    }
+  }
+
+  // caps: "change/raise/lower/set ... (daily) limit/cap | max per tx ... to N (sol)".
+  const cap = t.match(
+    /\b(?:change|set|raise|lower|increase|decrease|bump|update|make)\b[^]*?\b(daily limit|daily cap|per[\s-]?tx|per transaction|max per tx|max[\s-]?per[\s-]?tx|max|limit|cap)\b[^]*?\b(?:to|=)\s*\$?(\d+(?:\.\d+)?)\s*(?:sol)?\b/,
+  );
+  if (cap) {
+    const knob = cap[1];
+    const amountHuman = cap[2];
+    const isPerTx = /per|max/.test(knob) && !/daily/.test(knob);
+    return {
+      kind: "policy_change",
+      field: isPerTx ? "max_per_tx" : "daily_limit",
+      amountHuman,
+    };
+  }
+
+  return null;
 }
 
 /** Classify a policy question into a topic, or null if it isn't one. */
@@ -398,6 +477,36 @@ function normalizeAction(input: unknown, index: number): ParsedAction {
       kind: "save_contact",
       label: readRequiredString(value.label, "label"),
       address: readRequiredString(value.address, "address"),
+    };
+  }
+
+  if (value.kind === "policy_change") {
+    const allowed = ["daily_limit", "max_per_tx", "expiry", "pause"] as const;
+    const field = typeof value.field === "string" && (allowed as readonly string[]).includes(value.field)
+      ? (value.field as (typeof allowed)[number])
+      : undefined;
+    if (!field) {
+      throw new PraxisInputError("policy_change requires a field of daily_limit, max_per_tx, expiry, or pause");
+    }
+    if (field === "pause") {
+      if (typeof value.paused !== "boolean") {
+        throw new PraxisInputError("policy_change pause requires a boolean 'paused'");
+      }
+      return { kind: "policy_change", field, paused: value.paused };
+    }
+    if (field === "expiry") {
+      const hours = typeof value.expiryHours === "number"
+        ? value.expiryHours
+        : Number(value.expiryHours);
+      if (!Number.isFinite(hours) || hours <= 0) {
+        throw new PraxisInputError("policy_change expiry requires a positive 'expiryHours'");
+      }
+      return { kind: "policy_change", field, expiryHours: hours };
+    }
+    return {
+      kind: "policy_change",
+      field,
+      amountHuman: readRequiredString(value.amountHuman, "amountHuman"),
     };
   }
 

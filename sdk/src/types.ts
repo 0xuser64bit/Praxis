@@ -173,11 +173,25 @@ export interface ResearchData {
   summary: string;
 }
 
+export interface PolicyChangeRow {
+  label: string;
+  from: string;
+  to: string;
+}
+
 export type AgentBlock =
   | { type: "prose"; text: string }
   | { type: "clarify"; text: string; options: ClarifyOption[] }
   | { type: "proposal"; text: string; proposalId: string }
-  | { type: "research"; text: string; data: ResearchData };
+  | { type: "research"; text: string; data: ResearchData }
+  | { type: "notice"; tone: "success" | "info"; text: string }
+  | {
+      type: "policy_change";
+      text: string;
+      patch: PolicyUpdate;
+      changes: PolicyChangeRow[];
+      applied: boolean;
+    };
 
 export type UserMessage = { id: string; role: "user"; ts: number; text: string };
 export type AgentMessage = { id: string; role: "agent"; ts: number; blocks: AgentBlock[] };

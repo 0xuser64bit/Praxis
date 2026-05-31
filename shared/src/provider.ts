@@ -144,12 +144,32 @@ export interface ResearchMetric {
   trend?: "up" | "down" | "flat";
 }
 
+/** One before→after row in a policy change, pre-formatted for display. */
+export interface PolicyChangeRow {
+  label: string;
+  from: string;
+  to: string;
+}
+
 export type AgentBlock =
   | { type: "prose"; text: string }
   | { type: "clarify"; text: string; options: ClarifyOption[] }
   | { type: "proposal"; text: string; proposalId: string }
   | { type: "research"; text: string; data: ResearchData }
-  | { type: "notice"; tone: "success" | "info"; text: string };
+  | { type: "notice"; tone: "success" | "info"; text: string }
+  /**
+   * A parsed, validated change to the owner's Aegis policy. `applied` is true
+   * when the backend already committed it on-chain (backend owner key present);
+   * otherwise the client renders an "Apply & sign" affordance that submits
+   * `patch` through the wallet-signed owner-action path.
+   */
+  | {
+      type: "policy_change";
+      text: string;
+      patch: PolicyUpdate;
+      changes: PolicyChangeRow[];
+      applied: boolean;
+    };
 
 export type Message =
   | { id: string; role: "user"; ts: number; text: string }

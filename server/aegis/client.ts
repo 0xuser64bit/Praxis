@@ -46,6 +46,7 @@ import {
   type PraxisServerConfig,
 } from "../env";
 import {
+  LocalKeypairSigner,
   requireAgentSigner,
   resolveNextAgentPublicKey,
   type AgentSigner,
@@ -154,6 +155,31 @@ export class AegisClient {
   }
 
   /**
+   * Sign with whichever locally-held key the chain currently authorizes.
+   *
+   * `agent_transfer` enforces `signer == policy.agent_authority` on-chain. After
+   * a `rotate_agent` (the "re-enable agent" / key-rotation flow) the authority
+   * becomes the NEXT key, so the backend must start signing with that key —
+   * otherwise every transfer fails `invalid_agent_authority`. Because the chain
+   * is the source of truth, we pick the matching held keypair instead of caching
+   * a single fixed signer; this makes rotation work with no extra state.
+   *
+   * Remote custody (PRAXIS_AGENT_SIGNER_URL) is never overridden — its single
+   * key boundary is preserved and we defer to {@link agentSigner}.
+   */
+  private activeAgentSigner(policy: PolicyView): AgentSigner {
+    if (!process.env.PRAXIS_AGENT_SIGNER_URL?.trim()) {
+      const authority = policy.agentAuthority;
+      for (const keypair of [this.config.agentKeypair, this.config.nextAgentKeypair]) {
+        if (keypair && keypair.publicKey.toBase58() === authority) {
+          return new LocalKeypairSigner(keypair);
+        }
+      }
+    }
+    return this.agentSigner();
+  }
+
+  /**
    * Simulate without a real agent signature (execute-only signing). The on-chain
    * policy checks read the agent account, not its signature, so the verdict is
    * faithful — and remote custody avoids a signer round-trip per preview.
@@ -190,8 +216,8 @@ export class AegisClient {
   }
 
   async simulateAgentTransfer(recipient: PublicKey, amount: bigint): Promise<TransferSimulation> {
-    const signer = this.agentSigner();
     const policy = await this.getPolicy();
+    const signer = this.activeAgentSigner(policy);
     const now = await this.chainTime();
     const mirrored = checkTransferPolicy(policy, amount, recipient.toBase58(), now);
     const ix = await this.agentTransferIx(signer.publicKey, recipient, amount);
@@ -246,8 +272,8 @@ export class AegisClient {
     amount: bigint,
     opts: { skipPreflight?: boolean } = {},
   ): Promise<TransferExecution> {
-    const signer = this.agentSigner();
     const policy = await this.getPolicy();
+    const signer = this.activeAgentSigner(policy);
     const now = await this.chainTime();
     const ix = await this.agentTransferIx(signer.publicKey, recipient, amount);
     const { tx, latestBlockhash } = await this.buildTransaction([ix], signer.publicKey);
@@ -307,8 +333,8 @@ export class AegisClient {
     token: TokenInfo,
     amount: bigint,
   ): Promise<TransferSimulation> {
-    const signer = this.agentSigner();
     const policy = await this.getPolicy();
+    const signer = this.activeAgentSigner(policy);
     const now = await this.chainTime();
     const recipientAddress = recipient.toBase58();
     const mirrored = checkTokenTransferPolicy(policy, token, amount, recipientAddress, now);
@@ -360,8 +386,8 @@ export class AegisClient {
     amount: bigint,
     opts: { skipPreflight?: boolean } = {},
   ): Promise<TransferExecution> {
-    const signer = this.agentSigner();
     const policy = await this.getPolicy();
+    const signer = this.activeAgentSigner(policy);
     const now = await this.chainTime();
     const ix = await this.agentTransferSplIx(signer.publicKey, recipient, token, amount);
     const { tx, latestBlockhash } = await this.buildTransaction([ix], signer.publicKey);

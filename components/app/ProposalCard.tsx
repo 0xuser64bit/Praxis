@@ -36,6 +36,7 @@ export function ProposalCard({
   const proposal = useProposal(proposalId);
   const provider = useProvider();
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<null | "sign" | "cancel">(null);
   if (!proposal) return null;
 
   const { from, to, meta } = describe(proposal.detail, proposal);
@@ -45,11 +46,22 @@ export function ProposalCard({
   const blockedMessage = proposal.detail.kind === "swap"
     ? "Swaps are preview-only in v0.1. Nothing was signed."
     : "The agent can't sign this — the chain would reject it.";
-  const runAction = (action: () => Promise<void>, fallback: string) => {
+  const runAction = (kind: "sign" | "cancel", action: () => Promise<void>, fallback: string) => {
     setError(null);
-    void action().catch((err) => {
-      setError(messageFromError(err, fallback));
-    });
+    setBusy(kind);
+    // The provider call is a full server round-trip (Aegis simulate + submit),
+    // so flip a local busy state the instant the button is clicked — the user
+    // sees their click register immediately instead of a dead button. The
+    // proposal state then transitions (signing → signed/blocked) and this card
+    // re-renders out of the pending branch; on failure we clear busy so the
+    // buttons become live again.
+    void action()
+      .catch((err) => {
+        setError(messageFromError(err, fallback));
+      })
+      .finally(() => {
+        setBusy(null);
+      });
   };
 
   return (
@@ -105,17 +117,28 @@ export function ProposalCard({
             <Button
               variant="primary"
               className="flex-1 justify-center px-3.5 py-[11px]"
+              disabled={busy !== null}
               onClick={() => {
-                runAction(() => provider.signProposal(proposal.id), "Signing failed.");
+                runAction("sign", () => provider.signProposal(proposal.id), "Signing failed.");
               }}
             >
-              Confirm &amp; sign
-              <IconArrowRight size={14} />
+              {busy === "sign" ? (
+                <>
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-[var(--bg)] border-t-transparent" />
+                  Submitting…
+                </>
+              ) : (
+                <>
+                  Confirm &amp; sign
+                  <IconArrowRight size={14} />
+                </>
+              )}
             </Button>
             <Button
               className="flex-1 justify-center px-3.5 py-[11px]"
+              disabled={busy !== null}
               onClick={() => {
-                runAction(() => provider.cancelProposal(proposal.id), "Cancel failed.");
+                runAction("cancel", () => provider.cancelProposal(proposal.id), "Cancel failed.");
               }}
             >
               Cancel

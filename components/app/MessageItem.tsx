@@ -3,6 +3,7 @@
 import type { Message } from "@praxis/shared";
 
 import { ClarifyPrompt } from "./ClarifyPrompt";
+import { PolicyChangeCard } from "./PolicyChangeCard";
 import { ProposalCard } from "./ProposalCard";
 import { ResearchCard } from "./ResearchCard";
 import { renderRich } from "./richtext";
@@ -85,6 +86,17 @@ export function MessageItem({
                   }`}
                 >
                   {block.text}
+                </div>
+              );
+            case "policy_change":
+              return (
+                <div key={i}>
+                  <p className="mb-1">{renderRich(block.text)}</p>
+                  <PolicyChangeCard
+                    patch={block.patch}
+                    changes={block.changes}
+                    applied={block.applied}
+                  />
                 </div>
               );
             default:

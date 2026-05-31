@@ -57,6 +57,14 @@ export class RemotePraxisProvider implements PraxisProvider {
   private state: RemoteStoreState = createEmptyState();
   private listeners = new Set<() => void>();
   private version = 0;
+  // Monotonic token so a slow, stale `refreshAll` can't overwrite the result of
+  // a newer one that started after it (out-of-order completion). Only the most
+  // recently started refresh is allowed to commit its snapshot.
+  private refreshToken = 0;
+  // Threads with an in-flight `send`. While a send is pending we keep the local
+  // (optimistic) copy of that thread on every refresh, so a background refresh
+  // racing the send can't wipe the message the user just typed.
+  private pendingSends = new Set<string>();
 
   constructor() {
     void this.refreshAll();
@@ -95,18 +103,48 @@ export class RemotePraxisProvider implements PraxisProvider {
   };
 
   send = async (threadId: string | null, text: string): Promise<{ threadId: string }> => {
+    // Render the user's line immediately as an optimistic bubble. Without this,
+    // the composer clears the input the moment you hit send but nothing appears
+    // until the multi-second server round-trip (intent parse + simulation)
+    // returns — so the text looks like it vanished. The optimistic message is
+    // replaced by the server's authoritative copy once the reply is fetched.
+    this.appendOptimisticUserMessage(threadId, text);
+    if (threadId) this.pendingSends.add(threadId);
     // Flip the thinking flag immediately so the conversation shows a working
-    // indicator while the (multi-second) intent parse + simulation run, instead
-    // of appearing frozen. Cleared in `finally` once the reply has been fetched.
+    // indicator while the request runs. Cleared in `finally`.
     this.setThinking(threadId, true);
     try {
       const result = await this.mutate(() => this.post<{ threadId: string }>("/api/praxis/send", { threadId, text }));
+      // Clear the pending guard BEFORE the authoritative refresh so it adopts
+      // the server's copy of this thread (the real persisted messages).
+      if (threadId) this.pendingSends.delete(threadId);
       await this.refreshAll();
       return result;
+    } catch (error) {
+      if (threadId) this.pendingSends.delete(threadId);
+      throw error;
     } finally {
       this.setThinking(threadId, false);
     }
   };
+
+  private appendOptimisticUserMessage(threadId: string | null, text: string) {
+    if (!threadId) return;
+    const index = this.state.threads.findIndex((thread) => thread.id === threadId);
+    if (index < 0) return;
+    const ts = Math.floor(Date.now() / 1000);
+    const message: Thread["messages"][number] = {
+      id: `m-opt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      role: "user",
+      ts,
+      text,
+    };
+    const existing = this.state.threads[index];
+    const threads = [...this.state.threads];
+    threads[index] = { ...existing, messages: [...existing.messages, message], updatedAt: ts };
+    this.state = { ...this.state, threads };
+    this.notify();
+  }
 
   private setThinking(threadId: string | null, value: boolean) {
     if (!threadId) return;
@@ -227,6 +265,7 @@ export class RemotePraxisProvider implements PraxisProvider {
   }
 
   private async refreshAll() {
+    const token = ++this.refreshToken;
     try {
       const [threads, policy, activity, addressBook] = await Promise.all([
         this.get<Thread[]>("/api/praxis/get-threads"),
@@ -234,6 +273,9 @@ export class RemotePraxisProvider implements PraxisProvider {
         this.get<ActivityEntry[]>("/api/praxis/get-activity"),
         this.get<AddressBookEntry[]>("/api/praxis/get-address-book"),
       ]);
+      // A newer refresh started while we were awaiting — its snapshot is fresher,
+      // so discard ours rather than clobber it with stale data.
+      if (token !== this.refreshToken) return;
 
       const proposals: Record<string, ActionProposal> = {};
       for (const thread of threads) {
@@ -246,10 +288,11 @@ export class RemotePraxisProvider implements PraxisProvider {
           }
         }
       }
+      if (token !== this.refreshToken) return;
 
       this.state = {
         ...this.state,
-        threads,
+        threads: this.mergePendingThreads(threads),
         policy,
         activity,
         addressBook,
@@ -258,8 +301,29 @@ export class RemotePraxisProvider implements PraxisProvider {
       };
       this.notify();
     } catch (error) {
-      this.setConnectionError(error);
+      if (token === this.refreshToken) this.setConnectionError(error);
     }
+  }
+
+  /**
+   * Overlay the local copy of any thread with an in-flight send on top of the
+   * server snapshot, so a refresh that races the send can't drop the optimistic
+   * message. Threads without a pending send always take the server's version.
+   */
+  private mergePendingThreads(serverThreads: Thread[]): Thread[] {
+    if (this.pendingSends.size === 0) return serverThreads;
+    const result = serverThreads.map((thread) => {
+      if (!this.pendingSends.has(thread.id)) return thread;
+      return this.state.threads.find((local) => local.id === thread.id) ?? thread;
+    });
+    // Keep pending threads that the server hasn't materialized yet (brand-new
+    // thread + immediate send) so they don't disappear mid-send.
+    for (const id of this.pendingSends) {
+      if (serverThreads.some((thread) => thread.id === id)) continue;
+      const local = this.state.threads.find((thread) => thread.id === id);
+      if (local) result.unshift(local);
+    }
+    return result;
   }
 
   private async get<T>(url: string): Promise<T> {

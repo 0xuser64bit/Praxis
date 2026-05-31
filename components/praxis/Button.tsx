@@ -23,7 +23,7 @@ export function Button<E extends ElementType = "button">({
   const Component = (as ?? "button") as ElementType;
 
   const base =
-    "inline-flex cursor-pointer items-center gap-2 rounded-lg font-medium tracking-[-0.005em] [transition:all_0.2s_ease]";
+    "inline-flex cursor-pointer items-center gap-2 rounded-lg font-medium tracking-[-0.005em] [transition:all_0.2s_ease] disabled:cursor-not-allowed disabled:opacity-60";
 
   const sizeClasses =
     size === "sm" ? "px-3.5 py-2 text-[13px]" : "px-5 py-3 text-[14px]";

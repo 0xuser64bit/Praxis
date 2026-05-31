@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
 
 import { AegisClient } from "../client";
@@ -10,6 +10,15 @@ import type { AgentSigner } from "../../agent/agentSigner";
 import { encodePolicyAccount, policyFixture } from "../../testing/fixtures";
 
 const BLOCKHASH = Keypair.generate().publicKey.toBase58(); // valid 32-byte base58
+
+// These tests construct PraxisServerConfig directly, so they must be hermetic:
+// a populated .env (e.g. a configured next-agent key or remote signer) must not
+// leak in through resolveNextAgentPublicKey / resolveAgentSigner.
+beforeEach(() => {
+  delete process.env.PRAXIS_NEXT_AGENT_PUBLIC_KEY;
+  delete process.env.PRAXIS_AGENT_PUBLIC_KEY;
+  delete process.env.PRAXIS_AGENT_SIGNER_URL;
+});
 
 function fakeConnection(over: Partial<Record<string, unknown>> = {}): Connection {
   return {

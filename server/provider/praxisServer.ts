@@ -7,6 +7,7 @@ import {
   type AgentBlock,
   type AllowListKind,
   type Message,
+  type PolicyChangeRow,
   type PolicyUpdate,
   type PolicyView,
   type PraxisProvider,
@@ -39,7 +40,7 @@ import {
   type PraxisServerConfig,
 } from "../env";
 import { PraxisConfigError, PraxisNotFoundError } from "../errors";
-import { parseHumanUnits, SOL_DECIMALS } from "../units";
+import { formatSol, parseHumanUnits, SOL_DECIMALS } from "../units";
 import { getStateRepository, type StateRepository } from "./stateRepository";
 import type { StoredProviderState } from "./stateSerialization";
 import { errorFields, logger } from "../observability/logger";
@@ -456,6 +457,7 @@ export class PraxisServerProvider implements PraxisProvider {
     if (action.kind === "research") return this.researchBlock(action.token);
     if (action.kind === "policy_question") return this.policyQuestionBlock(action.topic);
     if (action.kind === "save_contact") return this.saveContactBlock(action.label, action.address);
+    if (action.kind === "policy_change") return this.policyChangeBlock(action);
     return this.swapStubBlock(action);
   }
 
@@ -472,6 +474,132 @@ export class PraxisServerProvider implements PraxisProvider {
       };
     }
     return { blocks: explainPolicy(policy, nowSeconds(), topic), title: "Your policy" };
+  }
+
+  private async policyChangeBlock(
+    action: Extract<ParsedAction, { kind: "policy_change" }>,
+  ): Promise<{ blocks: AgentBlock[]; title?: string }> {
+    const policy = await this.ensurePolicy();
+    if (!policy) {
+      return {
+        blocks: [{
+          type: "prose",
+          text: "I can't read your policy right now, so I can't change it. Make sure your wallet is connected and your policy is initialized.",
+        }],
+      };
+    }
+
+    const built = this.buildPolicyPatch(policy, action);
+    if ("error" in built) {
+      return { blocks: [{ type: "clarify", text: built.error, options: [] }] };
+    }
+    const { patch, changes } = built;
+
+    // Honor the "apply immediately" choice when the backend can actually sign an
+    // owner transaction (a backend owner key is configured). Under wallet custody
+    // (the default here) the server can't summon the wallet, so we hand the
+    // change to the client as a one-tap, wallet-signed action instead.
+    if (this.backendOwnerSigningAvailable()) {
+      try {
+        await this.updatePolicy(patch);
+        return {
+          blocks: [{
+            type: "policy_change",
+            text: "Done — your policy is updated and enforced on-chain.",
+            patch,
+            changes,
+            applied: true,
+          }],
+          title: "Policy updated",
+        };
+      } catch (error) {
+        return {
+          blocks: [{
+            type: "prose",
+            text: error instanceof Error ? error.message : "The policy change could not be applied.",
+          }],
+        };
+      }
+    }
+
+    return {
+      blocks: [{
+        type: "policy_change",
+        text: "I've prepared this policy change. Aegis requires your signature for any policy change — sign in your wallet to apply it.",
+        patch,
+        changes,
+        applied: false,
+      }],
+      title: "Policy change",
+    };
+  }
+
+  /**
+   * Translate a parsed policy_change into a concrete {@link PolicyUpdate} patch
+   * plus human before→after rows, validating against the same invariants the
+   * on-chain `update_policy` enforces (non-zero, maxPerTx ≤ dailyLimit) so the
+   * user gets a friendly message instead of an on-chain rejection.
+   */
+  private buildPolicyPatch(
+    policy: PolicyView,
+    action: Extract<ParsedAction, { kind: "policy_change" }>,
+  ): { patch: PolicyUpdate; changes: PolicyChangeRow[] } | { error: string } {
+    const sol = (lamports: bigint) => `${formatSol(lamports)} SOL`;
+
+    if (action.field === "pause") {
+      const paused = Boolean(action.paused);
+      if (policy.paused === paused) {
+        return { error: paused ? "The agent is already paused." : "The agent is not paused." };
+      }
+      return {
+        patch: { paused },
+        changes: [{ label: "Agent transfers", from: policy.paused ? "Paused" : "Active", to: paused ? "Paused" : "Active" }],
+      };
+    }
+
+    if (action.field === "expiry") {
+      const hours = action.expiryHours ?? 0;
+      if (!(hours > 0)) return { error: "Tell me how long to extend the session, e.g. \"extend my session by 24 hours\"." };
+      const expiryTs = nowSeconds() + Math.round(hours * 3600);
+      const rel = hours >= 24 ? `${(hours / 24).toFixed(hours % 24 === 0 ? 0 : 1)}d` : `${hours}h`;
+      return {
+        patch: { expiryTs },
+        changes: [{ label: "Session expiry", from: `unix ${policy.expiryTs}`, to: `unix ${expiryTs} (~${rel} from now)` }],
+      };
+    }
+
+    // daily_limit / max_per_tx — both are SOL amounts.
+    let amount: bigint;
+    try {
+      amount = parseHumanUnits(action.amountHuman ?? "", SOL_DECIMALS);
+    } catch {
+      return { error: `"${action.amountHuman ?? ""}" isn't a valid SOL amount. Try e.g. "change my daily limit to 10 SOL".` };
+    }
+    if (amount <= 0n) return { error: "The new limit has to be greater than zero." };
+
+    // The program only requires each limit to be > 0 (there is intentionally no
+    // maxPerTx <= dailyLimit rule — the per-tx cap and the daily cap are
+    // independent gates), so we don't invent a cross-constraint here.
+    if (action.field === "daily_limit") {
+      return {
+        patch: { dailyLimit: amount },
+        changes: [{ label: "Daily limit", from: sol(policy.dailyLimit), to: sol(amount) }],
+      };
+    }
+
+    return {
+      patch: { maxPerTx: amount },
+      changes: [{ label: "Max per transaction", from: sol(policy.maxPerTx), to: sol(amount) }],
+    };
+  }
+
+  /** Non-throwing companion to {@link assertBackendOwnerSigningAvailable}. */
+  private backendOwnerSigningAvailable(): boolean {
+    return Boolean(
+      this.config.ownerAddress
+      && this.config.ownerKeypair
+      && this.config.ownerKeypair.publicKey.equals(this.config.ownerAddress),
+    );
   }
 
   private async saveContactBlock(

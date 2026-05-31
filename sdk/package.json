@@ -1,6 +1,6 @@
 {
   "name": "@usepraxis/sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Typed client SDK for a hosted Praxis agent — natural-language Solana actions enforced on-chain by Aegis.",
   "license": "MIT",
   "type": "module",
@@ -16,7 +16,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "sideEffects": false,
   "scripts": {

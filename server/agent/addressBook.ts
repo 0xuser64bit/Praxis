@@ -7,7 +7,19 @@ export type ResolveRecipientResult =
   | { kind: "missing"; question: string; options: ClarifyOption[] };
 
 export class AddressBook {
-  constructor(private readonly entries: AddressBookEntry[]) {}
+  private entries: AddressBookEntry[];
+
+  constructor(entries: AddressBookEntry[]) {
+    this.entries = [...entries];
+  }
+
+  /** Upsert a contact, deduping by address and label (newest wins, placed first). */
+  add(entry: AddressBookEntry): void {
+    this.entries = [
+      entry,
+      ...this.entries.filter((e) => e.address !== entry.address && e.label !== entry.label),
+    ];
+  }
 
   all(): AddressBookEntry[] {
     return this.entries;
@@ -23,12 +35,15 @@ export class AddressBook {
     const normalized = normalize(raw);
     const directAddress = parseAddress(raw);
     if (directAddress) {
+      const base58 = directAddress.toBase58();
+      const known = this.entries.find((entry) => entry.address === base58);
+      if (known) return { kind: "exact", entry: known };
       return {
         kind: "exact",
         entry: {
           label: "pasted-address",
           name: "Pasted address",
-          address: directAddress.toBase58(),
+          address: base58,
           note: "not saved in the address book",
         },
       };

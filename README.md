@@ -1,128 +1,130 @@
 # Praxis
 
-Praxis is a conversational Solana agent backed by Aegis, an Anchor
-program that enforces a scoped agent policy on-chain.
+Praxis is a conversational Solana agent. You type intent in plain language —
+*"send 0.5 SOL to maya"* — and the agent turns it into a typed, simulated
+on-chain action. What makes it safe is **Aegis**: an Anchor program that enforces
+a scoped spending policy on-chain.
 
-The current product supports:
+The core claim is one sentence: **the agent may interpret intent, but the program
+enforces the envelope.** An LLM, a parser, or a compromised backend can propose
+anything; none of them can move value past the caps, allow-lists, and expiry that
+Aegis checks inside the instruction itself.
 
-- A local-only mock walkthrough at `/app` for development and smoke testing.
-- A live API mode for native SOL `agent_transfer` and configured SPL-token
-  `agent_transfer_spl` through Aegis.
-- Policy dashboard controls for caps, expiry, allow-lists, revoke, and rotate.
-- Activity and proposal surfaces that show Aegis policy verdicts.
-- Read-only token research through Solana RPC and a configured indexer.
+## Why
 
-Swaps are intentionally a typed stub. No Jupiter CPI or owner-signed swap flow is
-implemented yet, and the mock refuses to sign swaps too.
+Agentic crypto usually asks you to trust a backend with a hot key and hope its
+prompt-handling is correct. That puts the security boundary in the wrong place —
+in software that can be jailbroken, misparsed, or breached. Praxis moves the
+boundary onto the chain. The agent holds only a *scoped* key, and every transfer
+it signs is validated by Aegis against an owner-defined policy before any SOL or
+tokens leave the vault. Worst case, a misbehaving agent is bounded by the
+policy, not by the quality of a prompt.
 
-## Modes
+## How it works
 
-### Local mock mode
+1. You enter text in the conversation surface.
+2. The agent parses it into a typed action (Google Gemini, or a local
+   deterministic parser for $0 demos).
+3. Recipient names resolve through an off-chain address book.
+4. The action is simulated and checked against the policy, producing a proposal
+   card with the fee, the simulation result, and the Aegis verdict.
+5. On confirm, the backend signs an Aegis instruction with the **scoped agent
+   key** and submits it.
+6. Aegis enforces the policy *on-chain* — signer, pause, expiry, per-transaction
+   cap, rolling daily cap, recipient allow-list, and (for SPL) the configured
+   mint and token envelope — before value moves.
 
-Use this only for local development and smoke testing. It does not need keypairs,
-RPC, or Anthropic credentials. Production builds disable mock mode unless
-`NEXT_PUBLIC_PRAXIS_ALLOW_MOCK=1` is deliberately set at build time.
+Aegis exposes two value instructions: `agent_transfer` (native SOL) and
+`agent_transfer_spl` (one configured SPL token). Owner actions — fund, withdraw,
+update policy, allow-lists, revoke, rotate — are intentionally unconstrained by
+agent caps and are **wallet-signed** by the owner; the backend never holds the
+owner key.
+
+**Trusted:** Solana consensus, the Aegis program, and owner wallet signatures.
+**Not trusted for enforcement:** prompt text, LLM output, the mock parser, the
+off-chain policy mirror, and the UI. The off-chain mirrors exist only for
+explainability and previews — never as the source of truth for value movement.
+
+Full design and trust boundaries: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## SDK
+
+[`@usepraxis/sdk`](sdk/) is a typed, Node-first client for a hosted Praxis
+backend. It signs the wallet-ownership challenge, holds the session, and drives
+the agent. It never holds your model keys or the agent private key — those stay
+server-side behind Aegis.
 
 ```bash
+npm install @usepraxis/sdk
+```
+
+```ts
+import { PraxisClient, keypairSigner } from "@usepraxis/sdk";
+
+const praxis = new PraxisClient({
+  baseUrl: "https://your-praxis.app",
+  signer: keypairSigner(process.env.PRAXIS_SECRET_KEY!),
+});
+
+await praxis.connect();
+const { proposals } = await praxis.ask("send 0.5 SOL to maya");
+
+for (const p of proposals) {
+  if (p.check.allowed) await praxis.signProposal(p.id); // Aegis enforces caps on-chain
+}
+```
+
+See [sdk/README.md](sdk/README.md) for the full surface.
+
+## Future scope
+
+Praxis is a strong devnet MVP. The production seams — managed Postgres state,
+wallet-signed owner actions, remote agent-key custody, cross-instance rate
+limiting, structured logging — are all in place and switch on by configuration.
+
+Deliberately **not** built yet:
+
+- **Real swaps.** Swap intents are parsed and previewed, but always blocked.
+  There is no Jupiter CPI and no `agent_swap` instruction. A real swap path must
+  enforce mint/program allow-lists and value caps *inside the program*, not in a
+  quote or backend — that is the bar for adding it.
+- Scheduled / DCA actions — only with mechanical triggers and the same Aegis
+  envelope.
+- Wallet-signed SPL token-envelope setup and managed vault-funding UX.
+- A durable indexer for rejected actions (the on-chain log stores allowed
+  actions; rejections currently live as failed-tx logs).
+
+The guiding rule: new features must strengthen the safety thesis, not create
+escape hatches around it. No fake swap signing, no autonomous trading advice, no
+delegated authority over your main wallet.
+
+## Run it
+
+```bash
+# Mock mode — no chain, keys, or LLM key. Local smoke test of the UI/policy flow.
 NEXT_PUBLIC_PRAXIS_PROVIDER=mock bun run dev
+# open http://localhost:3000/app
 ```
 
-Open `http://localhost:3000/app`.
+For the real Aegis send flow on devnet, and for deploying behind a remote
+signer, see **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 
-### Live API mode
-
-Use this for the real Aegis send flow on localnet/devnet. API mode now requires
-wallet sign-in; the signed-in wallet address derives the Aegis policy PDA and
-scopes the off-chain workspace state. Copy `.env.example`, then configure:
-
-- `NEXT_PUBLIC_PRAXIS_PROVIDER=api`
-- `PRAXIS_SESSION_SECRET` for stable signed sessions
-- `PRAXIS_STATE_DIR` for local/devnet workspace persistence
-- `SOLANA_RPC_URL`
-- `PRAXIS_AGENT_KEYPAIR_PATH` or `PRAXIS_AGENT_KEYPAIR`
-- `PRAXIS_ALLOW_LOCAL_AGENT_KEY=1` only when deploying a devnet judge build with
-  an in-process agent key; otherwise use `PRAXIS_AGENT_SIGNER_URL`
-- `PRAXIS_NEXT_AGENT_KEYPAIR_PATH` or `PRAXIS_NEXT_AGENT_KEYPAIR` for
-  rotate/re-enable; it must be different from the current agent key
-- `PRAXIS_OWNER_KEYPAIR_PATH` is optional and only for the local/devnet
-  backend-keypair fallback (and scripts); it must match the wallet you sign in
-  with
-- `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`, unless using `PRAXIS_LOCAL_INTENT=1`
-
-Owner/admin policy actions (update caps/expiry/pause, allow-lists, revoke,
-rotate) are **wallet-signed** when a signing wallet is present: the server builds
-an unsigned transaction, the wallet signs it, and the server submits it — the
-backend never holds the owner key. The backend owner keypair remains only as a
-local/devnet fallback when no browser wallet can sign (and for scripts). Token
-envelope setup/funding still uses the backend keypair and stays a local/devnet
-convenience.
-
-For a fresh devnet wallet, open `/app` after sign-in and initialize the missing
-Aegis policy from the prompt. The wallet-signed bootstrap transaction creates
-the policy PDA and funds the SOL vault with 1 devnet SOL.
-
-```bash
-bun run dev
-```
-
-Open `http://localhost:3000/app`.
-
-## Validation
+## Validate
 
 ```bash
 bun run lint
-bun run test
+bun run test       # auth/session, validation, state, Aegis codec, API routes — no network
 bun run build
-bun run aegis:test
+bun run aegis:test # rebuild the Anchor program + run the LiteSVM enforcement gate
 ```
 
-`bun run test` runs the TypeScript suite (auth/session, wallet challenge, request
-validation, rate limiting, state persistence, the Aegis codec, env parsing, the
-server provider against a fake Aegis client, and the API route auth/validation
-seams) — no validator or network required. `bun run aegis:test` rebuilds the
-Anchor program before running the LiteSVM enforcement gate.
+## Layout
 
-## Demo Script
-
-With a local validator and funded owner/agent keypairs:
-
-```bash
-bun run praxis:demo
-```
-
-The script initializes a demo policy if needed, funds the vault, previews and
-executes `send 0.5 sol to maya`, then submits an over-cap transfer so Aegis
-returns a typed rejection.
-
-For SPL sends, prepare the configured token vault and known recipient associated
-token accounts:
-
-```bash
-bun run praxis:setup-token-accounts
-```
-
-Set `PRAXIS_TOKEN_VAULT_FUND_AMOUNT` to transfer tokens from the owner ATA into
-the vault ATA during setup.
-
-## Deploy
-
-To put Praxis live for testers, see [docs/DEPLOY.md](docs/DEPLOY.md). The
-deployment path is API-backed; mock mode is a local development tool, not the
-production default.
-
-## Production Gap
-
-This repo is a strong devnet MVP candidate. Managed state storage is available:
-set `PRAXIS_STATE_BACKEND=postgres` with a `DATABASE_URL` (Neon or any Postgres)
-to persist threads/proposals/activity durably across instances; the filesystem
-backend remains the default for local/devnet. Owner/admin policy actions are
-wallet-signed when a browser wallet is present. Cross-instance rate limiting is
-available with `PRAXIS_RATE_LIMITER=redis` and Upstash-compatible credentials;
-the in-memory limiter is only for local/single-instance use. The agent session
-key can be moved behind a remote signer service (`PRAXIS_AGENT_SIGNER_URL`) so
-its private key never lives in the app — see `signer/`; the in-process
-`LocalKeypairSigner` is the default for local/devnet only.
-
-In short: the seams for production (managed DB, wallet-signed owner actions,
-agent-key custody, cross-instance rate limiting, observability) are all in place
-and switch on by configuration; local/devnet runs entirely on free defaults.
+| Path | What |
+|---|---|
+| `app/`, `components/` | Next.js product app and `/app` conversation surface |
+| `server/` | provider seam, agent intent parsing, Aegis client, state repositories |
+| `aegis/` | the Aegis Anchor program and its LiteSVM enforcement tests |
+| `signer/` | standalone agent-key signer for production custody |
+| `sdk/` | `@usepraxis/sdk` typed client |
+| `scripts/` | demo, money-shot, and enforcement-check scripts |

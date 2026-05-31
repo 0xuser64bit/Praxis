@@ -1,6 +1,6 @@
 # Praxis Architecture
 
-Updated: 2026-05-30
+Updated: 2026-05-31
 
 Praxis has two parts:
 
@@ -33,7 +33,7 @@ enforces the spending envelope.
 - Derives the live policy PDA from the signed-in wallet address.
 - Persists off-chain threads, proposals, and activity through the configured
   state repository (`postgres` for production, `fs` for local/devnet).
-- Parses intent with Anthropic Messages API or the local deterministic parser.
+- Parses intent with the Google Gemini API or the local deterministic parser.
 - Resolves address-book labels off-chain.
 - Simulates through `AegisClient`.
 - Signs agent actions with the configured scoped agent key.
@@ -111,7 +111,7 @@ Trusted:
 Not trusted for enforcement:
 
 - Prompt text.
-- LLM output.
+- LLM output (Gemini or the deterministic parser).
 - Mock parser.
 - Server policy mirror.
 - Frontend UI state.
@@ -136,10 +136,18 @@ They are not the source of truth for value movement.
 ## Verification Commands
 
 ```bash
-bun run lint
-bun run build
-bun run praxis:moneyshots
-bun run praxis:swapcheck
-bun run praxis:tokencheck
-bun run aegis:test
+bun run lint          # eslint
+bun run test          # TypeScript suite: auth, validation, state, Aegis codec, routes
+bun run build         # production Next.js build
+bun run aegis:test    # rebuild the Anchor program + LiteSVM enforcement gate
+```
+
+Demo / scripted checks against a funded cluster:
+
+```bash
+bun run praxis:demo                  # end-to-end SOL send + over-cap rejection
+bun run praxis:setup-token-accounts  # prepare vault/recipient ATAs for SPL
+bun run praxis:moneyshots            # capture proposal/policy/activity states
+bun run praxis:swapcheck             # assert swaps stay blocked
+bun run praxis:tokencheck            # assert SPL envelope enforcement
 ```

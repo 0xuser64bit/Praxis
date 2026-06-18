@@ -8,6 +8,8 @@ import {
   keypairSigner,
   humanToBaseUnits,
   baseUnitsToHuman,
+  toBaseUnits,
+  fromBaseUnits,
   type FetchLike,
 } from "../src/index";
 
@@ -343,5 +345,25 @@ describe("units", () => {
   test("baseUnitsToHuman handles zero and negative balances", () => {
     expect(baseUnitsToHuman("0", 9)).toBe("0");
     expect(baseUnitsToHuman(-500000000n, 9)).toBe("-0.5");
+  });
+
+  test("humanToBaseUnits handles leading-zero fractions", () => {
+    expect(humanToBaseUnits("0.05", 9)).toBe("50000000");
+  });
+
+  test("toBaseUnits rejects non-integer strings, accepts integers/bigint", () => {
+    expect(toBaseUnits("1000000000")).toBe(1000000000n);
+    expect(toBaseUnits("-5")).toBe(-5n);
+    expect(toBaseUnits(42n)).toBe(42n);
+    expect(() => toBaseUnits("1.5")).toThrow();
+    expect(() => toBaseUnits("0x1f")).toThrow();
+    expect(() => toBaseUnits("abc")).toThrow();
+  });
+
+  test("fromBaseUnits rejects unsafe / float numbers", () => {
+    expect(fromBaseUnits(1000000000)).toBe("1000000000");
+    expect(fromBaseUnits(500000000n)).toBe("500000000");
+    expect(() => fromBaseUnits(1.5)).toThrow();
+    expect(() => fromBaseUnits(Number.MAX_SAFE_INTEGER + 1)).toThrow();
   });
 });

@@ -4,13 +4,32 @@
  * human decimal amounts without floats.
  */
 
-/** Parse a base-unit string (or bigint) into a bigint. */
+/** An optionally-signed decimal integer — the only valid base-unit string. */
+const INTEGER_RE = /^-?\d+$/;
+
+/**
+ * Parse a base-unit string (or bigint) into a bigint. Rejects floats, hex, and
+ * other non-decimal-integer input so the SDK and server agree on what a valid
+ * base-unit string is (mirrors the server's `parseUnits`).
+ */
 export function toBaseUnits(value: string | bigint): bigint {
-  return typeof value === "bigint" ? value : BigInt(value.trim());
+  if (typeof value === "bigint") return value;
+  const trimmed = value.trim();
+  if (!INTEGER_RE.test(trimmed)) {
+    throw new Error(`toBaseUnits: expected an integer base-unit string, got "${value}"`);
+  }
+  return BigInt(trimmed);
 }
 
-/** Serialize a bigint (or number of whole base units) into a base-unit string. */
+/**
+ * Serialize a bigint (or a whole, safe-integer number of base units) into a
+ * base-unit string. A non-integer or unsafe `number` throws rather than
+ * silently losing precision.
+ */
 export function fromBaseUnits(value: bigint | number): string {
+  if (typeof value === "number" && !Number.isSafeInteger(value)) {
+    throw new Error(`fromBaseUnits: number must be a safe integer, got ${value}`);
+  }
   return BigInt(value).toString();
 }
 

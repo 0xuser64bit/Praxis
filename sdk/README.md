@@ -84,13 +84,24 @@ toBaseUnits("500000000");            // 500000000n
 | Auth | `connect()`, `session()`, `logout()` |
 | Conversation | `ask()`, `send()`, `newThread()`, `signProposal()`, `cancelProposal()` |
 | Reads | `getPolicy()`, `getThreads()`, `getThread()`, `getProposal()`, `getActivity()`, `getAddressBook()`, `isThinking()`, `getVersion()` |
-| Policy (server-key) | `bootstrapPolicy()`, `updatePolicy()`, `configureToken()`, `prepareTokenAccounts()`, `revokeAgent()`, `rotateAgent()`, `addToAllowList()`, `removeFromAllowList()` |
+| Policy (server-key) | `bootstrapPolicy()`, `fundVault()`, `withdrawVault()`, `updatePolicy()`, `configureToken()`, `prepareTokenAccounts()`, `revokeAgent()`, `rotateAgent()`, `addToAllowList()`, `removeFromAllowList()`, `deleteAgent()` |
 | Owner (wallet-signed) | `buildOwnerTransaction()`, `submitOwnerTransaction()` |
+
+`session()` returns the current `SessionInfo` or `null` when signed out.
+
+> **Owner wallet-signed path.** `buildOwnerTransaction()` returns an *unsigned*
+> transaction; you sign it with a transaction-capable wallet (a browser wallet
+> adapter or `@solana/web3.js`) and submit the result with
+> `submitOwnerTransaction()`. The SDK's `keypairSigner` signs the sign-in
+> *message* only, not transactions — so a pure-Node owner-action flow must bring
+> its own transaction signer.
 
 ## Errors
 
 Non-2xx responses throw `PraxisApiError` with `.status`, `.type`, and helpers
-`.isAuth` / `.isRateLimited` / `.isInput`.
+`.isAuth` / `.isRateLimited` / `.isInput` / `.isNotFound` / `.isConfig` /
+`.isServer`. A client-side timeout throws `PraxisApiError` with `.isTimeout`
+(and `.status === 0`). SDK-side misconfiguration throws `PraxisConfigError`.
 
 ```ts
 import { PraxisApiError } from "@usepraxis/sdk";

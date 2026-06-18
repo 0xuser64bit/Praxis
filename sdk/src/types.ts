@@ -49,7 +49,10 @@ export interface WalletChallenge {
 
 export interface SessionInfo {
   authenticated: boolean;
+  /** The signed-in wallet (owner). Present whenever `authenticated` is true. */
   walletAddress: Address;
+  /** Unix seconds at which the session expires (from `GET /auth/session`). */
+  expiresAt?: number;
 }
 
 // --- Tokens / address book -------------------------------------------------
@@ -228,6 +231,15 @@ export interface UnsignedOwnerTransaction {
   blockhash: string;
   lastValidBlockHeight: number;
 }
+
+/**
+ * An {@link UnsignedOwnerTransaction} after the owner wallet has signed it — the
+ * base64 `transaction` now carries the owner's signature. This is what you pass
+ * to {@link PraxisClient.submitOwnerTransaction}. Signing a Solana transaction
+ * requires a transaction-capable wallet (browser wallet adapter / `@solana/web3.js`);
+ * the SDK's `keypairSigner` only signs the sign-in *message*, not transactions.
+ */
+export type SignedOwnerTransaction = UnsignedOwnerTransaction;
 
 /** Typed owner action accepted by `POST /owner/build`. */
 export type OwnerAction =

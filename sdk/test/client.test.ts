@@ -175,6 +175,112 @@ describe("error handling", () => {
     const client = new PraxisClient({ baseUrl: BASE, fetch });
     expect(await client.session()).toBeNull();
   });
+
+  // The real server answers 200 { authenticated: false } when signed out — not a 401.
+  test("session() returns null on a 200 { authenticated: false }", async () => {
+    const { fetch } = fakeServer({
+      "GET /auth/session": () => ({ body: { authenticated: false } }),
+    });
+    const client = new PraxisClient({ baseUrl: BASE, fetch });
+    expect(await client.session()).toBeNull();
+  });
+
+  test("session() returns the info when authenticated", async () => {
+    const { fetch } = fakeServer({
+      "GET /auth/session": () => ({ body: { authenticated: true, walletAddress: ADDRESS, expiresAt: 4102444800 } }),
+    });
+    const client = new PraxisClient({ baseUrl: BASE, fetch });
+    const info = await client.session();
+    expect(info?.authenticated).toBe(true);
+    expect(info?.walletAddress).toBe(ADDRESS);
+  });
+
+  test("error helpers classify status codes", async () => {
+    const { fetch } = fakeServer({
+      "GET /get-thread": () => ({ status: 404, body: { error: "unknown thread x", type: "PraxisNotFoundError" } }),
+      "GET /get-policy": () => ({ status: 503, body: { error: "config", type: "PraxisConfigError" } }),
+      "GET /get-version": () => ({ status: 500, body: { error: "boom", type: "Error" } }),
+    });
+    const client = new PraxisClient({ baseUrl: BASE, fetch });
+
+    await client.getThread("x").catch((e: PraxisApiError) => {
+      expect(e.isNotFound).toBe(true);
+      expect(e.isServer).toBe(false);
+    });
+    await client.getPolicy().catch((e: PraxisApiError) => {
+      expect(e.isConfig).toBe(true);
+      expect(e.isServer).toBe(true);
+    });
+    await client.getVersion().catch((e: PraxisApiError) => {
+      expect(e.isServer).toBe(true);
+      expect(e.isConfig).toBe(false);
+    });
+  });
+
+  test("a client-side timeout throws a PraxisApiError with isTimeout", async () => {
+    const hangingFetch: FetchLike = (_input, init = {}) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => {
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    const client = new PraxisClient({ baseUrl: BASE, fetch: hangingFetch, timeoutMs: 10 });
+    try {
+      await client.getPolicy();
+      throw new Error("should have timed out");
+    } catch (err) {
+      expect(err).toBeInstanceOf(PraxisApiError);
+      const e = err as PraxisApiError;
+      expect(e.isTimeout).toBe(true);
+      expect(e.status).toBe(0);
+    }
+  });
+});
+
+describe("mutations", () => {
+  test("fund/withdraw/delete hit their routes with the right bodies", async () => {
+    const ok = () => ({ body: { ok: true } });
+    const { fetch, calls } = fakeServer({
+      "POST /fund-vault": ok,
+      "POST /withdraw-vault": ok,
+      "POST /delete-agent": ok,
+    });
+    const client = new PraxisClient({ baseUrl: BASE, fetch });
+
+    await client.fundVault("1000000000");
+    await client.withdrawVault("500000000");
+    await client.deleteAgent();
+
+    expect(calls.find((c) => c.path === "/fund-vault")?.body).toEqual({ amount: "1000000000" });
+    expect(calls.find((c) => c.path === "/withdraw-vault")?.body).toEqual({ amount: "500000000" });
+    expect(calls.find((c) => c.path === "/delete-agent")?.body).toEqual({});
+  });
+
+  test("submitOwnerTransaction posts the signed tx fields", async () => {
+    const { fetch, calls } = fakeServer({
+      "POST /owner/submit": () => ({ body: { sig: "5xSig" } }),
+    });
+    const client = new PraxisClient({ baseUrl: BASE, fetch });
+    const res = await client.submitOwnerTransaction({
+      transaction: "b64tx",
+      blockhash: "hash",
+      lastValidBlockHeight: 123,
+    });
+    expect(res.sig).toBe("5xSig");
+    expect(calls[0].body).toEqual({ transaction: "b64tx", blockhash: "hash", lastValidBlockHeight: 123 });
+  });
+
+  test("logout posts DELETE and forgets the cookie", async () => {
+    const { fetch, calls } = fakeServer({
+      "DELETE /auth/session": () => ({ body: { authenticated: false } }),
+    });
+    const client = new PraxisClient({ baseUrl: BASE, fetch });
+    await client.logout();
+    expect(calls[0].method).toBe("DELETE");
+    expect(calls[0].path).toBe("/auth/session");
+  });
 });
 
 describe("units", () => {
@@ -189,5 +295,10 @@ describe("units", () => {
 
   test("rejects over-precise amounts", () => {
     expect(() => humanToBaseUnits("0.0000000001", 9)).toThrow();
+  });
+
+  test("baseUnitsToHuman handles zero and negative balances", () => {
+    expect(baseUnitsToHuman("0", 9)).toBe("0");
+    expect(baseUnitsToHuman(-500000000n, 9)).toBe("-0.5");
   });
 });

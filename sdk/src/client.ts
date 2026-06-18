@@ -13,6 +13,7 @@ import type {
   PolicyUpdate,
   PolicyView,
   SessionInfo,
+  SignedOwnerTransaction,
   Thread,
   TokenEnvelopeConfig,
   UnsignedOwnerTransaction,
@@ -84,7 +85,8 @@ export class PraxisClient {
 
   /**
    * Run the wallet-ownership handshake: request a challenge, sign its message,
-   * verify it, and store the resulting session cookie. Idempotent.
+   * verify it, and store the resulting session cookie. Safe to call again to
+   * refresh the session (each call issues a new challenge + cookie).
    */
   async connect(): Promise<SessionInfo> {
     if (!this.signer) {
@@ -101,10 +103,15 @@ export class PraxisClient {
     });
   }
 
-  /** Current session, or `null` if not signed in. */
+  /**
+   * Current session, or `null` if not signed in. The endpoint answers `200`
+   * with `{ authenticated: false }` when signed out, so this normalizes both
+   * that shape and a `401` to `null`.
+   */
   async session(): Promise<SessionInfo | null> {
     try {
-      return await this.get<SessionInfo>("/auth/session");
+      const info = await this.get<SessionInfo>("/auth/session");
+      return info && info.authenticated ? info : null;
     } catch (error) {
       if (error instanceof PraxisApiError && error.isAuth) return null;
       throw error;
@@ -186,6 +193,18 @@ export class PraxisClient {
   bootstrapPolicy(fundLamports?: BaseUnitString): Promise<void> {
     return this.post<void>("/bootstrap-policy", fundLamports ? { fundLamports } : {});
   }
+  /** Deposit SOL (lamports, base-unit string) from the owner into the vault. */
+  fundVault(amount: BaseUnitString): Promise<void> {
+    return this.post<void>("/fund-vault", { amount });
+  }
+  /** Withdraw SOL (lamports, base-unit string) from the vault to the owner. */
+  withdrawVault(amount: BaseUnitString): Promise<void> {
+    return this.post<void>("/withdraw-vault", { amount });
+  }
+  /** Tear the agent down — drain the vault and close the policy. Irreversible. */
+  deleteAgent(): Promise<void> {
+    return this.post<void>("/delete-agent", {});
+  }
   updatePolicy(patch: PolicyUpdate): Promise<void> {
     return this.post<void>("/update-policy", { patch });
   }
@@ -210,12 +229,17 @@ export class PraxisClient {
 
   // --- owner wallet-signed transaction path --------------------------------
 
-  /** Build an unsigned owner transaction for the wallet to sign. */
+  /**
+   * Build an unsigned owner transaction for the wallet to sign. The caller signs
+   * the returned base64 `transaction` with a transaction-capable wallet, then
+   * passes the result to {@link submitOwnerTransaction}. (The SDK's
+   * `keypairSigner` signs sign-in messages only, not transactions.)
+   */
   buildOwnerTransaction(action: OwnerAction): Promise<UnsignedOwnerTransaction> {
     return this.post<UnsignedOwnerTransaction>("/owner/build", { action });
   }
-  /** Submit a wallet-signed owner transaction. */
-  submitOwnerTransaction(signed: UnsignedOwnerTransaction): Promise<{ sig: string }> {
+  /** Submit a wallet-signed owner transaction; resolves with its signature. */
+  submitOwnerTransaction(signed: SignedOwnerTransaction): Promise<{ sig: string }> {
     return this.post<{ sig: string }>("/owner/submit", signed);
   }
 

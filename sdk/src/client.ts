@@ -118,10 +118,19 @@ export class PraxisClient {
     }
   }
 
-  /** Clear the session (server-side cookie + local jar). */
+  /**
+   * Clear the session (server-side cookie + local jar). Idempotent: if there is
+   * no active session, the local jar is still cleared and no error is thrown.
+   */
   async logout(): Promise<void> {
-    await this.request<unknown>("DELETE", "/auth/session");
-    this.sessionCookie = undefined;
+    try {
+      await this.request<unknown>("DELETE", "/auth/session");
+    } catch (error) {
+      // Already signed out (missing / expired session) is a successful logout.
+      if (!(error instanceof PraxisApiError && error.isAuth)) throw error;
+    } finally {
+      this.sessionCookie = undefined;
+    }
   }
 
   // --- conversation --------------------------------------------------------

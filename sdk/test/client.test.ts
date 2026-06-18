@@ -281,6 +281,19 @@ describe("mutations", () => {
     expect(calls[0].method).toBe("DELETE");
     expect(calls[0].path).toBe("/auth/session");
   });
+
+  // Logout must clear the local jar even if the server says we're already out.
+  test("logout is idempotent on 401 and still clears the local cookie", async () => {
+    const { fetch, calls } = fakeServer({
+      "DELETE /auth/session": () => ({ status: 401, body: { error: "no session", type: "PraxisAuthError" } }),
+      "GET /get-policy": () => ({ body: { address: "pda", owner: ADDRESS } }),
+    });
+    const client = new PraxisClient({ baseUrl: BASE, fetch });
+    await client.logout(); // must not throw
+    await client.getPolicy();
+    const policyCall = calls.find((c) => c.path === "/get-policy")!;
+    expect(policyCall.headers["cookie"]).toBeUndefined();
+  });
 });
 
 describe("units", () => {

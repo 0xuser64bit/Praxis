@@ -29,8 +29,14 @@ export interface PraxisClientOptions {
   signer?: PraxisSigner;
   /** Custom fetch (defaults to global fetch). Required in runtimes without one. */
   fetch?: FetchLike;
-  /** Per-request timeout in ms (default 20_000). */
+  /** Per-request timeout in ms for reads/mutations (default 20_000). */
   timeoutMs?: number;
+  /**
+   * Per-request timeout in ms for agent conversation turns (`send`/`ask`), which
+   * block on the full LLM round-trip (default 60_000). Effective value is never
+   * below `timeoutMs`.
+   */
+  agentTimeoutMs?: number;
 }
 
 /** Result of {@link PraxisClient.ask} — the agent's reply, distilled. */
@@ -61,6 +67,7 @@ export class PraxisClient {
   private readonly signer?: PraxisSigner;
   private readonly fetchImpl: FetchLike;
   private readonly timeoutMs: number;
+  private readonly agentTimeoutMs: number;
   /** Manual cookie jar — Node's fetch does not persist Set-Cookie across calls. */
   private sessionCookie?: string;
 
@@ -74,6 +81,7 @@ export class PraxisClient {
     }
     this.fetchImpl = resolvedFetch;
     this.timeoutMs = options.timeoutMs ?? 20_000;
+    this.agentTimeoutMs = Math.max(options.agentTimeoutMs ?? 60_000, this.timeoutMs);
   }
 
   // --- auth ----------------------------------------------------------------
@@ -137,7 +145,9 @@ export class PraxisClient {
 
   /** Send a line to the agent. Creates a thread when `threadId` is omitted. */
   send(text: string, threadId: string | null = null): Promise<{ threadId: string }> {
-    return this.post<{ threadId: string }>("/send", { text, threadId });
+    // Conversation turns block on the agent's LLM round-trip — give them the
+    // longer agent budget rather than the shorter read/mutation timeout.
+    return this.post<{ threadId: string }>("/send", { text, threadId }, this.agentTimeoutMs);
   }
 
   /**
@@ -258,14 +268,14 @@ export class PraxisClient {
     return this.request<T>("GET", path, { query });
   }
 
-  private post<T>(path: string, body: unknown): Promise<T> {
-    return this.request<T>("POST", path, { body });
+  private post<T>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
+    return this.request<T>("POST", path, { body, timeoutMs });
   }
 
   private async request<T>(
     method: string,
     path: string,
-    opts: { body?: unknown; query?: Record<string, string> } = {},
+    opts: { body?: unknown; query?: Record<string, string>; timeoutMs?: number } = {},
   ): Promise<T> {
     const url = new URL(this.baseUrl + API_PREFIX + path);
     for (const [k, v] of Object.entries(opts.query ?? {})) url.searchParams.set(k, v);
@@ -274,8 +284,9 @@ export class PraxisClient {
     if (opts.body !== undefined) headers["content-type"] = "application/json";
     if (this.sessionCookie) headers["cookie"] = this.sessionCookie;
 
+    const timeoutMs = opts.timeoutMs ?? this.timeoutMs;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     let res: Response;
     try {
       res = await this.fetchImpl(url.toString(), {
@@ -288,7 +299,7 @@ export class PraxisClient {
       } as RequestInit);
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
-        throw new PraxisApiError(0, "TimeoutError", `Praxis request timed out after ${this.timeoutMs}ms`, {
+        throw new PraxisApiError(0, "TimeoutError", `Praxis request timed out after ${timeoutMs}ms`, {
           cause: error,
         });
       }

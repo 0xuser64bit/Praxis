@@ -233,15 +233,16 @@ describe("error handling", () => {
     }
   });
 
-  test("a client-side timeout throws a PraxisApiError with isTimeout", async () => {
-    const hangingFetch: FetchLike = (_input, init = {}) =>
-      new Promise((_resolve, reject) => {
-        init.signal?.addEventListener("abort", () => {
-          const err = new Error("aborted");
-          err.name = "AbortError";
-          reject(err);
-        });
+  const hangingFetch: FetchLike = (_input, init = {}) =>
+    new Promise((_resolve, reject) => {
+      init.signal?.addEventListener("abort", () => {
+        const err = new Error("aborted");
+        err.name = "AbortError";
+        reject(err);
       });
+    });
+
+  test("a client-side timeout throws a PraxisApiError with isTimeout", async () => {
     const client = new PraxisClient({ baseUrl: BASE, fetch: hangingFetch, timeoutMs: 10 });
     try {
       await client.getPolicy();
@@ -251,6 +252,19 @@ describe("error handling", () => {
       const e = err as PraxisApiError;
       expect(e.isTimeout).toBe(true);
       expect(e.status).toBe(0);
+      expect(e.message).toContain("10ms");
+    }
+  });
+
+  test("send() uses the longer agent timeout budget, not the read timeout", async () => {
+    const client = new PraxisClient({ baseUrl: BASE, fetch: hangingFetch, timeoutMs: 5, agentTimeoutMs: 30 });
+    try {
+      await client.send("hello");
+      throw new Error("should have timed out");
+    } catch (err) {
+      const e = err as PraxisApiError;
+      expect(e.isTimeout).toBe(true);
+      expect(e.message).toContain("30ms"); // agentTimeoutMs, not timeoutMs (5)
     }
   });
 });

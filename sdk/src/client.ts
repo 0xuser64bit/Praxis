@@ -288,9 +288,15 @@ export class PraxisClient {
       } as RequestInit);
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
-        throw new PraxisApiError(0, "TimeoutError", `Praxis request timed out after ${this.timeoutMs}ms`);
+        throw new PraxisApiError(0, "TimeoutError", `Praxis request timed out after ${this.timeoutMs}ms`, {
+          cause: error,
+        });
       }
-      throw error;
+      if (error instanceof PraxisApiError) throw error;
+      // Connection-level failures (DNS, ECONNREFUSED, TLS) surface uniformly as
+      // a PraxisApiError so callers have a single error type to catch.
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new PraxisApiError(0, "NetworkError", `Praxis request failed: ${detail}`, { cause: error });
     } finally {
       clearTimeout(timer);
     }

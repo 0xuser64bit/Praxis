@@ -217,6 +217,22 @@ describe("error handling", () => {
     });
   });
 
+  test("wraps connection failures as PraxisApiError(NetworkError) with a cause", async () => {
+    const original = new TypeError("fetch failed");
+    const brokenFetch: FetchLike = () => Promise.reject(original);
+    const client = new PraxisClient({ baseUrl: BASE, fetch: brokenFetch });
+    try {
+      await client.getPolicy();
+      throw new Error("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(PraxisApiError);
+      const e = err as PraxisApiError;
+      expect(e.isNetwork).toBe(true);
+      expect(e.status).toBe(0);
+      expect(e.cause).toBe(original);
+    }
+  });
+
   test("a client-side timeout throws a PraxisApiError with isTimeout", async () => {
     const hangingFetch: FetchLike = (_input, init = {}) =>
       new Promise((_resolve, reject) => {

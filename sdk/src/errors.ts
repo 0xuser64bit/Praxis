@@ -38,6 +38,10 @@ export class PraxisApiError extends Error {
   get isTimeout(): boolean {
     return this.status === 0 && this.type === "TimeoutError";
   }
+  /** A connection-level failure (DNS, refused, TLS) before any HTTP response. */
+  get isNetwork(): boolean {
+    return this.status === 0 && this.type === "NetworkError";
+  }
   /** Any server-side failure (HTTP >= 500). */
   get isServer(): boolean {
     return this.status >= 500;

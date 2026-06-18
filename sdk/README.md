@@ -100,8 +100,9 @@ toBaseUnits("500000000");            // 500000000n
 
 Non-2xx responses throw `PraxisApiError` with `.status`, `.type`, and helpers
 `.isAuth` / `.isRateLimited` / `.isInput` / `.isNotFound` / `.isConfig` /
-`.isServer`. A client-side timeout throws `PraxisApiError` with `.isTimeout`
-(and `.status === 0`). SDK-side misconfiguration throws `PraxisConfigError`.
+`.isServer`. A client-side timeout or connection failure throws
+`PraxisApiError` with `.isTimeout` / `.isNetwork` (and `.status === 0`, with the
+original error on `.cause`). SDK-side misconfiguration throws `PraxisConfigError`.
 
 ```ts
 import { PraxisApiError } from "@usepraxis/sdk";

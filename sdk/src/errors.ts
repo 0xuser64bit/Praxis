@@ -8,8 +8,8 @@ export class PraxisApiError extends Error {
   /** The backend error class name, e.g. "PraxisAuthError", "PraxisRateLimitError". */
   readonly type: string;
 
-  constructor(status: number, type: string, message: string) {
-    super(message);
+  constructor(status: number, type: string, message: string, options?: { cause?: unknown }) {
+    super(message, options);
     this.name = "PraxisApiError";
     this.status = status;
     this.type = type;
@@ -46,8 +46,8 @@ export class PraxisApiError extends Error {
 
 /** Thrown for SDK-side misconfiguration (no fetch, no signer, bad key, …). */
 export class PraxisConfigError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
     this.name = "PraxisConfigError";
     Object.setPrototypeOf(this, PraxisConfigError.prototype);
   }

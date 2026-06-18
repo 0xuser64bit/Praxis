@@ -71,6 +71,15 @@ describe("keypairSigner", () => {
     const signer = keypairSigner(bs58.encode(KP.secretKey));
     expect(signer.address).toBe(ADDRESS);
   });
+
+  test("accepts a valid number[] secret key", () => {
+    const signer = keypairSigner(Array.from(KP.secretKey));
+    expect(signer.address).toBe(ADDRESS);
+  });
+
+  test("rejects a number[] with out-of-range bytes", () => {
+    expect(() => keypairSigner([256, -1, 1.5])).toThrow(/byte values/);
+  });
 });
 
 describe("connect()", () => {

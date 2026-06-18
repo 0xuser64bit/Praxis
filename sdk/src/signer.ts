@@ -50,6 +50,9 @@ function normalizeSecret(secret: SecretKeyInput): Uint8Array {
       throw new PraxisConfigError("secret key string must be base58-encoded");
     }
   } else if (Array.isArray(secret)) {
+    if (!secret.every((b) => Number.isInteger(b) && b >= 0 && b <= 255)) {
+      throw new PraxisConfigError("secret key array must contain only byte values (integers 0–255)");
+    }
     bytes = Uint8Array.from(secret);
   } else {
     bytes = secret;

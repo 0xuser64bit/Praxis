@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Keypair, PublicKey } from "@solana/web3.js";
 
 import {
+  assertSharedAgentKeySafe,
   configForWalletOwner,
   getServerConfig,
   requireAgentKeypair,
@@ -9,6 +10,7 @@ import {
   requirePolicyAddress,
   resetConfigForTests,
   validatePublicKey,
+  type PraxisServerConfig,
 } from "../env";
 import { findPolicyPda } from "../aegis/pdas";
 
@@ -27,6 +29,8 @@ const ENV_KEYS = [
   "PRAXIS_TOKENS",
   "SOLANA_COMMITMENT",
   "NODE_ENV",
+  "PRAXIS_ALLOW_SHARED_AGENT_KEY",
+  "PRAXIS_AGENT_SIGNER_URL",
 ];
 
 let saved: Record<string, string | undefined>;
@@ -124,5 +128,52 @@ describe("configForWalletOwner", () => {
     const scoped = configForWalletOwner(wallet, base);
     expect(scoped.ownerAddress?.equals(wallet)).toBe(true);
     expect(scoped.policyAddress?.equals(findPolicyPda(wallet, base.programId))).toBe(true);
+  });
+});
+
+describe("assertSharedAgentKeySafe", () => {
+  const configuredOwner = Keypair.generate();
+  const stranger = Keypair.generate().publicKey.toBase58();
+  // Only `agentKeypair` and `ownerAddress` are read by the guard.
+  const base = {
+    agentKeypair: Keypair.generate(),
+    ownerAddress: configuredOwner.publicKey,
+  } as unknown as PraxisServerConfig;
+
+  const setProd = () => {
+    (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+  };
+
+  test("allows any wallet outside production", () => {
+    (process.env as Record<string, string | undefined>).NODE_ENV = "development";
+    expect(() => assertSharedAgentKeySafe(stranger, base)).not.toThrow();
+  });
+
+  test("refuses a second wallet under a shared key in production", () => {
+    setProd();
+    expect(() => assertSharedAgentKeySafe(stranger, base)).toThrow(/shared agent key in production/);
+  });
+
+  test("allows the single configured owner in production", () => {
+    setProd();
+    expect(() => assertSharedAgentKeySafe(configuredOwner.publicKey.toBase58(), base)).not.toThrow();
+  });
+
+  test("allows any wallet when the shared-key model is explicitly acknowledged", () => {
+    setProd();
+    process.env.PRAXIS_ALLOW_SHARED_AGENT_KEY = "1";
+    expect(() => assertSharedAgentKeySafe(stranger, base)).not.toThrow();
+  });
+
+  test("allows any wallet under remote agent custody", () => {
+    setProd();
+    process.env.PRAXIS_AGENT_SIGNER_URL = "https://signer.example";
+    expect(() => assertSharedAgentKeySafe(stranger, base)).not.toThrow();
+  });
+
+  test("allows any wallet when no shared agent key is configured", () => {
+    setProd();
+    const keyless = { ownerAddress: configuredOwner.publicKey } as unknown as PraxisServerConfig;
+    expect(() => assertSharedAgentKeySafe(stranger, keyless)).not.toThrow();
   });
 });

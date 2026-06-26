@@ -34,6 +34,7 @@ import {
 import { researchToken } from "../agent/research";
 import { getConnection, getResearchConnection } from "../aegis/client";
 import {
+  assertSharedAgentKeySafe,
   configForWalletOwner,
   getServerConfig,
   validatePublicKey,
@@ -80,6 +81,9 @@ export async function getPraxisServerProvider(walletAddress?: string): Promise<P
 
   if (walletAddress) {
     const normalized = validatePublicKey(walletAddress, "walletAddress").toBase58();
+    // Fail closed before doing any work if a shared agent key would span owners
+    // in production without an explicit acknowledgement.
+    assertSharedAgentKeySafe(normalized);
     const config = configForWalletOwner(new PublicKey(normalized));
     const stored = await repository.load(ownerKeyForConfig(config));
     return new PraxisServerProvider(config, new AegisClient(config), stored);

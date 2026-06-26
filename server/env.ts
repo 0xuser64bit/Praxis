@@ -141,6 +141,42 @@ export function configForWalletOwner(
   };
 }
 
+/**
+ * Guard the shared-agent-key footgun in multi-tenant production.
+ *
+ * Today the backend holds ONE agent key and registers it as the agent authority
+ * on every wallet's policy, so a single key compromise can move funds out of
+ * every vault it serves (each bounded by that policy's own caps). That is fine
+ * for a single owner or a dev/devnet deploy, but serving many distinct wallets
+ * from one shared key in production is a deliberate risk — it must be
+ * acknowledged, never the silent default.
+ *
+ * Allowed without acknowledgement: any non-production env, remote agent custody
+ * (`PRAXIS_AGENT_SIGNER_URL`), no agent key configured at all, or the single
+ * configured owner (`AEGIS_OWNER_ADDRESS` / owner keypair) signing in. Anything
+ * else in production requires an explicit `PRAXIS_ALLOW_SHARED_AGENT_KEY=1`.
+ */
+export function assertSharedAgentKeySafe(
+  ownerAddress: string,
+  base: PraxisServerConfig = getServerConfig(),
+): void {
+  if (process.env.NODE_ENV !== "production") return;
+  if (process.env.PRAXIS_ALLOW_SHARED_AGENT_KEY === "1") return;
+  if (process.env.PRAXIS_AGENT_SIGNER_URL?.trim()) return; // remote custody: key isn't in-process
+  if (!base.agentKeypair) return; // no shared local key to misuse
+  // The one configured owner signing into its own policy is single-tenant — safe.
+  if (base.ownerAddress && base.ownerAddress.toBase58() === ownerAddress) return;
+
+  throw new PraxisConfigError(
+    "Refusing to serve this wallet with a shared agent key in production. The configured " +
+      "agent key is the on-chain agent authority on every policy it is registered to, so a " +
+      "single key compromise can drain every vault it serves. Use remote agent custody " +
+      "(PRAXIS_AGENT_SIGNER_URL), restrict the deployment to the single configured owner " +
+      "(AEGIS_OWNER_ADDRESS), or set PRAXIS_ALLOW_SHARED_AGENT_KEY=1 to explicitly accept the " +
+      "shared-key model.",
+  );
+}
+
 export function requirePolicyAddress(config = getServerConfig()): PublicKey {
   if (!config.policyAddress) {
     throw new PraxisConfigError(

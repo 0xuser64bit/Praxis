@@ -105,7 +105,6 @@ export class PraxisServerProvider implements PraxisProvider {
   private readonly repository: StateRepository;
   private readonly listeners = new Set<() => void>();
   private state: StoreState;
-  private version = 0;
 
   constructor(
     config = getServerConfig(),
@@ -182,7 +181,19 @@ export class PraxisServerProvider implements PraxisProvider {
   getAddressBook = (): AddressBookEntry[] => this.addressBook.all();
   isThinking = (threadId: string): boolean => Boolean(this.state.thinking[threadId]);
   getConnectionState = () => ({ mode: "api" as const, phase: "ready" as const });
-  getVersion = (): number => this.version;
+  /**
+   * A durable state cursor: the newest mutation timestamp across persisted
+   * threads and activity (unix seconds). The provider is reconstructed per
+   * request, so an in-memory counter would always read ~0; deriving the cursor
+   * from state instead makes it stable across serverless instances and lets a
+   * polling client (or the SDK) detect "something changed at or after T".
+   */
+  getVersion = (): number => {
+    let cursor = 0;
+    for (const thread of this.state.threads) cursor = Math.max(cursor, thread.updatedAt);
+    for (const entry of this.state.activity) cursor = Math.max(cursor, entry.ts);
+    return cursor;
+  };
 
   // --- conversation ---
   newThread = (preferredId?: string): string => {
@@ -869,7 +880,6 @@ export class PraxisServerProvider implements PraxisProvider {
   }
 
   private notify() {
-    this.version++;
     for (const listener of this.listeners) listener();
   }
 

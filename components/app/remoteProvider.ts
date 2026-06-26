@@ -68,6 +68,30 @@ export class RemotePraxisProvider implements PraxisProvider {
 
   constructor() {
     void this.refreshAll();
+    this.startBackgroundRefresh();
+  }
+
+  /**
+   * Keep the app live without a websocket: while the tab is visible, re-pull
+   * policy + activity on an interval so a confirmation that lands after the
+   * optimistic refresh (or any out-of-band change) actually surfaces. Refresh is
+   * five flat parallel reads, so this is cheap and well under the read limit.
+   * Background ticks fail silently — a transient blip must not tear the app down
+   * to an error screen mid-flow.
+   */
+  private startBackgroundRefresh() {
+    if (typeof document === "undefined") return;
+    const REFRESH_MS = 12_000;
+    setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (this.pendingSends.size > 0) return; // never race an in-flight send
+      void this.refreshAll({ background: true });
+    }, REFRESH_MS);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && this.pendingSends.size === 0) {
+        void this.refreshAll({ background: true });
+      }
+    });
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -264,7 +288,7 @@ export class RemotePraxisProvider implements PraxisProvider {
     );
   }
 
-  private async refreshAll() {
+  private async refreshAll(opts: { background?: boolean } = {}) {
     const token = ++this.refreshToken;
     try {
       // Five parallel reads, flat — regardless of conversation length. Proposals
@@ -296,7 +320,9 @@ export class RemotePraxisProvider implements PraxisProvider {
       };
       this.notify();
     } catch (error) {
-      if (token === this.refreshToken) this.setConnectionError(error);
+      // Foreground loads (initial mount, post-mutation) surface the error;
+      // background polls keep the last good state instead of flashing an error.
+      if (token === this.refreshToken && !opts.background) this.setConnectionError(error);
     }
   }
 

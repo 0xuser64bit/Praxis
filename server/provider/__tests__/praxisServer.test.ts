@@ -166,6 +166,20 @@ describe("send → sign flow", () => {
   });
 });
 
+describe("getVersion cursor", () => {
+  test("reflects the newest thread/activity timestamp and advances after a send", async () => {
+    const { provider } = build();
+    // Fresh provider: cursor is the welcome thread's updatedAt (a recent unix ts).
+    const before = provider.getVersion();
+    expect(before).toBeGreaterThan(0);
+
+    await provider.send(null, "send 0.5 sol to maya");
+    // A send writes a user + agent message and bumps thread.updatedAt, so the
+    // durable cursor must not regress (and tracks the latest mutation).
+    expect(provider.getVersion()).toBeGreaterThanOrEqual(before);
+  });
+});
+
 describe("swap stub", () => {
   test("a swap is always blocked and never reaches an executor", async () => {
     const policy = policyFixture({ allowedPrograms: [], allowedMints: [] });

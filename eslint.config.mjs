@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Build output and self-contained packages with their own toolchains. The
+    // SDK ships via tsup with its own tsconfig (and tsconfig excludes it too),
+    // so the app lint should not reach into its compiled dist or tests.
+    "**/dist/**",
+    "coverage/**",
+    "sdk/**",
   ]),
 ]);
 

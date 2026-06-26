@@ -32,7 +32,7 @@ import {
   type ParsedIntent,
 } from "../agent/intent";
 import { researchToken } from "../agent/research";
-import { getConnection, getResearchConnection } from "../aegis/client";
+import { getResearchConnection } from "../aegis/client";
 import {
   assertSharedAgentKeySafe,
   configForWalletOwner,

@@ -9,7 +9,6 @@ import { Fragment } from "react";
 
 import { Button } from "@/components/praxis/Button";
 import { Container } from "@/components/praxis/Container";
-import { Eyebrow } from "@/components/praxis/Eyebrow";
 
 const META_ITEMS = [
   { Icon: IconShieldLock, label: "Caps enforced on-chain" },
@@ -68,14 +67,5 @@ export function Hero() {
         </div>
       </Container>
     </section>
-  );
-}
-
-function PulseDot() {
-  return (
-    <span
-      aria-hidden
-      className="h-1.5 w-1.5 rounded-full bg-[var(--success)] [animation:pulse_2s_infinite]"
-    />
   );
 }

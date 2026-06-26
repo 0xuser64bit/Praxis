@@ -83,7 +83,7 @@ describe("getServerConfig", () => {
   });
 
   test("does not load demo contacts by default in production", () => {
-    process.env.NODE_ENV = "production";
+    (process.env as Record<string, string | undefined>).NODE_ENV = "production";
     resetConfigForTests();
     expect(getServerConfig().addressBook).toEqual([]);
 

@@ -28,6 +28,7 @@ const emptyState = (over: Partial<StoredProviderState> = {}): StoredProviderStat
   threads: [],
   proposals: {},
   activity: [],
+  contacts: [],
   ...over,
 });
 
@@ -190,5 +191,26 @@ describe("getStateRepository", () => {
     process.env.PRAXIS_STATE_BACKEND = "mongo";
     resetStateRepositoryForTests();
     expect(() => getStateRepository()).toThrow(/must be "fs" or "postgres"/);
+  });
+
+  test("refuses to silently default to fs in production without a database url", () => {
+    const env = process.env as Record<string, string | undefined>;
+    const prevNodeEnv = env.NODE_ENV;
+    delete process.env.PRAXIS_STATE_BACKEND;
+    delete process.env.DATABASE_URL;
+    delete process.env.POSTGRES_URL;
+    delete process.env.PRAXIS_DATABASE_URL;
+    env.NODE_ENV = "production";
+    try {
+      resetStateRepositoryForTests();
+      expect(() => getStateRepository()).toThrow(/No durable state backend/);
+
+      // Explicit fs opt-in is still honored in production.
+      process.env.PRAXIS_STATE_BACKEND = "fs";
+      resetStateRepositoryForTests();
+      expect(getStateRepository()).toBeInstanceOf(FsStateRepository);
+    } finally {
+      env.NODE_ENV = prevNodeEnv;
+    }
   });
 });

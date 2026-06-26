@@ -38,12 +38,25 @@ let cached: StateRepository | undefined;
 
 function resolveBackend(): Backend {
   const raw = process.env.PRAXIS_STATE_BACKEND?.trim().toLowerCase();
-  if (!raw) {
-    // Default to Postgres when a connection string is present, else filesystem.
-    return databaseUrl() ? "postgres" : "fs";
-  }
   if (raw === "fs" || raw === "postgres") return raw;
-  throw new PraxisConfigError(`PRAXIS_STATE_BACKEND must be "fs" or "postgres" (got "${raw}").`);
+  if (raw) {
+    throw new PraxisConfigError(`PRAXIS_STATE_BACKEND must be "fs" or "postgres" (got "${raw}").`);
+  }
+
+  // No explicit backend chosen: prefer Postgres when a connection string exists.
+  if (databaseUrl()) return "postgres";
+
+  // Filesystem state is per-instance — on serverless it silently loses a wallet's
+  // threads/activity the moment a request lands on a different instance. Refuse
+  // to default into that in production; require either a managed database or an
+  // explicit PRAXIS_STATE_BACKEND=fs that acknowledges single-host durability.
+  if (process.env.NODE_ENV === "production") {
+    throw new PraxisConfigError(
+      "No durable state backend in production: set DATABASE_URL for managed Postgres, " +
+        "or PRAXIS_STATE_BACKEND=fs to explicitly accept single-host filesystem state.",
+    );
+  }
+  return "fs";
 }
 
 export function databaseUrl(): string | undefined {

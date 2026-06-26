@@ -67,6 +67,7 @@ describe("stateStore persistence", () => {
       threads: [threadReferencing("p-keep")],
       proposals: { "p-keep": referenced },
       activity: [activity({ amount: 123_456_789n })],
+      contacts: [],
     });
 
     const loaded = loadProviderState(owner);
@@ -83,6 +84,7 @@ describe("stateStore persistence", () => {
       threads: [threadReferencing("p-keep")],
       proposals: { "p-keep": proposal("p-keep"), "p-orphan": proposal("p-orphan") },
       activity: [],
+      contacts: [],
     });
     const loaded = loadProviderState(owner);
     expect(loaded?.proposals["p-keep"]).toBeDefined();
@@ -98,7 +100,7 @@ describe("stateStore persistence", () => {
       updatedAt: i,
     }));
     const acts = Array.from({ length: 400 }, (_, i) => activity({ id: `a-${i}`, ts: i }));
-    saveProviderState(owner, { threads, proposals: {}, activity: acts });
+    saveProviderState(owner, { threads, proposals: {}, activity: acts, contacts: [] });
 
     const loaded = loadProviderState(owner);
     expect(loaded?.threads).toHaveLength(50);
@@ -113,7 +115,7 @@ describe("stateStore persistence", () => {
 
   test("ignores a file with a mismatched version", () => {
     const owner = randomAddress();
-    saveProviderState(owner, { threads: [], proposals: {}, activity: [] });
+    saveProviderState(owner, { threads: [], proposals: {}, activity: [], contacts: [] });
     const file = join(dir, `${owner}.json`);
     writeFileSync(file, JSON.stringify({ version: 99, ownerKey: owner, state: {} }));
     expect(loadProviderState(owner)).toBeUndefined();
@@ -129,7 +131,7 @@ describe("stateStore persistence", () => {
   test("policy fixture stays out of persisted state (policy is chain-sourced)", () => {
     // sanity: saveProviderState only persists threads/proposals/activity.
     const owner = randomAddress();
-    saveProviderState(owner, { threads: [], proposals: {}, activity: [] });
+    saveProviderState(owner, { threads: [], proposals: {}, activity: [], contacts: [] });
     const loaded = loadProviderState(owner) as unknown as Record<string, unknown>;
     expect(loaded.policy).toBeUndefined();
     expect(policyFixture().address).toBeDefined();

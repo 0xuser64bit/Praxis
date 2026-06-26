@@ -267,28 +267,23 @@ export class RemotePraxisProvider implements PraxisProvider {
   private async refreshAll() {
     const token = ++this.refreshToken;
     try {
-      const [threads, policy, activity, addressBook] = await Promise.all([
+      // Five parallel reads, flat — regardless of conversation length. Proposals
+      // come back as a single batch (`get-proposals`) rather than one request per
+      // proposal block, which previously made refresh O(proposals) sequential
+      // round-trips on every mutation and could trip the read rate limit.
+      const [threads, policy, activity, addressBook, proposalList] = await Promise.all([
         this.get<Thread[]>("/api/praxis/get-threads"),
         this.get<PolicyView>("/api/praxis/get-policy"),
         this.get<ActivityEntry[]>("/api/praxis/get-activity"),
         this.get<AddressBookEntry[]>("/api/praxis/get-address-book"),
+        this.get<ActionProposal[]>("/api/praxis/get-proposals"),
       ]);
       // A newer refresh started while we were awaiting — its snapshot is fresher,
       // so discard ours rather than clobber it with stale data.
       if (token !== this.refreshToken) return;
 
       const proposals: Record<string, ActionProposal> = {};
-      for (const thread of threads) {
-        for (const message of thread.messages) {
-          if (message.role !== "agent") continue;
-          for (const block of message.blocks) {
-            if (block.type !== "proposal") continue;
-            const proposal = await this.get<ActionProposal>(`/api/praxis/get-proposal?id=${encodeURIComponent(block.proposalId)}`);
-            proposals[proposal.id] = proposal;
-          }
-        }
-      }
-      if (token !== this.refreshToken) return;
+      for (const proposal of proposalList) proposals[proposal.id] = proposal;
 
       this.state = {
         ...this.state,

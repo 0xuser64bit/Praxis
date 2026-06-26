@@ -173,6 +173,7 @@ export class PraxisServerProvider implements PraxisProvider {
   getThreads = (): Thread[] => [...this.state.threads].sort((a, b) => b.updatedAt - a.updatedAt);
   getThread = (id: string): Thread | undefined => this.state.threads.find((thread) => thread.id === id);
   getProposal = (id: string): ActionProposal | undefined => this.state.proposals[id];
+  getAllProposals = (): ActionProposal[] => Object.values(this.state.proposals);
   getPolicy = (): PolicyView => {
     if (!this.state.policy) throw new PraxisNotFoundError("Policy has not been loaded yet.");
     return this.state.policy;

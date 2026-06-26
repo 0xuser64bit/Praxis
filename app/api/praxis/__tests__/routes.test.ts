@@ -6,6 +6,7 @@ import { POST as updatePolicy } from "../update-policy/route";
 import { POST as authVerify } from "../auth/verify/route";
 import { GET as getPolicy } from "../get-policy/route";
 import { GET as getProposal } from "../get-proposal/route";
+import { GET as getProposals } from "../get-proposals/route";
 import { GET as getThread } from "../get-thread/route";
 import { POST as sendRoute } from "../send/route";
 import { POST as bootstrapPolicy } from "../bootstrap-policy/route";
@@ -139,6 +140,12 @@ describe("read auth gating", () => {
   test("404 for an unknown thread read", async () => {
     const res = await getThread(authed("/api/praxis/get-thread?id=missing"));
     expect(res.status).toBe(404);
+  });
+
+  test("get-proposals returns a JSON array (empty for a fresh wallet)", async () => {
+    const res = await getProposals(authed("/api/praxis/get-proposals"));
+    expect(res.status).toBe(200);
+    expect(Array.isArray(await res.json())).toBe(true);
   });
 });
 

@@ -783,20 +783,7 @@ export class AegisClient {
     opts: { expectedFeePayer?: PublicKey } = {},
   ): Promise<string> {
     const raw = Buffer.from(input.transaction, "base64");
-    if (opts.expectedFeePayer) {
-      let tx: Transaction;
-      try {
-        tx = Transaction.from(Uint8Array.from(raw));
-      } catch {
-        throw new PraxisInputError("Signed owner transaction must be a valid legacy Solana transaction.");
-      }
-      if (!tx.feePayer?.equals(opts.expectedFeePayer)) {
-        throw new PraxisInputError("Signed owner transaction fee payer does not match the authenticated wallet.");
-      }
-      if (tx.recentBlockhash !== input.blockhash) {
-        throw new PraxisInputError("Signed owner transaction blockhash does not match the unsigned draft.");
-      }
-    }
+    this.assertSubmittableOwnerTransaction(raw, input, opts.expectedFeePayer);
     const sig = await this.conn.sendRawTransaction(raw, {
       preflightCommitment: this.config.commitment,
     });
@@ -808,6 +795,49 @@ export class AegisClient {
       throw new Error(`owner transaction failed: ${JSON.stringify(confirmation.value.err)}`);
     }
     return sig;
+  }
+
+  /**
+   * Gate a wallet-signed owner transaction before the backend relays it. The
+   * owner-action builder ({@link ownerActionInstructions}) only ever emits Aegis
+   * instructions, so a submitted transaction that touches any other program means
+   * the client assembled its own transaction (e.g. a raw SOL transfer) and is
+   * trying to use the backend as an open relay for the authenticated wallet. We
+   * refuse: the backend submits Aegis owner actions, nothing else. The on-chain
+   * `has_one = owner` constraint already binds these to the signer's own policy,
+   * so this closes the relay surface without re-deriving instruction bytes.
+   */
+  private assertSubmittableOwnerTransaction(
+    raw: Buffer,
+    input: UnsignedOwnerTransaction,
+    expectedFeePayer?: PublicKey,
+  ): void {
+    let tx: Transaction;
+    try {
+      tx = Transaction.from(Uint8Array.from(raw));
+    } catch {
+      throw new PraxisInputError("Signed owner transaction must be a valid legacy Solana transaction.");
+    }
+
+    if (tx.instructions.length === 0) {
+      throw new PraxisInputError("Signed owner transaction has no instructions.");
+    }
+    for (const ix of tx.instructions) {
+      if (!ix.programId.equals(this.config.programId)) {
+        throw new PraxisInputError(
+          "Signed owner transaction may only contain Aegis program instructions.",
+        );
+      }
+    }
+
+    if (expectedFeePayer) {
+      if (!tx.feePayer?.equals(expectedFeePayer)) {
+        throw new PraxisInputError("Signed owner transaction fee payer does not match the authenticated wallet.");
+      }
+      if (tx.recentBlockhash !== input.blockhash) {
+        throw new PraxisInputError("Signed owner transaction blockhash does not match the unsigned draft.");
+      }
+    }
   }
 
   private async sendOwnerAction(action: OwnerAction): Promise<string> {

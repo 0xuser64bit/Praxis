@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 
 import { AegisClient } from "../client";
 import { DEFAULT_AEGIS_PROGRAM_ID } from "../constants";
@@ -229,26 +229,66 @@ describe("execute uses the AgentSigner", () => {
 });
 
 describe("submitSignedTransaction", () => {
-  const input = { transaction: "AQID", blockhash: BLOCKHASH, lastValidBlockHeight: 321 };
+  // A real, builder-produced owner draft (all-Aegis instructions) so it passes
+  // the program-allowlist guard and exercises the confirm path.
+  async function aegisOwnerDraft(config = makeConfig()) {
+    const client = new AegisClient(config, fakeConnection());
+    const draft = await client.buildUnsignedOwnerTransaction(config.ownerAddress!, { kind: "revoke" });
+    return { config, draft };
+  }
 
   test("returns the signature on a confirmed transaction", async () => {
-    const client = new AegisClient(makeConfig(), fakeConnection());
-    expect(await client.submitSignedTransaction(input)).toBe("owner-sig");
+    const { config, draft } = await aegisOwnerDraft();
+    const client = new AegisClient(config, fakeConnection());
+    expect(await client.submitSignedTransaction(draft)).toBe("owner-sig");
   });
 
   test("throws when the cluster reports an error", async () => {
+    const { config, draft } = await aegisOwnerDraft();
     const client = new AegisClient(
-      makeConfig(),
+      config,
       fakeConnection({ confirmTransaction: async () => ({ value: { err: { InstructionError: [0, "Custom"] } } }) }),
     );
-    await expect(client.submitSignedTransaction(input)).rejects.toThrow(/owner transaction failed/);
+    await expect(client.submitSignedTransaction(draft)).rejects.toThrow(/owner transaction failed/);
   });
 
-  test("validates the signed transaction shape when an owner is expected", async () => {
+  test("rejects an unparseable transaction", async () => {
     const config = makeConfig();
     const client = new AegisClient(config, fakeConnection());
     await expect(
-      client.submitSignedTransaction(input, { expectedFeePayer: config.ownerAddress }),
+      client.submitSignedTransaction(
+        { transaction: "AQID", blockhash: BLOCKHASH, lastValidBlockHeight: 321 },
+        { expectedFeePayer: config.ownerAddress },
+      ),
     ).rejects.toBeInstanceOf(PraxisInputError);
+  });
+
+  test("rejects a transaction whose fee payer is not the authenticated wallet", async () => {
+    const { config, draft } = await aegisOwnerDraft();
+    const client = new AegisClient(config, fakeConnection());
+    await expect(
+      client.submitSignedTransaction(draft, { expectedFeePayer: Keypair.generate().publicKey }),
+    ).rejects.toThrow(/fee payer does not match/);
+  });
+
+  test("rejects a transaction carrying a non-Aegis instruction (no open relay)", async () => {
+    const config = makeConfig();
+    const wallet = config.ownerAddress!;
+    // A wallet-signed raw SOL transfer — exactly what an attacker would try to
+    // smuggle through the owner-submit relay. It must be refused.
+    const evil = new Transaction({ feePayer: wallet, blockhash: BLOCKHASH, lastValidBlockHeight: 321 }).add(
+      SystemProgram.transfer({ fromPubkey: wallet, toPubkey: Keypair.generate().publicKey, lamports: 1 }),
+    );
+    const client = new AegisClient(config, fakeConnection());
+    await expect(
+      client.submitSignedTransaction(
+        {
+          transaction: evil.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
+          blockhash: BLOCKHASH,
+          lastValidBlockHeight: 321,
+        },
+        { expectedFeePayer: wallet },
+      ),
+    ).rejects.toThrow(/only contain Aegis|may only contain Aegis/);
   });
 });

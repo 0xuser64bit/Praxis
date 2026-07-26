@@ -5,6 +5,7 @@ import { ApiAuthGate } from "./AuthGate";
 import { ProviderProvider } from "./ProviderContext";
 import { useIsClient } from "./lib/useNow";
 import { resolveProviderMode } from "./providerMode";
+import { PraxisLogoMark } from "@/components/praxis/PraxisLogo";
 
 /**
  * Client root for the Praxis product app. Owns the single provider instance.
@@ -19,9 +20,7 @@ export function PraxisApp() {
   if (!isClient) {
     return (
       <div className="flex h-[100dvh] items-center justify-center bg-[var(--bg)]">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--text-primary)] [font-family:var(--font-mono)] text-[16px] font-medium text-[var(--bg)] [animation:pulse_2s_infinite]">
-          P
-        </span>
+        <PraxisLogoMark size={36} className="[animation:pulse_2s_infinite]" />
       </div>
     );
   }

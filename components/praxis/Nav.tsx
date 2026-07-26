@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/praxis/Button";
+import { PraxisLogoMark } from "@/components/praxis/PraxisLogo";
 
 const NAV_LINKS = [
   { href: "#why", label: "Why Praxis" },
@@ -36,12 +37,9 @@ export function Nav() {
       className={`fixed top-0 right-0 left-0 z-[100] border-b-[0.5px] backdrop-blur-[20px] [transition:border-color_0.3s_ease,background_0.3s_ease] ${navBg} ${navBorder}`}
     >
       <div className="mx-auto flex max-w-[1240px] items-center justify-between px-8 py-4">
-        <div className="flex items-center gap-2.5 [font-family:var(--font-serif)] text-[22px] tracking-[-0.02em]">
-          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--text-primary)] [font-family:var(--font-mono)] text-[13px] font-medium text-[var(--bg)]">
-            P
-          </span>
-          <span>Praxis</span>
-          <span className="ml-1 border-l-[0.5px] border-l-[var(--border)] pl-3 [font-family:var(--font-mono)] text-[10px] tracking-[0.14em] text-[var(--text-tertiary)] uppercase">
+        <div className="flex items-center gap-3">
+          <PraxisLogoMark size={28} />
+          <span className="border-l-[0.5px] border-l-[var(--border)] pl-3 [font-family:var(--font-mono)] text-[10px] tracking-[0.14em] text-[var(--text-tertiary)] uppercase">
             v0.1 · sol
           </span>
         </div>

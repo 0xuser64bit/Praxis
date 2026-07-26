@@ -1,4 +1,5 @@
 import { Container } from "@/components/praxis/Container";
+import { PraxisLogoMark } from "@/components/praxis/PraxisLogo";
 
 type FooterColumn = {
   title: string;
@@ -51,9 +52,7 @@ export function Footer() {
         <div className="mb-[60px] grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-10 max-[960px]:grid-cols-2">
           <div>
             <div className="mb-4 flex items-center gap-2.5 [font-family:var(--font-serif)] text-[22px] tracking-[-0.02em]">
-              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--text-primary)] [font-family:var(--font-mono)] text-[13px] font-medium text-[var(--bg)]">
-                P
-              </span>
+              <PraxisLogoMark size={24} />
               <span>Praxis</span>
             </div>
             <p className="max-w-[260px] [font-family:var(--font-serif)] text-[18px] leading-[1.4] text-[var(--text-secondary)] italic">

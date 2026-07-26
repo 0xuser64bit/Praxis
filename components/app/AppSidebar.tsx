@@ -10,6 +10,7 @@ import {
 
 import { Dot } from "./ui";
 import { formatSol } from "./lib/units";
+import { PraxisLogoMark } from "@/components/praxis/PraxisLogo";
 import type { View } from "./AppShell";
 
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
@@ -40,9 +41,7 @@ export function AppSidebar({
     <aside className="flex w-[248px] shrink-0 flex-col bg-[var(--bg-elevated)] px-3.5 py-[18px] [border-right:0.5px_solid_var(--border)] max-[760px]:hidden">
       {/* brand */}
       <div className="mb-5 flex items-center gap-2 px-1.5 py-1">
-        <span className="flex h-[22px] w-[22px] items-center justify-center rounded-md bg-[var(--text-primary)] [font-family:var(--font-mono)] text-[12px] font-medium text-[var(--bg)]">
-          P
-        </span>
+        <PraxisLogoMark size={22} />
         <span className="[font-family:var(--font-serif)] text-[18px]">Praxis</span>
         <span className="ml-auto [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
           v0.1

@@ -16,6 +16,7 @@ import {
 
 import {
   AEGIS_OPERATIONAL_ERROR,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
   JUPITER_PROGRAM_ID,
   reasonFromAegisErrorCode,
   SYSTEM_PROGRAM_ID,
@@ -67,7 +68,7 @@ import { formatSol, formatUnits, parseHumanUnits, SOL_DECIMALS } from "../units"
 /**
  * An owner/admin policy action. Built server-side as an unsigned transaction the
  * owner WALLET signs (production custody), or sent directly by the backend owner
- * keypair (local/devnet fallback). Token setup actions stay on the keypair path.
+ * keypair (local/devnet fallback).
  */
 export type OwnerAction =
   | { kind: "bootstrapPolicy"; fundLamports?: bigint }
@@ -77,7 +78,14 @@ export type OwnerAction =
   | { kind: "updatePolicy"; patch: PolicyUpdate }
   | { kind: "allowList"; listKind: AllowListKind; address: string; mode: "add" | "remove" }
   | { kind: "revoke" }
-  | { kind: "rotate" };
+  | { kind: "rotate" }
+  | {
+      kind: "configureToken";
+      tokenMint: string;
+      tokenMaxPerTx: bigint;
+      tokenDailyLimit: bigint;
+    }
+  | { kind: "prepareTokenAccounts"; recipientAddresses?: string[] };
 
 /** A serialized unsigned owner transaction plus the blockhash to confirm it. */
 export interface UnsignedOwnerTransaction {
@@ -724,6 +732,50 @@ export class AegisClient {
       ];
     }
 
+    if (action.kind === "configureToken") {
+      if (action.tokenMaxPerTx <= 0n || action.tokenDailyLimit <= 0n) {
+        throw new PraxisInputError("Token caps must be greater than zero.");
+      }
+      if (action.tokenMaxPerTx > action.tokenDailyLimit) {
+        throw new PraxisInputError("Token per-transaction cap cannot exceed the token daily limit.");
+      }
+      const mint = validatePublicKey(action.tokenMint);
+      const configure = buildConfigureTokenIx(
+        { ...this.addresses({ policy }), owner: ownerPubkey },
+        {
+          tokenMint: mint,
+          tokenMaxPerTx: action.tokenMaxPerTx,
+          tokenDailyLimit: action.tokenDailyLimit,
+        },
+      );
+      // Also create the vault ATA when missing so the agent can move tokens
+      // immediately after the owner configures the envelope.
+      const vault = findVaultPda(policy, this.config.programId);
+      const ataIxs = await this.missingAtaCreateInstructions(ownerPubkey, mint, [vault]);
+      return [configure, ...ataIxs];
+    }
+
+    if (action.kind === "prepareTokenAccounts") {
+      const mintBase58 = current.tokenMint;
+      if (mintBase58 === PublicKey.default.toBase58()) {
+        throw new PraxisInputError("Configure the SPL token envelope before preparing token accounts.");
+      }
+      const mint = new PublicKey(mintBase58);
+      const vault = findVaultPda(policy, this.config.programId);
+      const recipients = uniquePublicKeys(
+        (action.recipientAddresses ?? []).map((address) => validatePublicKey(address)),
+      );
+      const ixs = await this.missingAtaCreateInstructions(ownerPubkey, mint, [vault, ...recipients]);
+      if (ixs.length === 0) {
+        throw new PraxisInputError("All required token accounts already exist.");
+      }
+      return ixs;
+    }
+
+    if (action.kind !== "allowList") {
+      throw new PraxisInputError(`Unsupported owner action kind: ${(action as { kind: string }).kind}`);
+    }
+
     const normalizedAddress = validatePublicKey(action.address).toBase58();
     const field =
       action.listKind === "programs"
@@ -743,6 +795,37 @@ export class AegisClient {
         allowedMints: field === "allowedMints" ? [...next] : current.allowedMints,
       }),
     ];
+  }
+
+  /**
+   * Idempotent ATA creates for any of `accountOwners` whose ATA is missing.
+   * Fee payer is the owner wallet (or backend owner key).
+   */
+  private async missingAtaCreateInstructions(
+    payer: PublicKey,
+    mint: PublicKey,
+    accountOwners: PublicKey[],
+  ): Promise<TransactionInstruction[]> {
+    const targets = uniquePublicKeys(accountOwners).map((owner) => ({
+      owner,
+      ata: findAssociatedTokenAddress(owner, mint),
+    }));
+    if (targets.length === 0) return [];
+
+    const infos = await this.conn.getMultipleAccountsInfo(
+      targets.map((target) => target.ata),
+      this.config.commitment,
+    );
+    return targets
+      .filter((_, index) => !infos[index])
+      .map((target) =>
+        buildCreateAssociatedTokenAccountIdempotentIx({
+          payer,
+          owner: target.owner,
+          mint,
+          ata: target.ata,
+        }),
+      );
   }
 
   /** Build an UNSIGNED owner transaction for the wallet to sign (production custody). */
@@ -783,13 +866,12 @@ export class AegisClient {
 
   /**
    * Gate a wallet-signed owner transaction before the backend relays it. The
-   * owner-action builder ({@link ownerActionInstructions}) only ever emits Aegis
-   * instructions, so a submitted transaction that touches any other program means
-   * the client assembled its own transaction (e.g. a raw SOL transfer) and is
-   * trying to use the backend as an open relay for the authenticated wallet. We
-   * refuse: the backend submits Aegis owner actions, nothing else. The on-chain
-   * `has_one = owner` constraint already binds these to the signer's own policy,
-   * so this closes the relay surface without re-deriving instruction bytes.
+   * owner-action builder ({@link ownerActionInstructions}) only emits Aegis
+   * instructions and SPL Associated-Token CreateIdempotent ixs (for vault /
+   * recipient ATA setup). Anything else — e.g. a raw SOL transfer — means the
+   * client assembled its own transaction and is trying to use the backend as an
+   * open relay. Refuse that. On-chain `has_one = owner` still binds Aegis ixs
+   * to the signer's own policy.
    */
   private assertSubmittableOwnerTransaction(
     raw: Buffer,
@@ -807,11 +889,11 @@ export class AegisClient {
       throw new PraxisInputError("Signed owner transaction has no instructions.");
     }
     for (const ix of tx.instructions) {
-      if (!ix.programId.equals(this.config.programId)) {
-        throw new PraxisInputError(
-          "Signed owner transaction may only contain Aegis program instructions.",
-        );
-      }
+      if (ix.programId.equals(this.config.programId)) continue;
+      if (isAssociatedTokenCreateIdempotent(ix)) continue;
+      throw new PraxisInputError(
+        "Signed owner transaction may only contain Aegis instructions or ATA CreateIdempotent.",
+      );
     }
 
     if (expectedFeePayer) {
@@ -932,6 +1014,13 @@ export class AegisClient {
   private finality(): "confirmed" | "finalized" {
     return this.config.commitment === "finalized" ? "finalized" : "confirmed";
   }
+}
+
+/** True for SPL ATA program CreateIdempotent (discriminator byte `1`). */
+function isAssociatedTokenCreateIdempotent(ix: TransactionInstruction): boolean {
+  if (!ix.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID)) return false;
+  // CreateIdempotent is a single-byte instruction: [1].
+  return ix.data.length === 1 && ix.data[0] === 1;
 }
 
 /** Cluster-level rejection with no Aegis reason code — still honor the day window. */

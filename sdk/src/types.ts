@@ -250,4 +250,11 @@ export type OwnerAction =
   | { kind: "revoke" }
   | { kind: "rotate" }
   | { kind: "updatePolicy"; patch: PolicyUpdate }
-  | { kind: "allowList"; listKind: AllowListKind; address: Address; mode: "add" | "remove" };
+  | { kind: "allowList"; listKind: AllowListKind; address: Address; mode: "add" | "remove" }
+  | {
+      kind: "configureToken";
+      tokenMint: Address;
+      tokenMaxPerTx: BaseUnitString;
+      tokenDailyLimit: BaseUnitString;
+    }
+  | { kind: "prepareTokenAccounts"; recipientAddresses?: Address[] };

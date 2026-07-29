@@ -170,9 +170,35 @@ describe("readOwnerAction", () => {
     expect(readOwnerAction({ kind: "closePolicy" })).toEqual({ kind: "closePolicy" });
   });
 
+  test("parses configureToken and prepareTokenAccounts", () => {
+    expect(
+      readOwnerAction({
+        kind: "configureToken",
+        tokenMint: "Mint11111",
+        tokenMaxPerTx: "100",
+        tokenDailyLimit: "1000",
+      }),
+    ).toEqual({
+      kind: "configureToken",
+      tokenMint: "Mint11111",
+      tokenMaxPerTx: 100n,
+      tokenDailyLimit: 1000n,
+    });
+    expect(readOwnerAction({ kind: "prepareTokenAccounts" })).toEqual({
+      kind: "prepareTokenAccounts",
+      recipientAddresses: [],
+    });
+    expect(
+      readOwnerAction({ kind: "prepareTokenAccounts", recipientAddresses: ["Addr11111"] }),
+    ).toEqual({
+      kind: "prepareTokenAccounts",
+      recipientAddresses: ["Addr11111"],
+    });
+  });
+
   test("rejects an unknown kind and non-objects", () => {
     expect(() => readOwnerAction({ kind: "selfDestruct" })).toThrow(
-      /bootstrapPolicy, fundVault, withdrawVault, closePolicy, updatePolicy, allowList, revoke, or rotate/,
+      /bootstrapPolicy, fundVault, withdrawVault, closePolicy, updatePolicy, allowList, revoke, rotate, configureToken, or prepareTokenAccounts/,
     );
     expect(() => readOwnerAction("revoke")).toThrow(/must be an object/);
   });

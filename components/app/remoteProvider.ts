@@ -24,7 +24,14 @@ type OwnerActionRequest =
   | { kind: "updatePolicy"; patch: PolicyUpdate }
   | { kind: "allowList"; listKind: AllowListKind; address: string; mode: "add" | "remove" }
   | { kind: "revoke" }
-  | { kind: "rotate" };
+  | { kind: "rotate" }
+  | {
+      kind: "configureToken";
+      tokenMint: string;
+      tokenMaxPerTx: bigint;
+      tokenDailyLimit: bigint;
+    }
+  | { kind: "prepareTokenAccounts"; recipientAddresses: string[] };
 
 interface OwnerActionDraft {
   transaction: string;
@@ -246,12 +253,23 @@ export class RemotePraxisProvider implements PraxisProvider {
   };
 
   configureToken = async (config: TokenEnvelopeConfig): Promise<void> => {
-    await this.mutate(() => this.post("/api/praxis/configure-token", { config: toWire(config) }));
+    await this.ownerAction(
+      {
+        kind: "configureToken",
+        tokenMint: config.tokenMint,
+        tokenMaxPerTx: config.tokenMaxPerTx,
+        tokenDailyLimit: config.tokenDailyLimit,
+      },
+      () => this.post("/api/praxis/configure-token", { config: toWire(config) }),
+    );
     await this.refreshAll();
   };
 
   prepareTokenAccounts = async (recipientAddresses: string[] = []): Promise<void> => {
-    await this.mutate(() => this.post("/api/praxis/prepare-token-accounts", { recipientAddresses }));
+    await this.ownerAction(
+      { kind: "prepareTokenAccounts", recipientAddresses },
+      () => this.post("/api/praxis/prepare-token-accounts", { recipientAddresses }),
+    );
     await this.refreshAll();
   };
 

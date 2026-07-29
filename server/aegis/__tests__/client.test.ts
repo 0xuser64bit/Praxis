@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 
 import { AegisClient } from "../client";
-import { DEFAULT_AEGIS_PROGRAM_ID } from "../constants";
-import { findPolicyPda } from "../pdas";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, DEFAULT_AEGIS_PROGRAM_ID } from "../constants";
+import { findPolicyPda, findVaultPda } from "../pdas";
 import { PraxisConfigError, PraxisInputError } from "../../errors";
 import { DEFAULT_TOKENS, type PraxisServerConfig } from "../../env";
 import type { AgentSigner } from "../../agent/agentSigner";
@@ -195,6 +195,118 @@ describe("buildUnsignedOwnerTransaction", () => {
       client.buildUnsignedOwnerTransaction(config.ownerAddress!, { kind: "rotate" }),
     ).rejects.toBeInstanceOf(PraxisConfigError);
   });
+
+  test("builds configureToken with Aegis ix and vault ATA create when missing", async () => {
+    const config = makeConfig();
+    const wallet = config.ownerAddress!;
+    const mint = Keypair.generate().publicKey;
+    const policyData = encodePolicyAccount(
+      policyFixture({ address: config.policyAddress!.toBase58() }),
+    );
+    const client = new AegisClient(
+      config,
+      fakeConnection({
+        getAccountInfo: async () => ({
+          data: policyData,
+          owner: DEFAULT_AEGIS_PROGRAM_ID,
+          lamports: 1,
+          executable: false,
+        }),
+        getBalance: async () => 0,
+        // No existing ATAs — force a vault CreateIdempotent.
+        getMultipleAccountsInfo: async () => [null],
+      }),
+    );
+
+    const draft = await client.buildUnsignedOwnerTransaction(wallet, {
+      kind: "configureToken",
+      tokenMint: mint.toBase58(),
+      tokenMaxPerTx: 100n,
+      tokenDailyLimit: 1_000n,
+    });
+    const tx = Transaction.from(Uint8Array.from(Buffer.from(draft.transaction, "base64")));
+
+    expect(tx.feePayer?.equals(wallet)).toBe(true);
+    expect(tx.instructions.length).toBeGreaterThanOrEqual(1);
+    expect(tx.instructions[0].programId.equals(DEFAULT_AEGIS_PROGRAM_ID)).toBe(true);
+    // Vault ATA create is appended when the account is missing.
+    expect(tx.instructions.some((ix) => ix.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID))).toBe(true);
+    const vault = findVaultPda(config.policyAddress!, DEFAULT_AEGIS_PROGRAM_ID);
+    expect(
+      tx.instructions.some((ix) =>
+        ix.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID) &&
+        ix.keys.some((key) => key.pubkey.equals(vault)),
+      ),
+    ).toBe(true);
+  });
+
+  test("builds prepareTokenAccounts as ATA creates only", async () => {
+    const config = makeConfig();
+    const wallet = config.ownerAddress!;
+    const mint = Keypair.generate().publicKey;
+    const recipient = Keypair.generate().publicKey;
+    const policyData = encodePolicyAccount(
+      policyFixture({
+        address: config.policyAddress!.toBase58(),
+        tokenMint: mint.toBase58(),
+      }),
+    );
+    const client = new AegisClient(
+      config,
+      fakeConnection({
+        getAccountInfo: async () => ({
+          data: policyData,
+          owner: DEFAULT_AEGIS_PROGRAM_ID,
+          lamports: 1,
+          executable: false,
+        }),
+        getBalance: async () => 0,
+        getMultipleAccountsInfo: async (keys: PublicKey[]) => keys.map(() => null),
+      }),
+    );
+
+    const draft = await client.buildUnsignedOwnerTransaction(wallet, {
+      kind: "prepareTokenAccounts",
+      recipientAddresses: [recipient.toBase58()],
+    });
+    const tx = Transaction.from(Uint8Array.from(Buffer.from(draft.transaction, "base64")));
+
+    expect(tx.instructions.length).toBeGreaterThanOrEqual(1);
+    expect(tx.instructions.every((ix) => ix.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID))).toBe(true);
+    expect(tx.instructions.every((ix) => ix.data.length === 1 && ix.data[0] === 1)).toBe(true);
+  });
+
+  test("prepareTokenAccounts errors when every ATA already exists", async () => {
+    const config = makeConfig();
+    const mint = Keypair.generate().publicKey;
+    const policyData = encodePolicyAccount(
+      policyFixture({
+        address: config.policyAddress!.toBase58(),
+        tokenMint: mint.toBase58(),
+      }),
+    );
+    const client = new AegisClient(
+      config,
+      fakeConnection({
+        getAccountInfo: async () => ({
+          data: policyData,
+          owner: DEFAULT_AEGIS_PROGRAM_ID,
+          lamports: 1,
+          executable: false,
+        }),
+        getBalance: async () => 0,
+        getMultipleAccountsInfo: async (keys: PublicKey[]) =>
+          keys.map(() => ({ data: Buffer.alloc(0), owner: mint, lamports: 1, executable: false })),
+      }),
+    );
+
+    await expect(
+      client.buildUnsignedOwnerTransaction(config.ownerAddress!, {
+        kind: "prepareTokenAccounts",
+        recipientAddresses: [],
+      }),
+    ).rejects.toThrow(/already exist/);
+  });
 });
 
 describe("execute uses the AgentSigner", () => {
@@ -289,6 +401,34 @@ describe("submitSignedTransaction", () => {
         },
         { expectedFeePayer: wallet },
       ),
-    ).rejects.toThrow(/only contain Aegis|may only contain Aegis/);
+    ).rejects.toThrow(/Aegis|ATA CreateIdempotent/);
+  });
+
+  test("accepts a builder-produced configureToken draft that includes an ATA create", async () => {
+    const config = makeConfig();
+    const mint = Keypair.generate().publicKey;
+    const policyData = encodePolicyAccount(
+      policyFixture({ address: config.policyAddress!.toBase58() }),
+    );
+    const conn = fakeConnection({
+      getAccountInfo: async () => ({
+        data: policyData,
+        owner: DEFAULT_AEGIS_PROGRAM_ID,
+        lamports: 1,
+        executable: false,
+      }),
+      getBalance: async () => 0,
+      getMultipleAccountsInfo: async () => [null],
+    });
+    const client = new AegisClient(config, conn);
+    const draft = await client.buildUnsignedOwnerTransaction(config.ownerAddress!, {
+      kind: "configureToken",
+      tokenMint: mint.toBase58(),
+      tokenMaxPerTx: 10n,
+      tokenDailyLimit: 100n,
+    });
+    expect(await client.submitSignedTransaction(draft, { expectedFeePayer: config.ownerAddress })).toBe(
+      "owner-sig",
+    );
   });
 });

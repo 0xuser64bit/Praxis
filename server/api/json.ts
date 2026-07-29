@@ -273,8 +273,41 @@ export function readOwnerAction(value: unknown): OwnerAction {
         mode: action.mode,
       };
     }
+    case "configureToken": {
+      const config = readTokenEnvelopeConfig({
+        tokenMint: action.tokenMint,
+        tokenMaxPerTx: action.tokenMaxPerTx,
+        tokenDailyLimit: action.tokenDailyLimit,
+      });
+      if (config.tokenMaxPerTx <= 0n || config.tokenDailyLimit <= 0n) {
+        throw new PraxisInputError("token caps must be greater than zero");
+      }
+      return {
+        kind: "configureToken",
+        tokenMint: config.tokenMint,
+        tokenMaxPerTx: config.tokenMaxPerTx,
+        tokenDailyLimit: config.tokenDailyLimit,
+      };
+    }
+    case "prepareTokenAccounts": {
+      const raw = action.recipientAddresses;
+      if (raw === undefined) {
+        return { kind: "prepareTokenAccounts", recipientAddresses: [] };
+      }
+      if (!Array.isArray(raw)) {
+        throw new PraxisInputError("action.recipientAddresses must be an array of addresses");
+      }
+      return {
+        kind: "prepareTokenAccounts",
+        recipientAddresses: raw.map((item, index) =>
+          readString(item, `action.recipientAddresses[${index}]`, { maxLength: 64 }),
+        ),
+      };
+    }
     default:
-      throw new PraxisInputError("action.kind must be bootstrapPolicy, fundVault, withdrawVault, closePolicy, updatePolicy, allowList, revoke, or rotate");
+      throw new PraxisInputError(
+        "action.kind must be bootstrapPolicy, fundVault, withdrawVault, closePolicy, updatePolicy, allowList, revoke, rotate, configureToken, or prepareTokenAccounts",
+      );
   }
 }
 

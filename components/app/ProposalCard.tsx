@@ -21,7 +21,7 @@ import { Eyebrow } from "@/components/praxis/Eyebrow";
 
 import { PolicyCheckBanner } from "./PolicyCheckBanner";
 import { useProposal, useProvider } from "./ProviderContext";
-import { formatUnits, formatUsd, shortenAddress } from "./lib/units";
+import { formatSol, formatUnits, formatUsd, shortenAddress } from "./lib/units";
 
 type Flow = { label: string; primary: string; unit?: string; sub: string; compact?: boolean };
 type Meta = { label: string; value: ReactNode; ok?: boolean; mono?: boolean };
@@ -165,15 +165,24 @@ export function ProposalCard({
             <div className="flex-1 text-[13px]">
               <span className="font-medium">Signed &amp; confirmed</span>
               <div className="mt-0.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
-                {proposal.sig ? shortenAddress(proposal.sig, 6, 6) : "—"} · confirmed in 0.9s
+                {proposal.sig ? shortenAddress(proposal.sig, 6, 6) : "—"}
               </div>
             </div>
-            <span
-              aria-label="Explorer link unavailable for local demo signatures"
-              className="text-[var(--text-tertiary)]"
-            >
-              <IconExternalLink size={14} />
-            </span>
+            {proposal.sig ? (
+              <a
+                href={`https://explorer.solana.com/tx/${encodeURIComponent(proposal.sig)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="View transaction on Solana Explorer"
+                className="text-[var(--text-tertiary)] [transition:color_0.15s] hover:text-[var(--accent)]"
+              >
+                <IconExternalLink size={14} />
+              </a>
+            ) : (
+              <span aria-hidden className="text-[var(--text-tertiary)] opacity-40">
+                <IconExternalLink size={14} />
+              </span>
+            )}
           </div>
         )}
 
@@ -238,6 +247,7 @@ function describe(
   detail: ProposalDetail,
   proposal: ActionProposal,
 ): { from: Flow; to: Flow; meta: Meta[] } {
+  const feeSol = `${formatSol(proposal.networkFee)} SOL`;
   const feeUsd = formatUsd(proposal.networkFee, 9, "SOL");
   if (detail.kind === "transfer") {
     return {
@@ -254,7 +264,7 @@ function describe(
         compact: true,
       },
       meta: [
-        { label: "Network fee", value: feeUsd },
+        { label: "Network fee", value: `${feeSol} (${feeUsd})` },
         { label: "Simulation", value: proposal.simulation, ok: proposal.check.allowed },
       ],
     };

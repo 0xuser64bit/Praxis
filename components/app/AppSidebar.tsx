@@ -34,7 +34,10 @@ export function AppSidebar({
   policy: PolicyView;
   rejectedCount: number;
 }) {
-  const revoked = policy.paused || policy.agentAuthority === SYSTEM_PROGRAM;
+  // Revoke zeroes authority; pause alone still leaves the key registered.
+  const agentDead = policy.agentAuthority === SYSTEM_PROGRAM;
+  const agentInactive = agentDead || policy.paused;
+  const agentLabel = agentDead ? "agent revoked" : policy.paused ? "agent paused" : "agent live";
   const groups = groupThreads(threads);
 
   return (
@@ -61,7 +64,7 @@ export function AppSidebar({
           label="Policy"
           active={view === "policy"}
           onClick={() => onView("policy")}
-          trailing={revoked ? <Dot color="var(--danger)" /> : <Dot color="var(--success)" />}
+          trailing={agentInactive ? <Dot color="var(--danger)" /> : <Dot color="var(--success)" />}
         />
         <NavItem
           icon={<IconHistory size={16} />}
@@ -123,9 +126,9 @@ export function AppSidebar({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <Dot color={revoked ? "var(--danger)" : "var(--success)"} pulse={!revoked} />
+            <Dot color={agentInactive ? "var(--danger)" : "var(--success)"} pulse={!agentInactive} />
             <span className="[font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
-              {revoked ? "agent revoked" : "agent live"}
+              {agentLabel}
             </span>
           </div>
           <div className="text-[13px] font-medium text-[var(--text-primary)]">

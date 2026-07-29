@@ -29,7 +29,14 @@ import { Button } from "@/components/praxis/Button";
 import { RevokeDialog } from "./RevokeDialog";
 import { useAddressBook, usePolicy, useProvider } from "./ProviderContext";
 import { Card, Dot, Label } from "./ui";
-import { formatSol, formatUnits, percentOf, shortenAddress, toBaseUnits } from "./lib/units";
+import {
+  formatEditableUnits,
+  formatSol,
+  formatUnits,
+  percentOf,
+  shortenAddress,
+  toBaseUnits,
+} from "./lib/units";
 import { useNow } from "./lib/useNow";
 import { effectiveSpentToday, effectiveTokenSpentToday } from "./lib/policyMath";
 import {
@@ -42,6 +49,13 @@ import {
 
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 
+/** Distinguish pause (key intact) from revoke (authority zeroed). */
+function agentInactiveState(policy: PolicyView): "live" | "paused" | "revoked" {
+  if (policy.agentAuthority === SYSTEM_PROGRAM) return "revoked";
+  if (policy.paused) return "paused";
+  return "live";
+}
+
 export function PolicyDashboard() {
   const policy = usePolicy();
   const provider = useProvider();
@@ -50,7 +64,8 @@ export function PolicyDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"overview" | "advanced">("overview");
   const now = useNow();
-  const revoked = policy.paused || policy.agentAuthority === SYSTEM_PROGRAM;
+  const agentState = agentInactiveState(policy);
+  const inactive = agentState !== "live";
   const runMutation = (action: () => Promise<void>, fallback: string) => {
     setError(null);
     void action().catch((err) => {
@@ -77,16 +92,23 @@ export function PolicyDashboard() {
               What the agent may do — enforced on-chain by Aegis, not by a backend&rsquo;s good behavior.
             </p>
           </div>
-          {revoked ? (
+          {inactive ? (
             <Button
               variant="primary"
               className="shrink-0"
               onClick={() => {
-                runMutation(() => provider.rotateAgent(), "Re-enable failed.");
+                if (agentState === "paused") {
+                  runMutation(
+                    () => provider.updatePolicy({ paused: false }),
+                    "Could not unpause the agent.",
+                  );
+                } else {
+                  runMutation(() => provider.rotateAgent(), "Re-enable failed.");
+                }
               }}
             >
               <IconRefresh size={15} />
-              Re-enable agent
+              {agentState === "paused" ? "Unpause agent" : "Re-enable agent"}
             </Button>
           ) : (
             <button
@@ -101,13 +123,22 @@ export function PolicyDashboard() {
           )}
         </div>
 
-        {revoked && (
+        {agentState === "revoked" && (
           <div
             className="mb-5 flex items-center gap-2.5 rounded-xl px-4 py-3 text-[13px] text-[var(--text-secondary)]"
             style={{ background: "rgba(199,91,91,0.10)", border: "0.5px solid rgba(199,91,91,0.3)" }}
           >
             <Dot color="var(--danger)" />
-            Agent revoked — the session key is zeroed on-chain. Rotate in a fresh key before re-enabling.
+            Agent revoked — the session key is zeroed on-chain. Rotate a fresh key to re-enable.
+          </div>
+        )}
+        {agentState === "paused" && (
+          <div
+            className="mb-5 flex items-center gap-2.5 rounded-xl px-4 py-3 text-[13px] text-[var(--text-secondary)]"
+            style={{ background: "rgba(199,91,91,0.10)", border: "0.5px solid rgba(199,91,91,0.3)" }}
+          >
+            <Dot color="var(--danger)" />
+            Agent paused — transfers are blocked until you unpause. The session key is still registered.
           </div>
         )}
 
@@ -137,7 +168,7 @@ export function PolicyDashboard() {
             <SpendCard policy={policy} now={now} />
 
             <div className="mt-4">
-              <SessionCard policy={policy} revoked={revoked} now={now} showActions={false} />
+              <SessionCard policy={policy} agentState={agentState} now={now} showActions={false} />
             </div>
           </>
         ) : (
@@ -151,7 +182,7 @@ export function PolicyDashboard() {
               />
               <SessionCard
                 policy={policy}
-                revoked={revoked}
+                agentState={agentState}
                 now={now}
                 onRotate={() => {
                   runMutation(() => provider.rotateAgent(), "Rotate failed.");
@@ -556,7 +587,9 @@ function CapRow({
   const [error, setError] = useState(false);
 
   const begin = () => {
-    setDraft(formatUnits(value, decimals, { maxFrac: decimals }));
+    // Editable draft must not include thousands separators — formatUnits adds them
+    // for display, and a raw "1,000" would fail toBaseUnits on Save.
+    setDraft(formatEditableUnits(value, decimals));
     setError(false);
     setEditing(true);
   };
@@ -628,20 +661,29 @@ function CapRow({
 // --- session key ---
 function SessionCard({
   policy,
-  revoked,
+  agentState,
   now,
   onRotate,
   onUpdateExpiry,
   showActions = true,
 }: {
   policy: PolicyView;
-  revoked: boolean;
+  agentState: "live" | "paused" | "revoked";
   now: number;
   onRotate?: () => void;
   onUpdateExpiry?: (expiryTs: number) => void;
   showActions?: boolean;
 }) {
   const extendSevenDays = () => onUpdateExpiry?.(now + 7 * 86400);
+  const inactive = agentState !== "live";
+  const statusLabel =
+    agentState === "revoked" ? "Revoked" : agentState === "paused" ? "Paused" : "Live";
+  const statusDetail =
+    agentState === "revoked"
+      ? "key zeroed on-chain"
+      : agentState === "paused"
+        ? `${shortenAddress(policy.agentAuthority, 6, 6)} · paused`
+        : shortenAddress(policy.agentAuthority, 6, 6);
 
   return (
     <Card className="p-5">
@@ -665,11 +707,11 @@ function SessionCard({
         </span>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <Dot color={revoked ? "var(--danger)" : "var(--success)"} pulse={!revoked} />
-            <span className="text-[13px] font-medium">{revoked ? "Revoked" : "Live"}</span>
+            <Dot color={inactive ? "var(--danger)" : "var(--success)"} pulse={!inactive} />
+            <span className="text-[13px] font-medium">{statusLabel}</span>
           </div>
           <div className="truncate [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
-            {revoked ? "key zeroed on-chain" : shortenAddress(policy.agentAuthority, 6, 6)}
+            {statusDetail}
           </div>
         </div>
       </div>
@@ -786,7 +828,7 @@ function VaultCard({
             {mode === "withdraw" && (
               <button
                 type="button"
-                onClick={() => setDraft(formatSol(policy.vaultBalance))}
+                onClick={() => setDraft(formatEditableUnits(policy.vaultBalance, 9, 4))}
                 className="h-9 rounded-md px-2 text-[11px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:text-[var(--accent)]"
               >
                 Max

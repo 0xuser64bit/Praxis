@@ -27,7 +27,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             className={`pointer-events-auto max-w-[320px] rounded-lg px-3.5 py-2.5 text-[13px] leading-[1.4] shadow-lg [border:0.5px_solid_var(--border)] ${
               t.tone === "success"
                 ? "bg-[rgba(91,160,110,0.14)] text-[var(--success,#5BA06E)]"
-                : "bg-[var(--surface-2)] text-[var(--text-secondary)]"
+                : "bg-[var(--bg-elevated)] text-[var(--text-secondary)]"
             }`}
           >
             {t.text}

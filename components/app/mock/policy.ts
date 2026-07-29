@@ -42,11 +42,11 @@ export function checkTransfer(
   const spent = effectiveSpentToday(policy, now);
   const { dailyLimit } = policy;
 
-  // signer / revoke / pause — revoke zeroes the key AND pauses, both land here.
+  // signer / revoke / pause — revoke zeroes the key AND pauses; pure pause also lands here.
   if (policy.paused) {
     return reject(
       RejectReason.Paused,
-      "Aegis is paused — the agent session key has been revoked. Rotate or re-enable it from the Policy dashboard before the agent can act again.",
+      "Aegis is paused, so the agent cannot move funds until the owner unpauses or re-enables it from the Policy dashboard.",
       spent,
       dailyLimit,
     );
@@ -120,7 +120,7 @@ export function checkTokenTransfer(
   if (policy.paused) {
     return reject(
       RejectReason.Paused,
-      "Aegis is paused — the agent session key has been revoked. Rotate or re-enable it from the Policy dashboard.",
+      "Aegis is paused, so the agent cannot move funds until the owner unpauses or re-enables it from the Policy dashboard.",
       spent,
       dailyLimit,
     );

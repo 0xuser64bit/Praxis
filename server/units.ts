@@ -3,7 +3,7 @@ export const SOL_DECIMALS = 9;
 export function parseHumanUnits(human: string, decimals: number): bigint {
   const s = human.trim();
   if (!/^\d+(\.\d+)?$/.test(s)) {
-    throw new TypeError(`expected a positive decimal amount, got "${human}"`);
+    throw new TypeError(`expected a non-negative decimal amount, got "${human}"`);
   }
 
   const [whole, frac = ""] = s.split(".");

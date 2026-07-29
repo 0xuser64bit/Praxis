@@ -132,7 +132,7 @@ export class RemotePraxisProvider implements PraxisProvider {
     // until the multi-second server round-trip (intent parse + simulation)
     // returns — so the text looks like it vanished. The optimistic message is
     // replaced by the server's authoritative copy once the reply is fetched.
-    this.appendOptimisticUserMessage(threadId, text);
+    const optimisticId = this.appendOptimisticUserMessage(threadId, text);
     if (threadId) this.pendingSends.add(threadId);
     // Flip the thinking flag immediately so the conversation shows a working
     // indicator while the request runs. Cleared in `finally`.
@@ -146,19 +146,22 @@ export class RemotePraxisProvider implements PraxisProvider {
       return result;
     } catch (error) {
       if (threadId) this.pendingSends.delete(threadId);
+      // Drop the optimistic bubble so a failed send doesn't leave a ghost message.
+      if (threadId && optimisticId) this.removeOptimisticUserMessage(threadId, optimisticId);
       throw error;
     } finally {
       this.setThinking(threadId, false);
     }
   };
 
-  private appendOptimisticUserMessage(threadId: string | null, text: string) {
-    if (!threadId) return;
+  private appendOptimisticUserMessage(threadId: string | null, text: string): string | null {
+    if (!threadId) return null;
     const index = this.state.threads.findIndex((thread) => thread.id === threadId);
-    if (index < 0) return;
+    if (index < 0) return null;
     const ts = Math.floor(Date.now() / 1000);
+    const id = `m-opt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const message: Thread["messages"][number] = {
-      id: `m-opt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      id,
       role: "user",
       ts,
       text,
@@ -166,6 +169,19 @@ export class RemotePraxisProvider implements PraxisProvider {
     const existing = this.state.threads[index];
     const threads = [...this.state.threads];
     threads[index] = { ...existing, messages: [...existing.messages, message], updatedAt: ts };
+    this.state = { ...this.state, threads };
+    this.notify();
+    return id;
+  }
+
+  private removeOptimisticUserMessage(threadId: string, messageId: string) {
+    const index = this.state.threads.findIndex((thread) => thread.id === threadId);
+    if (index < 0) return;
+    const existing = this.state.threads[index];
+    const messages = existing.messages.filter((message) => message.id !== messageId);
+    if (messages.length === existing.messages.length) return;
+    const threads = [...this.state.threads];
+    threads[index] = { ...existing, messages };
     this.state = { ...this.state, threads };
     this.notify();
   }

@@ -44,8 +44,9 @@ export async function researchToken(
     },
     {
       label: "24h volume",
+      // Volume alone is a level, not a direction — leave trend flat unless we have a delta.
       value: primary?.volume?.h24 === undefined ? "unavailable" : formatUsd(primary.volume.h24),
-      trend: primary?.volume?.h24 ? "up" : "flat",
+      trend: "flat",
     },
   ];
 

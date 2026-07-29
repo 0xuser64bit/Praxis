@@ -1,5 +1,7 @@
 import type { AgentBlock, PolicyView } from "@praxis/shared";
+import { remaining as remainingUnits } from "@praxis/shared";
 import { formatSol } from "../units";
+import { effectiveSpentToday } from "./policy";
 
 export type PolicyTopic = "caps" | "expiry" | "allowlist" | "pause" | "general";
 
@@ -14,7 +16,9 @@ export function explainPolicy(policy: PolicyView, now: number, topic: PolicyTopi
   const prose = (text: string): AgentBlock => ({ type: "prose", text });
 
   const perTx = `${formatSol(policy.maxPerTx)} SOL per transaction`;
-  const remaining = policy.dailyLimit > policy.spentToday ? policy.dailyLimit - policy.spentToday : 0n;
+  // Match the on-chain rolling window: after dayStartTs + 24h, spentToday is 0.
+  const spentToday = effectiveSpentToday(policy, now);
+  const remaining = remainingUnits(policy.dailyLimit, spentToday);
   const daily = `${formatSol(policy.dailyLimit)} SOL per day (${formatSol(remaining)} SOL remaining today)`;
 
   const expiry = describeExpiry(policy, now);

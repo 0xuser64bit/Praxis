@@ -192,7 +192,7 @@ export function checkSwapPolicy(
     return {
       allowed: false,
       reason:
-        "Aegis is paused — the agent session key has been revoked. Re-enable it from the Policy dashboard to route swaps again.",
+        "Aegis is paused, so the agent cannot route swaps until the owner unpauses or re-enables it from the Policy dashboard.",
       ...base,
     };
   }

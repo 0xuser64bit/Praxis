@@ -381,9 +381,9 @@ export class PraxisServerProvider implements PraxisProvider {
   };
 
   /** Submit a wallet-signed owner transaction, then refresh on-chain state. */
-  submitOwnerAction = async (input: UnsignedOwnerTransaction): Promise<{ signature: string }> => {
+  submitOwnerAction = async (input: UnsignedOwnerTransaction): Promise<{ sig: string }> => {
     const owner = this.requireOwnerWallet();
-    const signature = await this.aegis.submitSignedTransaction(input, { expectedFeePayer: owner });
+    const sig = await this.aegis.submitSignedTransaction(input, { expectedFeePayer: owner });
     try {
       await this.refreshOnChain();
     } catch (error) {
@@ -397,7 +397,7 @@ export class PraxisServerProvider implements PraxisProvider {
         throw error;
       }
     }
-    return { signature };
+    return { sig };
   };
 
   addToAllowList = async (kind: AllowListKind, address: string): Promise<void> => {

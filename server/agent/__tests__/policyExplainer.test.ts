@@ -40,4 +40,18 @@ describe("explainPolicy", () => {
     const out = text(explainPolicy(policy, now, "allowlist")).toLowerCase();
     expect(out).toContain("any recipient");
   });
+
+  test("remaining today ignores spent after the 24h window rolls", () => {
+    const policy = policyFixture({
+      dailyLimit: 5_000_000_000n,
+      spentToday: 4_000_000_000n,
+      dayStartTs: now - 86_400 - 1, // window expired
+      expiryTs: now + 3600,
+    });
+    const out = text(explainPolicy(policy, now, "caps"));
+    // Full daily limit remaining after rollover, not 1 SOL.
+    expect(out).toContain("5");
+    expect(out.toLowerCase()).toContain("remaining");
+    expect(out).not.toMatch(/1 SOL remaining/i);
+  });
 });

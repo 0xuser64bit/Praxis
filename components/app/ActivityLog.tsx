@@ -134,10 +134,16 @@ function ActivityRow({ entry, now }: { entry: ActivityEntry; now: number }) {
           {entry.sig && (
             <>
               <span aria-hidden>·</span>
-              <span className="flex items-center gap-1">
+              <a
+                href={`https://explorer.solana.com/tx/${encodeURIComponent(entry.sig)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 [transition:color_0.15s] hover:text-[var(--accent)]"
+                aria-label="View transaction on Solana Explorer"
+              >
                 {shortenAddress(entry.sig, 4, 4)}
                 <IconExternalLink size={11} />
-              </span>
+              </a>
             </>
           )}
         </div>
@@ -148,7 +154,7 @@ function ActivityRow({ entry, now }: { entry: ActivityEntry; now: number }) {
 
 function formatRelative(ts: number, now: number): string {
   const s = Math.max(0, now - ts);
-  if (s < 45) return "just now";
+  if (s < 60) return "just now";
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;

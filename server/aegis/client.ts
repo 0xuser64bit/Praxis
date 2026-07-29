@@ -57,8 +57,11 @@ import {
   checkTokenFromAegisReason,
   checkTokenTransferPolicy,
   checkTransferPolicy,
+  effectiveSpentToday,
+  effectiveTokenSpentToday,
 } from "../agent/policy";
 import type { ActionLogEntry, PolicyCheckResult, TokenInfo } from "@praxis/shared";
+import { remaining } from "@praxis/shared";
 import { formatSol, formatUnits, parseHumanUnits, SOL_DECIMALS } from "../units";
 
 /**
@@ -295,13 +298,7 @@ export class AegisClient {
       if (reasonCode !== undefined || confirmation.value.err) {
         const check = reasonCode !== undefined
           ? checkFromAegisReason(policy, reasonCode, amount, recipient.toBase58(), now)
-          : {
-              allowed: false,
-              reason: "Transaction was rejected by the cluster.",
-              spentToday: policy.spentToday,
-              dailyLimit: policy.dailyLimit,
-              remaining: policy.dailyLimit > policy.spentToday ? policy.dailyLimit - policy.spentToday : 0n,
-            };
+          : fallbackTransferCheck(policy, now, "Transaction was rejected by the cluster.");
         return { sig, check, status: "rejected", logs };
       }
 
@@ -317,13 +314,11 @@ export class AegisClient {
       const reasonCode = customCode === undefined ? undefined : reasonFromAegisErrorCode(customCode);
       const check = reasonCode !== undefined
         ? checkFromAegisReason(policy, reasonCode, amount, recipient.toBase58(), now)
-        : {
-            allowed: false,
-            reason: error instanceof Error ? error.message : "Transaction failed",
-            spentToday: policy.spentToday,
-            dailyLimit: policy.dailyLimit,
-            remaining: policy.dailyLimit > policy.spentToday ? policy.dailyLimit - policy.spentToday : 0n,
-          };
+        : fallbackTransferCheck(
+            policy,
+            now,
+            error instanceof Error ? error.message : "Transaction failed",
+          );
       return { check, status: "rejected", logs };
     }
   }
@@ -393,9 +388,6 @@ export class AegisClient {
     const { tx, latestBlockhash } = await this.buildTransaction([ix], signer.publicKey);
     await signer.signTransaction(tx);
 
-    const tokenRemaining = (): bigint =>
-      policy.tokenDailyLimit > policy.tokenSpentToday ? policy.tokenDailyLimit - policy.tokenSpentToday : 0n;
-
     try {
       const sig = await this.conn.sendRawTransaction(tx.serialize(), {
         skipPreflight: Boolean(opts.skipPreflight),
@@ -411,14 +403,8 @@ export class AegisClient {
 
       if (reasonCode !== undefined || confirmation.value.err) {
         const check = reasonCode !== undefined
-              ? checkTokenFromAegisReason(policy, token, reasonCode, amount, recipient.toBase58(), now)
-          : {
-              allowed: false,
-              reason: "Transaction was rejected by the cluster.",
-              spentToday: policy.tokenSpentToday,
-              dailyLimit: policy.tokenDailyLimit,
-              remaining: tokenRemaining(),
-            };
+          ? checkTokenFromAegisReason(policy, token, reasonCode, amount, recipient.toBase58(), now)
+          : fallbackTokenTransferCheck(policy, now, "Transaction was rejected by the cluster.");
         return { sig, check, status: "rejected", logs };
       }
 
@@ -434,13 +420,11 @@ export class AegisClient {
       const reasonCode = customCode === undefined ? undefined : reasonFromAegisErrorCode(customCode);
       const check = reasonCode !== undefined
         ? checkTokenFromAegisReason(policy, token, reasonCode, amount, recipient.toBase58(), now)
-        : {
-            allowed: false,
-            reason: error instanceof Error ? error.message : "Transaction failed",
-            spentToday: policy.tokenSpentToday,
-            dailyLimit: policy.tokenDailyLimit,
-            remaining: tokenRemaining(),
-          };
+        : fallbackTokenTransferCheck(
+            policy,
+            now,
+            error instanceof Error ? error.message : "Transaction failed",
+          );
       return { check, status: "rejected", logs };
     }
   }
@@ -948,6 +932,29 @@ export class AegisClient {
   private finality(): "confirmed" | "finalized" {
     return this.config.commitment === "finalized" ? "finalized" : "confirmed";
   }
+}
+
+/** Cluster-level rejection with no Aegis reason code — still honor the day window. */
+function fallbackTransferCheck(policy: PolicyView, now: number, reason: string): PolicyCheckResult {
+  const spentToday = effectiveSpentToday(policy, now);
+  return {
+    allowed: false,
+    reason,
+    spentToday,
+    dailyLimit: policy.dailyLimit,
+    remaining: remaining(policy.dailyLimit, spentToday),
+  };
+}
+
+function fallbackTokenTransferCheck(policy: PolicyView, now: number, reason: string): PolicyCheckResult {
+  const spentToday = effectiveTokenSpentToday(policy, now);
+  return {
+    allowed: false,
+    reason,
+    spentToday,
+    dailyLimit: policy.tokenDailyLimit,
+    remaining: remaining(policy.tokenDailyLimit, spentToday),
+  };
 }
 
 function uniquePublicKeys(values: PublicKey[]): PublicKey[] {

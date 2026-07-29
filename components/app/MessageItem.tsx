@@ -82,7 +82,7 @@ export function MessageItem({
                   className={`mt-1 rounded-lg px-3 py-2 text-[13px] leading-[1.45] [border:0.5px_solid_var(--border)] ${
                     block.tone === "success"
                       ? "bg-[rgba(91,160,110,0.10)] text-[var(--success,#5BA06E)]"
-                      : "bg-[var(--surface-2)] text-[var(--text-secondary)]"
+                      : "bg-[var(--bg-elevated)] text-[var(--text-secondary)]"
                   }`}
                 >
                   {block.text}

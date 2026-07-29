@@ -22,9 +22,10 @@ export const DISPLAY_RATES_USD: Record<string, number> = {
  * fractional digits than the asset supports.
  */
 export function toBaseUnits(human: string, decimals: number): bigint {
-  const s = human.trim();
+  // Strip grouping commas so editor drafts and pasted amounts like "1,000" parse.
+  const s = human.trim().replace(/,/g, "");
   if (!/^\d+(\.\d+)?$/.test(s)) {
-    throw new TypeError(`toBaseUnits: expected a positive decimal, got "${human}"`);
+    throw new TypeError(`toBaseUnits: expected a non-negative decimal, got "${human}"`);
   }
   const [whole, frac = ""] = s.split(".");
   if (frac.length > decimals) {
@@ -34,6 +35,18 @@ export function toBaseUnits(human: string, decimals: number): bigint {
   }
   const scaled = frac.padEnd(decimals, "0");
   return BigInt(whole) * 10n ** BigInt(decimals) + BigInt(scaled || "0");
+}
+
+/**
+ * Format base units for an editable draft field — no thousands separators, so the
+ * value round-trips through {@link toBaseUnits} without the user retyping it.
+ */
+export function formatEditableUnits(
+  units: bigint,
+  decimals: number,
+  maxFrac = decimals,
+): string {
+  return formatUnits(units, decimals, { maxFrac }).replace(/,/g, "");
 }
 
 function withThousands(intStr: string): string {

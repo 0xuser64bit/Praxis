@@ -9,7 +9,7 @@ import type { PolicyView } from "@praxis/shared";
 import { PraxisServerProvider } from "../praxisServer";
 import type { AegisClient, TransferExecution, TransferSimulation } from "../../aegis/client";
 import { DEFAULT_AEGIS_PROGRAM_ID } from "../../aegis/constants";
-import { DEFAULT_TOKENS, type PraxisServerConfig } from "../../env";
+import { DEFAULT_PRESTOCKS_API_URL, DEFAULT_PRESTOCKS_TIMEOUT_MS, DEFAULT_TOKENS, type PraxisServerConfig } from "../../env";
 import { PraxisConfigError } from "../../errors";
 import { findPolicyPda } from "../../aegis/pdas";
 import { policyFixture } from "../../testing/fixtures";
@@ -99,6 +99,10 @@ function makeConfig(over: Partial<PraxisServerConfig> = {}): PraxisServerConfig 
     policyAddress: findPolicyPda(owner.publicKey, DEFAULT_AEGIS_PROGRAM_ID),
     addressBook: [{ label: "maya", name: "Maya Patel", address: MAYA, note: "saved contact" }],
     tokens: DEFAULT_TOKENS,
+    stocksEnabled: false,
+    prestocksApiUrl: DEFAULT_PRESTOCKS_API_URL,
+    prestocksTimeoutMs: DEFAULT_PRESTOCKS_TIMEOUT_MS,
+    stockUniverse: undefined,
     ...over,
   };
 }

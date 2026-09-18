@@ -5,7 +5,7 @@ import { AegisClient } from "../client";
 import { ASSOCIATED_TOKEN_PROGRAM_ID, DEFAULT_AEGIS_PROGRAM_ID } from "../constants";
 import { findPolicyPda, findVaultPda } from "../pdas";
 import { PraxisConfigError, PraxisInputError } from "../../errors";
-import { DEFAULT_TOKENS, type PraxisServerConfig } from "../../env";
+import { DEFAULT_PRESTOCKS_API_URL, DEFAULT_PRESTOCKS_TIMEOUT_MS, DEFAULT_TOKENS, type PraxisServerConfig } from "../../env";
 import type { AgentSigner } from "../../agent/agentSigner";
 import { encodePolicyAccount, policyFixture } from "../../testing/fixtures";
 
@@ -44,6 +44,10 @@ function makeConfig(over: Partial<PraxisServerConfig> = {}): PraxisServerConfig 
     policyAddress: findPolicyPda(owner.publicKey, DEFAULT_AEGIS_PROGRAM_ID),
     addressBook: [],
     tokens: DEFAULT_TOKENS,
+    stocksEnabled: false,
+    prestocksApiUrl: DEFAULT_PRESTOCKS_API_URL,
+    prestocksTimeoutMs: DEFAULT_PRESTOCKS_TIMEOUT_MS,
+    stockUniverse: undefined,
     ...over,
   };
 }

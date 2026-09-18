@@ -8,6 +8,7 @@ import type { AddressBookEntry, TokenInfo } from "@praxis/shared";
 import { DEFAULT_AEGIS_PROGRAM_ID, SYSTEM_PROGRAM_ID } from "./aegis/constants";
 import { findPolicyPda } from "./aegis/pdas";
 import { PraxisConfigError } from "./errors";
+import { STOCK_SYMBOLS, buildStockTokens } from "./stocks/universe";
 
 const DEFAULT_CONTACTS: AddressBookEntry[] = [
   {
@@ -86,7 +87,17 @@ export interface PraxisServerConfig {
   addressBook: AddressBookEntry[];
   tokens: TokenInfo[];
   indexerUrl?: string;
+  /** Stocklana C02: PreStocks universe seam. Off by default — `main` behavior is
+   *  unchanged unless `PRAXIS_STOCKS_ENABLED=1`. */
+  stocksEnabled: boolean;
+  prestocksApiUrl: string;
+  prestocksTimeoutMs: number;
+  /** `undefined` = full 8-symbol universe; otherwise a subset of known symbols. */
+  stockUniverse: string[] | undefined;
 }
+
+export const DEFAULT_PRESTOCKS_API_URL = "https://prestocks.com/api/prestocks";
+export const DEFAULT_PRESTOCKS_TIMEOUT_MS = 5_000;
 
 let cachedConfig: PraxisServerConfig | undefined;
 
@@ -110,6 +121,9 @@ export function getServerConfig(): PraxisServerConfig {
   const policyAddress = parsePublicKey(process.env.AEGIS_POLICY_ADDRESS, "AEGIS_POLICY_ADDRESS")
     ?? (ownerAddress ? findPolicyPda(ownerAddress, programId) : undefined);
 
+  const stocksEnabled = process.env.PRAXIS_STOCKS_ENABLED?.trim() === "1";
+  const stockUniverse = parseStockUniverse(process.env.PRAXIS_STOCK_UNIVERSE);
+
   cachedConfig = {
     geminiApiKey: process.env.GEMINI_API_KEY,
     geminiModel: process.env.GEMINI_MODEL,
@@ -123,8 +137,12 @@ export function getServerConfig(): PraxisServerConfig {
     ownerKeypair,
     nextAgentKeypair,
     addressBook: parseAddressBook(process.env.PRAXIS_ADDRESS_BOOK),
-    tokens: parseTokens(process.env.PRAXIS_TOKENS),
+    tokens: parseTokens(process.env.PRAXIS_TOKENS, { stocksEnabled, stockUniverse }),
     indexerUrl: process.env.PRAXIS_INDEXER_URL,
+    stocksEnabled,
+    prestocksApiUrl: process.env.PRAXIS_PRESTOCKS_API_URL?.trim() || DEFAULT_PRESTOCKS_API_URL,
+    prestocksTimeoutMs: parsePrestocksTimeout(process.env.PRAXIS_PRESTOCKS_TIMEOUT_MS),
+    stockUniverse,
   };
 
   return cachedConfig;
@@ -289,8 +307,32 @@ function defaultAddressBook(): AddressBookEntry[] {
   return DEFAULT_CONTACTS;
 }
 
-function parseTokens(raw: string | undefined): TokenInfo[] {
-  if (!raw?.trim()) return DEFAULT_TOKENS;
+function parseTokens(
+  raw: string | undefined,
+  stock: { stocksEnabled: boolean; stockUniverse: string[] | undefined },
+): TokenInfo[] {
+  const base = raw?.trim() ? parseBaseTokens(raw) : [...DEFAULT_TOKENS];
+  if (!stock.stocksEnabled) return base;
+  const seen = new Set(base.map((token) => token.mint));
+  const stocks = buildStockTokens({}, stock.stockUniverse).filter((token) => !seen.has(token.mint));
+  return [...base, ...stocks];
+}
+
+function parseStockUniverse(raw: string | undefined): string[] | undefined {
+  if (!raw?.trim()) return undefined;
+  const known = new Set(STOCK_SYMBOLS);
+  const symbols = [...new Set(raw.split(",").map((s) => s.trim().replace(/^\$/, "").toUpperCase()).filter(Boolean))].filter(
+    (s) => known.has(s),
+  );
+  return symbols.length > 0 ? symbols : undefined;
+}
+
+function parsePrestocksTimeout(raw: string | undefined): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_PRESTOCKS_TIMEOUT_MS;
+}
+
+function parseBaseTokens(raw: string): TokenInfo[] {
   const parsed = parseJsonArray<TokenInfo>(raw, "PRAXIS_TOKENS");
   return parsed.map((token) => {
     const symbol = String(token.symbol ?? "").trim().toUpperCase();

@@ -5,6 +5,15 @@ import type { PraxisServerConfig } from "../env";
 import { envTimeout, fetchWithTimeout, withTimeout } from "../api/timeout";
 import { logger } from "../observability/logger";
 import { formatBps } from "../units";
+import {
+  fetchPrestocksEntries,
+  findPrestocksEntry,
+  formatPrestocksSupply,
+  stockPriceMetrics,
+  stockSummarySuffix,
+  type PrestocksEntry,
+} from "../stocks/prestocks";
+import { isStockSymbol, normalizeStockAlias } from "../stocks/universe";
 
 interface DexScreenerPair {
   chainId?: string;
@@ -24,18 +33,32 @@ export async function researchToken(
   connection: Connection,
   config: PraxisServerConfig,
 ): Promise<ResearchData> {
-  const token = resolveToken(tokenInput, config.tokens);
+  // Stocklana C03: resolve `p`-prefixed / cased stock phrasing to canonical
+  // symbols when the flagged universe is on; passthrough otherwise.
+  const token = resolveToken(
+    config.stocksEnabled ? normalizeStockAlias(tokenInput) : tokenInput,
+    config.tokens,
+  );
   const mint = new PublicKey(token.mint);
   const rpcTimeout = envTimeout("PRAXIS_RPC_READ_TIMEOUT_MS", 8_000);
-  const [chain, indexer] = await Promise.all([
+  const wantStock = config.stocksEnabled && isStockSymbol(token.symbol);
+  const [chain, indexer, stock] = await Promise.all([
     fetchOnChainStats(connection, mint, config.commitment, rpcTimeout, token.symbol),
     fetchIndexerPairs(token.mint, config.indexerUrl),
+    wantStock
+      ? fetchPrestocksEntries(config.prestocksApiUrl, config.prestocksTimeoutMs).then((entries) =>
+          findPrestocksEntry(entries, token.symbol),
+        )
+      : Promise.resolve(undefined as PrestocksEntry | undefined),
   ]);
 
   const pairs = indexer.filter((pair) => pair.chainId === "solana");
   const primary = pairs.sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0];
 
+  // Stocklana C03: PreStocks rows lead for stocks; everything below keeps the
+  // existing RPC + indexer behavior (including honest "unavailable").
   const metrics: ResearchMetric[] = [
+    ...(stock ? stockPriceMetrics(stock) : []),
     { label: "Price", value: primary?.priceUsd ? `$${primary.priceUsd}` : "unavailable" },
     {
       label: "24h change",
@@ -62,7 +85,9 @@ export async function researchToken(
 
   metrics.push({
     label: "Supply",
-    value: chain.supply ?? "unavailable",
+    // Stocklana C03: when on-chain supply is unavailable for a stock, fall back
+    // to the PreStocks-reported figure — labeled as such, never silently.
+    value: chain.supply ?? (stock ? (formatPrestocksSupply(stock) ?? "unavailable") : "unavailable"),
     trend: "flat",
   });
 
@@ -80,7 +105,8 @@ export async function researchToken(
     metrics,
     summary:
       `Read-only ${token.symbol} data from Solana RPC and the configured indexer. ` +
-      "No buy, sell, or hold recommendation is being made.",
+      "No buy, sell, or hold recommendation is being made." +
+      (stock ? stockSummarySuffix(stock) : ""),
   };
 }
 

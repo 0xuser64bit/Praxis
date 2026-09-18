@@ -1,6 +1,7 @@
 import { PraxisConfigError, PraxisInputError } from "../errors";
 import type { PraxisServerConfig } from "../env";
 import { envTimeout, fetchWithTimeout } from "../api/timeout";
+import { STOCK_SYMBOLS, normalizeStockAlias } from "../stocks/universe";
 
 export type ParsedIntent =
   | { outcome: "clarify"; question: string; options?: string[] }
@@ -141,6 +142,13 @@ const INTENT_SYSTEM_PROMPT = [
   "Return exactly one tool call.",
   "Supported actions: native SOL transfer, read-only token research, swap_stub, policy_question, save_contact, and policy_change.",
   "Swaps are not executable yet; emit swap_stub, never pretend agent_swap exists.",
+  "Stock verbs: buy/purchase/acquire and sell map to transfer with a PreStocks symbol " +
+    "(OPENAI, SPACEX, ANTHROPIC, ANDURIL, FIGUREAI, KALSHI, NEURALINK, POLYMARKET); " +
+    "accept an optional p- prefix and any case (popenai = OPENAI).",
+  "sell AMOUNT <stock> for <asset> is a swap idea: emit swap_stub, never a transfer addressed to a ticker.",
+  "Recurring phrasing (every <day>, weekly, monthly, dca, recurring) and basket phrasing " +
+    "(basket, index fund) have no scheduler yet: outcome must be clarify offering a one-time " +
+    "single-stock transfer. Never invent schedule or split actions.",
   "Never emit buy/sell/hold advice. Research is neutral data only.",
   "policy_question: when the user ASKS ABOUT their own policy, limits, caps, session expiry, pause state, allow-lists, or how Praxis keeps them safe. Pick the closest topic, or 'general'.",
   "policy_change: when the user wants to CHANGE a policy setting. 'change/raise/lower/set my daily limit to N SOL' -> field=daily_limit, amountHuman=N. 'set max per tx to N SOL' -> field=max_per_tx, amountHuman=N. 'extend my session by N hours/days' or 'set expiry to N hours' -> field=expiry, expiryHours=N (convert days to hours). 'pause/freeze the agent' -> field=pause, paused=true. 'unpause/resume the agent' -> field=pause, paused=false. Distinguish a CHANGE (imperative: change/set/raise/lower/pause) from a QUESTION (what/how/is my...).",
@@ -244,6 +252,16 @@ const TOKEN_ALIASES: Record<string, string> = {
   jup: "JUP",
   jupiter: "JUP",
   bonk: "BONK",
+  // Stocklana C04: PreStocks symbols, bare and p-prefixed, for research + transfer phrasing.
+  ...Object.fromEntries(
+    STOCK_SYMBOLS.flatMap((s) => {
+      const lower = s.toLowerCase();
+      return [
+        [lower, s],
+        [`p${lower}`, s],
+      ];
+    }),
+  ),
 };
 
 function normalizeToken(word: string): string {
@@ -275,9 +293,28 @@ function matchResearch(text: string): string | null {
 export function parseIntentLocallyForDemo(text: string): ParsedIntent {
   const cleaned = text.trim().replace(/\s+/g, " ");
 
-  const send = cleaned.match(/^s(?:end|nd)\s+([0-9]+(?:\.[0-9]+)?)\s*([a-z0-9$]+)?\s+(?:to|2)\s+(.+)$/i);
+  // Stocklana C04: basket phrasing has no multi-buy yet — clarify with the universe.
+  if (isBasketRequest(cleaned)) {
+    return {
+      outcome: "clarify",
+      question:
+        "Baskets aren't supported yet — which single stock should I start with? " +
+        `Available: ${STOCK_SYMBOLS.join(", ")}.`,
+    };
+  }
+
+  const send = cleaned.match(/^(?:s(?:end|nd)|buy|sell)\s+\$?\s*([0-9]+(?:\.[0-9]+)?)\s*([a-z0-9$]+)?\s+(?:to|2|for)\s+(.+)$/i);
   if (send) {
-    const asset = (send[2] ?? "sol").replace(/^\$/, "").toUpperCase();
+    // Stocklana C04: recurring phrasing has no scheduler yet — offer a one-time buy.
+    if (hasRecurringCadence(cleaned)) {
+      return {
+        outcome: "clarify",
+        question:
+          "Recurring buys aren't scheduled yet — want to do a one-time buy instead? " +
+          "Tell me the amount, the stock, and who receives it.",
+      };
+    }
+    const asset = normalizeStockAlias(send[2] ?? "sol");
     const amountHuman = send[1];
     // "ADDR and save (this address) as LABEL" → transfer + save_contact.
     const saveTail = send[3].match(/^(.*?)\s+(?:and\s+)?save\s+(?:this\s+address\s+|it\s+|that\s+)?as\s+(.+)$/i);
@@ -331,6 +368,16 @@ export function parseIntentLocallyForDemo(text: string): ParsedIntent {
     return { outcome: "actions", actions: [{ kind: "research", token: researchToken }] };
   }
 
+  // Stocklana C04: bare recurring phrasing (no transfer shape) clarifies too.
+  if (hasRecurringCadence(cleaned)) {
+    return {
+      outcome: "clarify",
+      question:
+        "Recurring buys aren't scheduled yet — want to do a one-time buy instead? " +
+        "Tell me the amount, the stock, and who receives it.",
+    };
+  }
+
   return {
     outcome: "clarify",
     question: "Do you want to send SOL, research a token, save a contact, ask about your policy, or preview a swap stub?",
@@ -381,6 +428,24 @@ function matchPolicyChange(text: string): Extract<ParsedAction, { kind: "policy_
   }
 
   return null;
+}
+
+/** Stocklana C04: basket phrasing has no multi-buy yet (C06 builds it). */
+function isBasketRequest(text: string): boolean {
+  return /\bbasket\b|\bindex fund\b|\bprestocks index\b|\bbuy the index\b/i.test(text);
+}
+
+/**
+ * Stocklana C04: recurring-buy phrasing has no scheduler yet (C06 builds it).
+ * Note: "daily" is included, so this gate must run AFTER the policy_change /
+ * policy_question matchers — "change my daily limit" is a cap edit, not DCA.
+ */
+function hasRecurringCadence(text: string): boolean {
+  return (
+    /\bevery\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|day|week|month|morning)\b/i.test(text) ||
+    /\b(weekly|monthly|daily|recurring|auto-?buy)\b/i.test(text) ||
+    /\bdca\b/i.test(text)
+  );
 }
 
 /** Classify a policy question into a topic, or null if it isn't one. */

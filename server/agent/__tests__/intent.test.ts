@@ -116,3 +116,66 @@ describe("deterministic parser — policy_change", () => {
     expect(r.outcome === "actions" && r.actions[0]).toEqual({ kind: "policy_question", topic: "caps" });
   });
 });
+
+describe("deterministic parser — stock intents (C04)", () => {
+  test("buy maps to a transfer with the canonical stock symbol", () => {
+    const r = parseIntentLocallyForDemo("buy $40 openai for maya");
+    expect(r.outcome === "actions" && r.actions[0]).toEqual({
+      kind: "transfer",
+      asset: "OPENAI",
+      amountHuman: "40",
+      recipient: "maya",
+    });
+  });
+
+  test("p-prefix and case are accepted", () => {
+    const r = parseIntentLocallyForDemo("buy 2 pSpaceX to maya");
+    expect(r.outcome === "actions" && r.actions[0]).toEqual({
+      kind: "transfer",
+      asset: "SPACEX",
+      amountHuman: "2",
+      recipient: "maya",
+    });
+  });
+
+  test("sell maps to a transfer", () => {
+    const r = parseIntentLocallyForDemo("sell 5 spacex to maya");
+    expect(r.outcome === "actions" && r.actions[0]).toEqual({
+      kind: "transfer",
+      asset: "SPACEX",
+      amountHuman: "5",
+      recipient: "maya",
+    });
+  });
+
+  test("stock research resolves through aliases", () => {
+    const r = parseIntentLocallyForDemo("openai price");
+    expect(r.outcome === "actions" && r.actions[0]).toEqual({ kind: "research", token: "OPENAI" });
+  });
+
+  test("recurring phrasing clarifies with a one-time offer (no silent schedule)", () => {
+    const r = parseIntentLocallyForDemo("buy $50 openai every monday");
+    expect(r.outcome).toBe("clarify");
+    expect(r.outcome === "clarify" && r.question).toMatch(/one-time buy/);
+  });
+
+  test("recurring phrasing inside a transfer shape also clarifies", () => {
+    const r = parseIntentLocallyForDemo("buy $50 openai for maya every monday");
+    expect(r.outcome).toBe("clarify");
+  });
+
+  test("basket phrasing clarifies with the universe (no invented splits)", () => {
+    const r = parseIntentLocallyForDemo("buy mag7 basket $100");
+    expect(r.outcome).toBe("clarify");
+    expect(r.outcome === "clarify" && r.question).toMatch(/OPENAI.*SPACEX|single stock/);
+  });
+
+  test("daily-limit edits still win over the recurring gate", () => {
+    const r = parseIntentLocallyForDemo("change my daily limit to 10 SOL");
+    expect(r.outcome === "actions" && r.actions[0]).toEqual({
+      kind: "policy_change",
+      field: "daily_limit",
+      amountHuman: "10",
+    });
+  });
+});

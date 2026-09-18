@@ -101,6 +101,37 @@ creates its Aegis policy PDA and funds the vault with 1 SOL. Then try
 
 ## Hosting on Vercel
 
+### App subdomain (`app.`)
+
+One project serves both hosts; `middleware.ts` routes by `Host` header
+(routing table unit-tested in `server/web/__tests__/hostRouting.test.ts`):
+
+| Request | Result |
+|---|---|
+| `app.usepraxis.fun/` | serves the product app (`/app` rewrite, URL stays clean) |
+| `app.usepraxis.fun/app/*` | 308 strips to `/*` (one canonical URL) |
+| `usepraxis.fun/app*` | 308 redirects to `app.usepraxis.fun/*` (old links keep working) |
+| `www.usepraxis.fun/*` | 308 canonicalizes to the apex |
+| `/api/*` on any host | passes through (app + API stay same-origin — no cookie/CORS changes) |
+| `*.vercel.app` previews, `localhost` | untouched (path routing, except `app.localhost` which previews the split) |
+
+Setup (no code changes, no new env vars):
+
+1. Vercel project → Settings → Domains → add `app.usepraxis.fun` (keep `usepraxis.fun`).
+2. DNS: `CNAME app → cname.vercel-dns.com`.
+3. `NEXT_PUBLIC_SITE_URL` stays the apex (`https://usepraxis.fun`) — the middleware
+   derives the apex from it, and OG images keep one canonical base.
+
+Verify:
+
+```bash
+curl -sI https://usepraxis.fun/app | grep -i location   # → https://app.usepraxis.fun/
+curl -sI https://app.usepraxis.fun/ | grep -i "200\|rewrite"  # 200, product app HTML
+curl -sI https://app.usepraxis.fun/api/health | head -1      # 200, same-origin API
+```
+
+Existing `/app` links (Nav CTA, README, SDK docs) need no edits — they redirect.
+Point new external links (hackathon submission, socials) at `https://app.usepraxis.fun/`.
 Import the repo and set Environment Variables. **Keys go in as values, not file
 paths** — Vercel has no writable key files.
 

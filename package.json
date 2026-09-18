@@ -16,7 +16,8 @@
     "praxis:moneyshots": "bun scripts/moneyshots.ts",
     "praxis:swapcheck": "bun scripts/swapcheck.ts",
     "praxis:setup-token-accounts": "bun scripts/setup-token-accounts.ts",
-    "praxis:tokencheck": "bun scripts/tokencheck.ts"
+    "praxis:tokencheck": "bun scripts/tokencheck.ts",
+    "praxis:stockscheck": "bun scripts/stockscheck.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

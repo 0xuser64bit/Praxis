@@ -163,6 +163,38 @@ paths** — Vercel has no writable key files.
 > database (Vercel Marketplace), set `PRAXIS_STATE_BACKEND=postgres` +
 > `DATABASE_URL`, and the schema self-creates.
 
+### Stocklana staging (submission preview)
+
+Same project, these additions (values, not secrets — nothing sensitive here):
+
+| Key | Value |
+|---|---|
+| `PRAXIS_STOCKS_ENABLED` | `1` (merges the 8 PreStocks mints; off = default app) |
+| `PRAXIS_PRESTOCKS_API_URL` | default (`https://prestocks.com/api/prestocks`) — leave unset |
+| `PRAXIS_STOCK_UNIVERSE` | leave unset (full universe) |
+| `GEMINI_API_KEY` | set for free-form phrasing, or `PRAXIS_LOCAL_INTENT=1` for the deterministic parser |
+| `NEXT_PUBLIC_PRAXIS_ALLOW_MOCK` | `0` (judges must hit the real API path) |
+
+The 8 stock mints come from the flag — do NOT list them in `PRAXIS_TOKENS`.
+DCA firing on staging is script-driven (`bun run praxis:stocks-dca -- --fire`
+against the deployment's owner wallet); `/api/cron/stocks` is session-authed
+for the signed-in wallet. No `vercel.json` cron is configured — multi-wallet
+fan-out is post-hackathon work.
+
+Cold-browser check before recording: research OPENAI → propose a buy →
+over-cap buy blocked (off-chain card AND on-chain log) → switch envelope →
+schedule a DCA → activity filtered by stock.
+
+### Demo video shot list (90 seconds, human task)
+
+1. Land on `https://app.<preview>/` → connect Phantom (devnet).
+2. `research openai` → PreStocks rows render with attribution.
+3. `buy $40 openai` → proposal with Aegis verdict → sign → Explorer link.
+4. `buy $500 openai` → blocked card citing the 200/tx cap.
+5. Policy → switch envelope to SPACEX (`vault · i of 8` label changes).
+6. `buy $50 spacex every monday` → schedule notice (no signature asked).
+7. Activity → filter by OPENAI. End on the blocked card (the pitch).
+
 ---
 
 ## Environment reference

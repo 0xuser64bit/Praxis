@@ -31,4 +31,22 @@ describe("AddressBook saved contacts", () => {
     expect(book.all().filter((e) => e.address === ADDR)).toHaveLength(1);
     expect(book.resolve("backpack").kind).toBe("exact");
   });
+
+  test("remove() drops by address or label (case-insensitive) and returns the removed", () => {
+    const book = new AddressBook([
+      { label: "backpack", name: "Backpack Wallet", address: ADDR },
+      { label: "vault", name: "Vault", address: ADDR2 },
+    ]);
+    expect(book.remove("BACKPACK")).toHaveLength(1);
+    expect(book.all().some((e) => e.address === ADDR)).toBe(false);
+    expect(book.remove(ADDR2)).toHaveLength(1);
+    expect(book.all()).toHaveLength(0);
+  });
+
+  test("remove() is a no-op on unknown or blank keys", () => {
+    const book = new AddressBook([{ label: "backpack", name: "Backpack Wallet", address: ADDR }]);
+    expect(book.remove("nobody")).toEqual([]);
+    expect(book.remove("   ")).toEqual([]);
+    expect(book.all()).toHaveLength(1);
+  });
 });

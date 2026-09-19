@@ -20,12 +20,19 @@ export interface StoredProviderState {
   contacts: AddressBookEntry[];
   /** Stocklana C06: mechanical DCA schedules (cron fires emit proposals). */
   schedules?: DcaSchedule[];
+  /**
+   * Tombstones for removed address-book entries (address or label). Lets a
+   * removal stick even for env-seeded contacts, which are otherwise re-merged
+   * from config on every fresh provider construction.
+   */
+  removedContacts?: string[];
 }
 
 export const STORE_VERSION = 1;
 export const MAX_THREADS = 50;
 export const MAX_ACTIVITY = 250;
 export const MAX_SCHEDULES = 50;
+export const MAX_REMOVED_CONTACTS = 200;
 
 /**
  * Bound the persisted document: keep the newest threads/activity and drop
@@ -65,7 +72,11 @@ export function compactState(state: StoredProviderState): StoredProviderState {
     }
   }
 
-  return { threads, proposals, activity, contacts: state.contacts ?? [], schedules };
+  const removedContacts = [...new Set(
+    (state.removedContacts ?? []).map((key) => key.trim().toLowerCase()).filter(Boolean),
+  )].slice(0, MAX_REMOVED_CONTACTS);
+
+  return { threads, proposals, activity, contacts: state.contacts ?? [], schedules, removedContacts };
 }
 
 function collectProposalId(block: AgentBlock, out: Set<string>) {
@@ -85,6 +96,9 @@ export function normalizeStoredState(raw: unknown): StoredProviderState | undefi
     activity: Array.isArray(state.activity) ? state.activity : [],
     contacts: Array.isArray(state.contacts) ? state.contacts : [],
     schedules: Array.isArray(state.schedules) ? state.schedules : [],
+    removedContacts: Array.isArray(state.removedContacts)
+      ? state.removedContacts.filter((key): key is string => typeof key === "string")
+      : [],
   };
 }
 

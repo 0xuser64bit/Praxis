@@ -11,6 +11,7 @@ import type { AegisClient, TransferExecution, TransferSimulation } from "../../a
 import { DEFAULT_AEGIS_PROGRAM_ID } from "../../aegis/constants";
 import { DEFAULT_PRESTOCKS_API_URL, DEFAULT_PRESTOCKS_TIMEOUT_MS, DEFAULT_TOKENS, type PraxisServerConfig } from "../../env";
 import { PraxisConfigError } from "../../errors";
+import { getStateRepository } from "../stateRepository";
 import { findPolicyPda } from "../../aegis/pdas";
 import { policyFixture } from "../../testing/fixtures";
 
@@ -257,5 +258,52 @@ describe("save contact", () => {
     const blocks = (provider.getThread(threadId)!.messages.at(-1) as { blocks: Array<{ type: string }> }).blocks;
     expect(blocks.some((b) => b.type === "clarify")).toBe(true);
     expect(provider.getAddressBook().some((e) => e.label === "oops")).toBe(false);
+  });
+});
+
+describe("contacts management", () => {
+  const OPS = "8xdGRM1bAy4gFDQrdiFesF1FsuRYdecDYC3B5wofYi9t";
+
+  test("addContact saves and resolves; removeContact drops by label or address", async () => {
+    const { provider } = build();
+    await provider.addContact("Ops", OPS);
+    expect(provider.getAddressBook().some((e) => e.label === "ops" && e.address === OPS)).toBe(true);
+    await provider.removeContact("OPS"); // case-insensitive label
+    expect(provider.getAddressBook().some((e) => e.address === OPS)).toBe(false);
+    // unknown keys are a no-op, never an error
+    await provider.removeContact("nobody-here");
+  });
+
+  test("addContact rejects bad input", async () => {
+    const { provider } = build();
+    await expect(provider.addContact("bad", "not-an-address")).rejects.toThrow(/valid Solana public key/);
+    await expect(provider.addContact("   ", OPS)).rejects.toThrow(/non-empty string/);
+  });
+
+  test("removing a seeded contact survives reconstruction (tombstone)", async () => {
+    const owner = Keypair.generate();
+    const agent = Keypair.generate();
+    const config = makeConfig({
+      ownerAddress: owner.publicKey,
+      ownerKeypair: owner,
+      agentKeypair: agent,
+      policyAddress: findPolicyPda(owner.publicKey, DEFAULT_AEGIS_PROGRAM_ID),
+    });
+    const fake = new FakeAegis(policyFixture());
+    const asClient = () => fake as unknown as AegisClient;
+
+    const first = new PraxisServerProvider(config, asClient());
+    expect(first.getAddressBook().some((e) => e.label === "maya")).toBe(true);
+    await first.removeContact("maya");
+
+    const stored = await getStateRepository().load(owner.publicKey.toBase58());
+    const second = new PraxisServerProvider(config, asClient(), stored);
+    expect(second.getAddressBook().some((e) => e.label === "maya")).toBe(false);
+
+    // re-adding clears the tombstone
+    await second.addContact("Maya", MAYA);
+    const stored2 = await getStateRepository().load(owner.publicKey.toBase58());
+    const third = new PraxisServerProvider(config, asClient(), stored2);
+    expect(third.getAddressBook().some((e) => e.label === "maya")).toBe(true);
   });
 });

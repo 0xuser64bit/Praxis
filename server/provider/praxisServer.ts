@@ -64,6 +64,8 @@ interface StoreState {
   contacts: AddressBookEntry[];
   /** Stocklana C06: mechanical DCA schedules (persisted; cron fires emit proposals). */
   schedules: DcaSchedule[];
+  /** Tombstoned contact addresses/labels (lowercased) — see StoredProviderState. */
+  removedContacts: string[];
   policy?: PolicyView;
   /** threadId -> ms timestamp when thinking started (TTL-guarded, never persisted). */
   thinking: Record<string, number>;
@@ -169,7 +171,14 @@ export class PraxisServerProvider implements PraxisProvider {
     this.aegis = aegis;
     this.repository = getStateRepository();
     const savedContacts = initialState?.contacts ?? [];
-    this.addressBook = new AddressBook([...savedContacts, ...config.addressBook]);
+    // Tombstoned entries stay removed even when they come from the env-seeded
+    // config book (which is re-merged on every fresh construction).
+    const removed = new Set((initialState?.removedContacts ?? []).map((key) => key.toLowerCase()));
+    const visible = (entry: AddressBookEntry) =>
+      !removed.has(entry.address.toLowerCase()) && !removed.has(entry.label.toLowerCase());
+    this.addressBook = new AddressBook(
+      [...savedContacts, ...config.addressBook].filter(visible),
+    );
     this.ownerKey = ownerKeyForConfig(config);
     this.state = {
       threads: initialState?.threads.length ? initialState.threads : [welcomeThread(nowSeconds())],
@@ -177,6 +186,7 @@ export class PraxisServerProvider implements PraxisProvider {
       activity: initialState?.activity ?? [],
       contacts: savedContacts,
       schedules: initialState?.schedules ?? [],
+      removedContacts: [...removed],
       thinking: {},
     };
   }
@@ -460,6 +470,62 @@ export class PraxisServerProvider implements PraxisProvider {
       const before = this.state.schedules.length;
       this.state.schedules = this.state.schedules.filter((s) => s.id !== scheduleId);
       if (this.state.schedules.length !== before) await this.commit();
+    });
+  };
+
+  /**
+   * Save (or rename) a contact. Upserts by address and label, clears any
+   * removal tombstone for it, and persists — the same book the chat
+   * `save_contact` path writes to.
+   */
+  addContact = async (label: string, address: string): Promise<void> => {
+    return withOwnerLock(this.ownerKey, async () => {
+      const cleanLabel = label.trim().replace(/[.?!]+$/, "");
+      if (!cleanLabel) throw new PraxisInputError("label must be a non-empty string");
+      let normalized: string;
+      try {
+        normalized = new PublicKey(address.trim()).toBase58();
+      } catch {
+        throw new PraxisInputError("address must be a valid Solana public key");
+      }
+      const entry: AddressBookEntry = {
+        label: cleanLabel.toLowerCase(),
+        name: cleanLabel,
+        address: normalized,
+      };
+      this.addressBook.add(entry);
+      this.state.contacts = [
+        entry,
+        ...this.state.contacts.filter((c) => c.address !== entry.address && c.label !== entry.label),
+      ];
+      const untombstone = new Set([entry.address.toLowerCase(), entry.label.toLowerCase()]);
+      this.state.removedContacts = this.state.removedContacts.filter((key) => !untombstone.has(key));
+      await this.commit();
+    });
+  };
+
+  /**
+   * Remove a contact by address or label (case-insensitive). Idempotent:
+   * unknown keys are a no-op. Env-seeded contacts are tombstoned so the
+   * removal survives the next fresh construction.
+   */
+  removeContact = async (key: string): Promise<void> => {
+    return withOwnerLock(this.ownerKey, async () => {
+      const removed = this.addressBook.remove(key);
+      if (removed.length === 0) return;
+      const gone = new Set<string>();
+      for (const entry of removed) {
+        gone.add(entry.address);
+        gone.add(entry.label);
+      }
+      this.state.contacts = this.state.contacts.filter((c) => !gone.has(c.address) && !gone.has(c.label));
+      const tombstoned = new Set(this.state.removedContacts);
+      for (const entry of removed) {
+        tombstoned.add(entry.address.toLowerCase());
+        tombstoned.add(entry.label.toLowerCase());
+      }
+      this.state.removedContacts = [...tombstoned];
+      await this.commit();
     });
   };
 
@@ -821,7 +887,7 @@ export class PraxisServerProvider implements PraxisProvider {
       blocks: [{
         type: "notice",
         tone: "success",
-        text: `Saved "${entry.name}" → ${short}. Rename or remove it in Policy → Address book.`,
+        text: `Saved "${entry.name}" → ${short}. Manage it in Policy → Advanced → Address book.`,
       }],
     };
   }
@@ -1294,6 +1360,7 @@ export class PraxisServerProvider implements PraxisProvider {
       activity: this.state.activity,
       contacts: this.state.contacts,
       schedules: this.state.schedules,
+      removedContacts: this.state.removedContacts,
     };
     await this.repository.save(this.ownerKey, state);
   }

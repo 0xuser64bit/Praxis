@@ -372,4 +372,24 @@ export class MockPraxisProvider implements PraxisProvider {
     };
     this.notify();
   };
+
+  addContact = async (label: string, address: string): Promise<void> => {
+    const cleanLabel = label.trim();
+    if (!cleanLabel || !address.trim()) return;
+    const entry = { label: cleanLabel.toLowerCase(), name: cleanLabel, address: address.trim() };
+    this.state.addressBook = [
+      entry,
+      ...this.state.addressBook.filter((e) => e.address !== entry.address && e.label !== entry.label),
+    ];
+    this.notify();
+  };
+
+  removeContact = async (key: string): Promise<void> => {
+    const needle = key.trim().toLowerCase();
+    if (!needle) return;
+    this.state.addressBook = this.state.addressBook.filter(
+      (e) => e.address.toLowerCase() !== needle && e.label.toLowerCase() !== needle,
+    );
+    this.notify();
+  };
 }

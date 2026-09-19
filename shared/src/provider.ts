@@ -338,6 +338,10 @@ export interface PraxisProvider {
   rotateAgent(): Promise<void>;
   addToAllowList(kind: AllowListKind, address: Address): Promise<void>;
   removeFromAllowList(kind: AllowListKind, address: Address): Promise<void>;
+  /** Save (or rename) an address-book contact. Labels have no signing power. */
+  addContact(label: string, address: Address): Promise<void>;
+  /** Remove a contact by address or label (case-insensitive, idempotent). */
+  removeContact(key: string): Promise<void>;
 
   // --- reactivity ---
   /** Subscribe to any state change. Returns an unsubscribe fn. */

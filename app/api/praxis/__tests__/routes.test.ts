@@ -14,6 +14,8 @@ import { GET as getThread } from "../get-thread/route";
 import { POST as sendRoute } from "../send/route";
 import { GET as getSchedules } from "../get-schedules/route";
 import { POST as cancelSchedule } from "../cancel-schedule/route";
+import { POST as addContact } from "../add-contact/route";
+import { POST as removeContact } from "../remove-contact/route";
 import { POST as bootstrapPolicy } from "../bootstrap-policy/route";
 import { POST as ownerBuild } from "../owner/build/route";
 import { POST as ownerSubmit } from "../owner/submit/route";
@@ -186,6 +188,40 @@ describe("read auth gating", () => {
     expect(bad.status).toBe(400);
     const ok = await cancelSchedule(authed("/api/praxis/cancel-schedule", { scheduleId: "s-does-not-exist" }));
     expect(ok.status).toBe(200);
+  });
+});
+
+describe("contacts", () => {
+  const OPS = "8xdGRM1bAy4gFDQrdiFesF1FsuRYdecDYC3B5wofYi9t";
+
+  test("add-contact / remove-contact: 401 without a session", async () => {
+    const add = await addContact(
+      makeRequest(`${ORIGIN}/api/praxis/add-contact`, { origin: ORIGIN, body: { label: "ops", address: OPS } }),
+    );
+    expect(add.status).toBe(401);
+    const remove = await removeContact(
+      makeRequest(`${ORIGIN}/api/praxis/remove-contact`, { origin: ORIGIN, body: { key: "ops" } }),
+    );
+    expect(remove.status).toBe(401);
+  });
+
+  test("add-contact: 400 on missing fields and on a bad address", async () => {
+    expect((await addContact(authed("/api/praxis/add-contact", {}))).status).toBe(400);
+    const bad = await addContact(authed("/api/praxis/add-contact", { label: "ops", address: "nope" }));
+    expect(bad.status).toBe(400);
+  });
+
+  test("add-contact then remove-contact round-trips for a fresh wallet", async () => {
+    const wallet = Keypair.generate().publicKey.toBase58();
+    const req = (path: string, body: unknown) => {
+      const setCookie = createSessionCookie(wallet, makeRequest(`${ORIGIN}${path}`, { origin: ORIGIN }));
+      const value = setCookie.split(";")[0].split("=").slice(1).join("=");
+      return makeRequest(`${ORIGIN}${path}`, { method: "POST", origin: ORIGIN, cookie: `praxis_session=${value}`, body });
+    };
+    expect((await addContact(req("/api/praxis/add-contact", { label: "Ops", address: OPS }))).status).toBe(200);
+    expect((await removeContact(req("/api/praxis/remove-contact", { key: "ops" }))).status).toBe(200);
+    // unknown keys are a no-op (200, not 404)
+    expect((await removeContact(req("/api/praxis/remove-contact", { key: "nobody" }))).status).toBe(200);
   });
 });
 

@@ -308,6 +308,16 @@ export class RemotePraxisProvider implements PraxisProvider {
     await this.refreshAll();
   };
 
+  addContact = async (label: string, address: string): Promise<void> => {
+    await this.mutate(() => this.post("/api/praxis/add-contact", { label, address }));
+    await this.refreshAll();
+  };
+
+  removeContact = async (key: string): Promise<void> => {
+    await this.mutate(() => this.post("/api/praxis/remove-contact", { key }));
+    await this.refreshAll();
+  };
+
   /**
    * Run an owner action. When a signing wallet is present, build the unsigned
    * transaction server-side, sign it in the wallet, and submit it — the backend

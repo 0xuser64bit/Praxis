@@ -21,6 +21,23 @@ export class AddressBook {
     ];
   }
 
+  /**
+   * Remove contacts matching an address or a label (case-insensitive).
+   * Returns the removed entries so callers can tombstone them.
+   */
+  remove(key: string): AddressBookEntry[] {
+    const needle = key.trim().toLowerCase();
+    if (!needle) return [];
+    const removed = this.entries.filter(
+      (e) => e.address.toLowerCase() === needle || e.label.toLowerCase() === needle,
+    );
+    if (removed.length > 0) {
+      const gone = new Set(removed);
+      this.entries = this.entries.filter((e) => !gone.has(e));
+    }
+    return removed;
+  }
+
   all(): AddressBookEntry[] {
     return this.entries;
   }

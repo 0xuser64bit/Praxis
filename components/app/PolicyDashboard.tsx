@@ -209,8 +209,7 @@ export function PolicyDashboard() {
             />
 
             <Card className="mt-4 p-5">
-              <Label className="mb-4">Allow-lists</Label>
-              <div className="flex flex-col gap-5">
+              <Label className="mb-4">Allow-lists</Label>              <div className="flex flex-col gap-5">
                 <AllowList
                   kind="programs"
                   title="Programs"
@@ -242,6 +241,15 @@ export function PolicyDashboard() {
               </div>
             </Card>
 
+            <AddressBookCard
+              onAdd={(label, address) => {
+                runMutation(() => provider.addContact(label, address), "Could not save this contact.");
+              }}
+              onRemove={(key) => {
+                runMutation(() => provider.removeContact(key), "Could not remove this contact.");
+              }}
+            />
+
             <DangerZone
               policy={policy}
               onDelete={() => runMutation(() => provider.deleteAgent(), "Could not delete the agent.")}
@@ -255,6 +263,101 @@ export function PolicyDashboard() {
         <RevokeDialog onConfirm={() => provider.revokeAgent()} onClose={() => setRevokeOpen(false)} />
       )}
     </div>
+  );
+}
+
+// --- address book (labels resolve names in chat; no signing power) ---
+function AddressBookCard({
+  onAdd,
+  onRemove,
+}: {
+  onAdd: (label: string, address: string) => void;
+  onRemove: (key: string) => void;
+}) {
+  const book = useAddressBook();
+  const [label, setLabel] = useState("");
+  const [address, setAddress] = useState("");
+
+  const add = () => {
+    if (!label.trim() || !address.trim()) return;
+    onAdd(label.trim(), address.trim());
+    setLabel("");
+    setAddress("");
+  };
+
+  return (
+    <Card className="mt-4 p-5">
+      <div className="mb-1 flex items-baseline justify-between">
+        <Label>Address book</Label>
+        <span className="[font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
+          labels only — no signing power
+        </span>
+      </div>
+      <p className="mb-4 text-[12.5px] leading-[1.5] text-[var(--text-secondary)]">
+        Say <span className="[font-family:var(--font-mono)] text-[var(--text-primary)]">send 1 SOL to maya</span> instead
+        of pasting addresses. You can also ask the agent to save one in chat.
+      </p>
+
+      {book.length > 0 && (
+        <div className="mb-4 flex flex-col gap-2">
+          {book.map((entry) => (
+            <div
+              key={entry.address}
+              className="flex items-center gap-3 rounded-lg bg-[var(--bg)] px-3 py-2 [border:0.5px_solid_var(--border)]"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">
+                  {entry.name}
+                </div>
+                <div className="truncate [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
+                  {entry.label} · {shortenAddress(entry.address)}
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label={`Remove ${entry.name}`}
+                onClick={() => onRemove(entry.address)}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--danger)]"
+              >
+                <IconX size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-1.5">
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") add();
+          }}
+          placeholder="name (maya)"
+          aria-label="Contact name"
+          className="h-9 w-[130px] shrink-0 rounded-md bg-[var(--bg)] px-2.5 text-[12px] text-[var(--text-primary)] outline-none [border:0.5px_solid_var(--border)] placeholder:text-[var(--text-quaternary)] focus:[border-color:var(--border-bright)]"
+        />
+        <input
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") add();
+          }}
+          placeholder="paste address…"
+          aria-label="Contact address"
+          className="h-9 min-w-0 flex-1 rounded-md bg-[var(--bg)] px-2.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-primary)] outline-none [border:0.5px_solid_var(--border)] placeholder:text-[var(--text-quaternary)] focus:[border-color:var(--border-bright)]"
+        />
+        <button
+          type="button"
+          onClick={add}
+          disabled={!label.trim() || !address.trim()}
+          aria-label="Save contact"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[var(--accent)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <IconPlus size={15} />
+        </button>
+      </div>
+    </Card>
   );
 }
 

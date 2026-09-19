@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/aegis.json`.
  */
 export type Aegis = {
-  "address": "7qRKV1dNPCixKWDLHsuHa5puFsNPtNCzC1sX6P1kpFgb",
+  "address": "3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd",
   "metadata": {
     "name": "aegis",
     "version": "0.1.0",

@@ -7,7 +7,7 @@ import {
 } from "@praxis/shared";
 
 export const DEFAULT_AEGIS_PROGRAM_ID = new PublicKey(
-  "7qRKV1dNPCixKWDLHsuHa5puFsNPtNCzC1sX6P1kpFgb",
+  "3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd",
 );
 
 export const SYSTEM_PROGRAM_ID = new PublicKey("11111111111111111111111111111111");

@@ -24,7 +24,7 @@ pub use constants::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("7qRKV1dNPCixKWDLHsuHa5puFsNPtNCzC1sX6P1kpFgb");
+declare_id!("3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd");
 
 #[program]
 pub mod aegis {

@@ -1,6 +1,6 @@
 import {
   readJson,
-  readNullableString,
+  readNullableId,
   readString,
   withMutationProvider,
 } from "@/server/api/json";
@@ -18,7 +18,7 @@ export async function POST(request: Request) {
       windowMs: 60_000,
     });
     const body = await readJson(request);
-    const threadId = readNullableString(body.threadId, "threadId", { maxLength: 128 });
+    const threadId = readNullableId(body.threadId, "threadId");
     const text = readString(body.text, "text", { maxLength: 2_000 });
     return provider.send(threadId, text);
   });

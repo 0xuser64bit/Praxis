@@ -1,11 +1,11 @@
-import { readString, withReadProvider } from "@/server/api/json";
+import { readId, withReadProvider } from "@/server/api/json";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   return withReadProvider(request, (provider) => {
-    const threadId = readString(new URL(request.url).searchParams.get("threadId"), "threadId");
+    const threadId = readId(new URL(request.url).searchParams.get("threadId"), "threadId");
     return provider.isThinking(threadId);
   });
 }

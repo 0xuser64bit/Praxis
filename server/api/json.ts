@@ -151,6 +151,12 @@ export function readNullableString(value: unknown, name: string, opts: { maxLeng
   return readString(value, name, opts);
 }
 
+/** Nullable variant of {@link readId} for optional thread references. */
+export function readNullableId(value: unknown, name: string): string | null {
+  if (value === null || value === undefined) return null;
+  return readId(value, name);
+}
+
 export function readStringArray(
   value: unknown,
   name: string,
@@ -171,10 +177,25 @@ export function readPolicyPatch(value: unknown) {
     throw new PraxisInputError("patch must be an object");
   }
   const patch = value as Record<string, unknown>;
+  const maxPerTx =
+    patch.maxPerTx === undefined ? undefined : readBaseUnits(patch.maxPerTx, "patch.maxPerTx");
+  const dailyLimit =
+    patch.dailyLimit === undefined ? undefined : readBaseUnits(patch.dailyLimit, "patch.dailyLimit");
+  if (maxPerTx !== undefined && maxPerTx <= 0n) {
+    throw new PraxisInputError("patch.maxPerTx must be greater than zero");
+  }
+  if (dailyLimit !== undefined && dailyLimit <= 0n) {
+    throw new PraxisInputError("patch.dailyLimit must be greater than zero");
+  }
+  const expiryTs =
+    patch.expiryTs === undefined ? undefined : readNonNegativeNumber(patch.expiryTs, "patch.expiryTs");
+  if (expiryTs !== undefined && expiryTs <= Math.floor(Date.now() / 1000)) {
+    throw new PraxisInputError("patch.expiryTs must be in the future");
+  }
   return {
-    maxPerTx: patch.maxPerTx === undefined ? undefined : readBaseUnits(patch.maxPerTx, "patch.maxPerTx"),
-    dailyLimit: patch.dailyLimit === undefined ? undefined : readBaseUnits(patch.dailyLimit, "patch.dailyLimit"),
-    expiryTs: patch.expiryTs === undefined ? undefined : readNonNegativeNumber(patch.expiryTs, "patch.expiryTs"),
+    maxPerTx,
+    dailyLimit,
+    expiryTs,
     paused: patch.paused === undefined ? undefined : readBoolean(patch.paused, "patch.paused"),
   };
 }
@@ -184,10 +205,15 @@ export function readTokenEnvelopeConfig(value: unknown) {
     throw new PraxisInputError("config must be an object");
   }
   const config = value as Record<string, unknown>;
+  const tokenMaxPerTx = readBaseUnits(config.tokenMaxPerTx, "config.tokenMaxPerTx");
+  const tokenDailyLimit = readBaseUnits(config.tokenDailyLimit, "config.tokenDailyLimit");
+  if (tokenMaxPerTx <= 0n || tokenDailyLimit <= 0n) {
+    throw new PraxisInputError("token caps must be greater than zero");
+  }
   return {
-    tokenMint: readString(config.tokenMint, "config.tokenMint"),
-    tokenMaxPerTx: readBaseUnits(config.tokenMaxPerTx, "config.tokenMaxPerTx"),
-    tokenDailyLimit: readBaseUnits(config.tokenDailyLimit, "config.tokenDailyLimit"),
+    tokenMint: readString(config.tokenMint, "config.tokenMint", { maxLength: 64 }),
+    tokenMaxPerTx,
+    tokenDailyLimit,
   };
 }
 
@@ -219,6 +245,30 @@ export function readBaseUnits(value: unknown, name: string): bigint {
     throw new PraxisInputError(`${name} must be an unsigned 64-bit integer base-unit string`);
   }
   return units;
+}
+
+/** Base units that must be strictly positive (vault funding, withdrawals, caps). */
+export function readPositiveBaseUnits(value: unknown, name: string): bigint {
+  const units = readBaseUnits(value, name);
+  if (units <= 0n) {
+    throw new PraxisInputError(`${name} must be greater than zero`);
+  }
+  return units;
+}
+
+const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+/**
+ * Opaque client/thread/proposal identifiers. Restricts charset so IDs are safe
+ * as filesystem names, URL params, and log tokens (no path traversal, no
+ * control characters). Generated IDs (`t-…`, `p-…`, `m-…`, `a-…`) all match.
+ */
+export function readId(value: unknown, name: string, opts: { maxLength?: number } = {}): string {
+  const id = readString(value, name, { maxLength: opts.maxLength ?? 128 });
+  if (!ID_PATTERN.test(id)) {
+    throw new PraxisInputError(`${name} must match [A-Za-z0-9_-]`);
+  }
+  return id;
 }
 
 export function readAllowListKind(value: unknown) {

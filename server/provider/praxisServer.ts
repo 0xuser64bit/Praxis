@@ -40,7 +40,7 @@ import {
   validatePublicKey,
   type PraxisServerConfig,
 } from "../env";
-import { PraxisConfigError, PraxisNotFoundError } from "../errors";
+import { PraxisConfigError, PraxisInputError, PraxisNotFoundError } from "../errors";
 import { formatSol, parseHumanUnits, SOL_DECIMALS } from "../units";
 import { getStateRepository, type StateRepository } from "./stateRepository";
 import type { StoredProviderState } from "./stateSerialization";
@@ -236,6 +236,9 @@ export class PraxisServerProvider implements PraxisProvider {
   // --- conversation ---
   newThread = (preferredId?: string): string => {
     const id = preferredId ?? this.id("t");
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) {
+      throw new PraxisNotFoundError("Invalid thread id.");
+    }
     if (this.getThread(id)) return id;
     this.state.threads = [{ id, title: "New session", messages: [], updatedAt: nowSeconds() }, ...this.state.threads];
     this.commitInBackground();
@@ -358,12 +361,14 @@ export class PraxisServerProvider implements PraxisProvider {
 
   fundVault = async (amount: bigint): Promise<void> => {
     this.assertBackendOwnerSigningAvailable();
+    if (amount <= 0n) throw new PraxisInputError("amount must be greater than zero");
     await this.aegis.fundVault(amount);
     await this.refreshOnChain();
   };
 
   withdrawVault = async (amount: bigint): Promise<void> => {
     this.assertBackendOwnerSigningAvailable();
+    if (amount <= 0n) throw new PraxisInputError("amount must be greater than zero");
     await this.aegis.withdrawVault(amount);
     await this.refreshOnChain();
   };
@@ -386,6 +391,9 @@ export class PraxisServerProvider implements PraxisProvider {
   configureToken = async (config: TokenEnvelopeConfig): Promise<void> => {
     this.assertBackendOwnerSigningAvailable();
     validatePublicKey(config.tokenMint);
+    if (config.tokenMaxPerTx <= 0n || config.tokenDailyLimit <= 0n) {
+      throw new PraxisInputError("token caps must be greater than zero");
+    }
     await this.aegis.configureToken({
       tokenMint: config.tokenMint,
       tokenMaxPerTx: config.tokenMaxPerTx,

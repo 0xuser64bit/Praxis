@@ -1,4 +1,4 @@
-import { readBaseUnits, readJson, withMutationProvider } from "@/server/api/json";
+import { readJson, readPositiveBaseUnits, withMutationProvider } from "@/server/api/json";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   return withMutationProvider(request, async (provider) => {
     const body = await readJson(request);
-    const amount = readBaseUnits(body.amount, "amount");
+    const amount = readPositiveBaseUnits(body.amount, "amount");
     await provider.fundVault(amount);
     return { ok: true };
   });

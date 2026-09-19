@@ -5,6 +5,7 @@ import { POST as signProposal } from "../sign-proposal/route";
 import { POST as updatePolicy } from "../update-policy/route";
 import { POST as authVerify } from "../auth/verify/route";
 import { GET as getPolicy } from "../get-policy/route";
+import { GET as cronStocks } from "../../cron/stocks/route";
 import { GET as getStockUniverse } from "../get-stock-universe/route";
 import { GET as getProposal } from "../get-proposal/route";
 import { GET as getProposals } from "../get-proposals/route";
@@ -200,6 +201,17 @@ describe("stocklana C05: stock universe + policy mint view", () => {
   test("get-policy: 400 on an empty ?mint=", async () => {
     const res = await getPolicy(authed("/api/praxis/get-policy?mint="));
     expect(res.status).toBe(400);
+  });
+
+  test("cron/stocks: fires nothing for a fresh wallet (no schedules)", async () => {
+    const res = await cronStocks(authed("/api/cron/stocks"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ fired: [] });
+  });
+
+  test("cron/stocks: 401 without a session", async () => {
+    const res = await cronStocks(makeRequest(`${ORIGIN}/api/cron/stocks`));
+    expect(res.status).toBe(401);
   });
 });
 

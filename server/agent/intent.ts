@@ -2,6 +2,12 @@ import { PraxisConfigError, PraxisInputError } from "../errors";
 import type { PraxisServerConfig } from "../env";
 import { envTimeout, fetchWithTimeout } from "../api/timeout";
 import { STOCK_SYMBOLS, normalizeStockAlias } from "../stocks/universe";
+import {
+  availableBaskets,
+  parseCadence,
+  resolveBasket,
+  type DcaCadence,
+} from "../stocks/schedules";
 
 export type ParsedIntent =
   | { outcome: "clarify"; question: string; options?: string[] }
@@ -45,6 +51,28 @@ export type ParsedAction =
       expiryHours?: number;
       /** For pause: true to pause the agent, false to unpause/resume it. */
       paused?: boolean;
+    }
+  | {
+      /** Stocklana C06: mechanical recurring buy. Creates a schedule; each
+       *  fire emits a transfer proposal through the same policy checks.
+       *  Never signs — every fire needs a signature. */
+      kind: "schedule_dca";
+      asset: string;
+      amountHuman: string;
+      /** Saved label/address, or undefined for the owner's own wallet. */
+      recipient?: string;
+      cadence: DcaCadence;
+    }
+  | {
+      /** Stocklana C06: atomic multi-stock buy. Total USD split equally across
+       *  the basket via PreStocks prices. All-or-clarify: any blocked or
+       *  unpriceable constituent clarifies the whole basket, storing nothing. */
+      kind: "basket_buy";
+      basket: string;
+      /** Total USD for the whole basket, e.g. "100". */
+      amountHuman: string;
+      /** Saved label/address, or undefined for the owner's own wallet. */
+      recipient?: string;
     };
 
 const INTENT_TOOL_NAME = "parse_praxis_intent";
@@ -77,7 +105,7 @@ const intentTool = {
           properties: {
             kind: {
               type: "string",
-              enum: ["transfer", "research", "swap_stub", "policy_question", "save_contact", "policy_change"],
+              enum: ["transfer", "research", "swap_stub", "policy_question", "save_contact", "policy_change", "schedule_dca", "basket_buy"],
             },
             asset: {
               type: "string",
@@ -127,6 +155,14 @@ const intentTool = {
               type: "boolean",
               description: "For policy_change pause: true to pause the agent, false to unpause/resume.",
             },
+            cadence: {
+              type: "object",
+              description: "For schedule_dca: {type: daily|weekly|monthly, weekday 0-6 for weekly, day 1-31 for monthly}.",
+            },
+            basket: {
+              type: "string",
+              description: "For basket_buy: basket name (index, ai). Total USD in amountHuman.",
+            },
           },
         },
       },
@@ -146,9 +182,13 @@ const INTENT_SYSTEM_PROMPT = [
     "(OPENAI, SPACEX, ANTHROPIC, ANDURIL, FIGUREAI, KALSHI, NEURALINK, POLYMARKET); " +
     "accept an optional p- prefix and any case (popenai = OPENAI).",
   "sell AMOUNT <stock> for <asset> is a swap idea: emit swap_stub, never a transfer addressed to a ticker.",
-  "Recurring phrasing (every <day>, weekly, monthly, dca, recurring) and basket phrasing " +
-    "(basket, index fund) have no scheduler yet: outcome must be clarify offering a one-time " +
-    "single-stock transfer. Never invent schedule or split actions.",
+  "Recurring-buy phrasing (buy/dca AMOUNT STOCK every <weekday>/daily/weekly/monthly, optionally " +
+    "for RECIPIENT) is schedule_dca with cadence {type, weekday 0-6 Sunday-first, day 1-31}. " +
+    "A schedule only EMITS proposals — each fire needs a signature, never auto-sign. " +
+    "Basket phrasing (buy [AMOUNT] [of] <index|ai|basket> [for RECIPIENT]) is basket_buy with " +
+    "the basket name and total USD in amountHuman. Never split a basket into transfers yourself: " +
+    "the executor simulates every constituent and clarifies the whole basket if any is blocked. " +
+    "Unknown basket names must be clarify, never a guessed split.",
   "Never emit buy/sell/hold advice. Research is neutral data only.",
   "policy_question: when the user ASKS ABOUT their own policy, limits, caps, session expiry, pause state, allow-lists, or how Praxis keeps them safe. Pick the closest topic, or 'general'.",
   "policy_change: when the user wants to CHANGE a policy setting. 'change/raise/lower/set my daily limit to N SOL' -> field=daily_limit, amountHuman=N. 'set max per tx to N SOL' -> field=max_per_tx, amountHuman=N. 'extend my session by N hours/days' or 'set expiry to N hours' -> field=expiry, expiryHours=N (convert days to hours). 'pause/freeze the agent' -> field=pause, paused=true. 'unpause/resume the agent' -> field=pause, paused=false. Distinguish a CHANGE (imperative: change/set/raise/lower/pause) from a QUESTION (what/how/is my...).",
@@ -293,25 +333,34 @@ function matchResearch(text: string): string | null {
 export function parseIntentLocallyForDemo(text: string): ParsedIntent {
   const cleaned = text.trim().replace(/\s+/g, " ");
 
-  // Stocklana C04: basket phrasing has no multi-buy yet — clarify with the universe.
+  // Stocklana C06: mechanical recurring buy → schedule (fires emit proposals).
+  const dca = matchDca(cleaned);
+  if (dca) return { outcome: "actions", actions: [dca] };
+
+  // Stocklana C06: atomic basket buy → per-constituent proposals, all-or-clarify.
+  const basket = matchBasket(cleaned);
+  if (basket) return { outcome: "actions", actions: [basket] };
+
+  // Unknown basket phrasing (no parseable name/amount) clarifies with the menu.
   if (isBasketRequest(cleaned)) {
     return {
       outcome: "clarify",
       question:
-        "Baskets aren't supported yet — which single stock should I start with? " +
-        `Available: ${STOCK_SYMBOLS.join(", ")}.`,
+        "I can buy baskets atomically — which one, and how much total? " +
+        `Available: ${availableBaskets().join(", ")} (e.g. "buy ai basket $50").`,
     };
   }
 
   const send = cleaned.match(/^(?:s(?:end|nd)|buy|sell)\s+\$?\s*([0-9]+(?:\.[0-9]+)?)\s*([a-z0-9$]+)?\s+(?:to|2|for)\s+(.+)$/i);
   if (send) {
-    // Stocklana C04: recurring phrasing has no scheduler yet — offer a one-time buy.
+    // Recurring phrasing the DCA matcher couldn't parse (e.g. an unknown
+    // cadence word) — offer a one-time buy rather than guessing a schedule.
     if (hasRecurringCadence(cleaned)) {
       return {
         outcome: "clarify",
         question:
-          "Recurring buys aren't scheduled yet — want to do a one-time buy instead? " +
-          "Tell me the amount, the stock, and who receives it.",
+          "I couldn't parse that schedule — want to do a one-time buy instead? " +
+          'Tell me the amount, the stock, and who receives it (or use "every Monday", "weekly", "monthly").',
       };
     }
     const asset = normalizeStockAlias(send[2] ?? "sol");
@@ -368,13 +417,13 @@ export function parseIntentLocallyForDemo(text: string): ParsedIntent {
     return { outcome: "actions", actions: [{ kind: "research", token: researchToken }] };
   }
 
-  // Stocklana C04: bare recurring phrasing (no transfer shape) clarifies too.
+  // Bare recurring phrasing (no DCA shape) clarifies with the syntax.
   if (hasRecurringCadence(cleaned)) {
     return {
       outcome: "clarify",
       question:
-        "Recurring buys aren't scheduled yet — want to do a one-time buy instead? " +
-        "Tell me the amount, the stock, and who receives it.",
+        "To schedule a recurring buy, tell me the amount, the stock, and the cadence — " +
+        'e.g. "buy $50 openai every Monday". Who should receive it? (Defaults to your wallet.)',
     };
   }
 
@@ -430,7 +479,48 @@ function matchPolicyChange(text: string): Extract<ParsedAction, { kind: "policy_
   return null;
 }
 
-/** Stocklana C04: basket phrasing has no multi-buy yet (C06 builds it). */
+/** Stocklana C06: mechanical recurring buy ("buy $50 openai every monday", "dca 10 openai weekly"). */
+function matchDca(text: string): Extract<ParsedAction, { kind: "schedule_dca" }> | null {
+  const m = text.match(
+    /^(?:buy|dca)\s+\$?\s*([0-9]+(?:\.[0-9]+)?)\s*([a-z0-9$]+)?\s*(?:for\s+(.+?))?\s+(every\s+[a-z]+|daily|weekly|monthly)\s*$/i,
+  );
+  if (!m) return null;
+  const cadence = parseCadence(m[4].trim());
+  if (!cadence) return null;
+  return {
+    kind: "schedule_dca",
+    asset: normalizeStockAlias(m[2] ?? "sol"),
+    amountHuman: m[1],
+    recipient: m[3]?.trim().replace(/[.?!]+$/, "") || undefined,
+    cadence,
+  };
+}
+
+/**
+ * Stocklana C06: atomic basket buy. "buy ai basket $50 [for maya]",
+ * "buy $100 [of] index [for maya]". Only known baskets parse — anything else
+ * falls through to the clarify menu (never a guessed split).
+ */
+function matchBasket(text: string): Extract<ParsedAction, { kind: "basket_buy" }> | null {
+  // Each shape maps to [name, amountHuman, recipient] group indices.
+  const shapes: Array<{ re: RegExp; name: number; amount: number }> = [
+    // "buy ai basket $50 [for maya]"
+    { re: /^buy\s+([a-z][a-z0-9\s]*?)\s+\$?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:for\s+(.+))?$/i, name: 1, amount: 2 },
+    // "buy $100 [of] index [for maya]"
+    { re: /^buy\s+\$?\s*([0-9]+(?:\.[0-9]+)?)\s+(?:of\s+|in\s+)?([a-z][a-z0-9\s]*?)\s*(?:for\s+(.+))?$/i, name: 2, amount: 1 },
+  ];
+  for (const { re, name, amount } of shapes) {
+    const m = text.match(re);
+    if (!m) continue;
+    const basketName = (m[name] ?? "").trim();
+    if (!resolveBasket(basketName)) continue;
+    const recipient = m[3]?.trim().replace(/[.?!]+$/, "") || undefined;
+    return { kind: "basket_buy", basket: basketName, amountHuman: m[amount], recipient };
+  }
+  return null;
+}
+
+/** Basket phrasing that matched no known basket (clarify menu fallback). */
 function isBasketRequest(text: string): boolean {
   return /\bbasket\b|\bindex fund\b|\bprestocks index\b|\bbuy the index\b/i.test(text);
 }
@@ -545,6 +635,31 @@ function normalizeAction(input: unknown, index: number): ParsedAction {
     };
   }
 
+  if (value.kind === "schedule_dca") {
+    const recipient = value.recipient === undefined || value.recipient === null
+      ? undefined
+      : readRequiredString(value.recipient, "recipient");
+    return {
+      kind: "schedule_dca",
+      asset: readRequiredString(value.asset, "asset").replace(/^\$/, "").toUpperCase(),
+      amountHuman: readRequiredString(value.amountHuman, "amountHuman"),
+      recipient,
+      cadence: readCadence(value.cadence),
+    };
+  }
+
+  if (value.kind === "basket_buy") {
+    const recipient = value.recipient === undefined || value.recipient === null
+      ? undefined
+      : readRequiredString(value.recipient, "recipient");
+    return {
+      kind: "basket_buy",
+      basket: readRequiredString(value.basket, "basket"),
+      amountHuman: readRequiredString(value.amountHuman, "amountHuman"),
+      recipient,
+    };
+  }
+
   if (value.kind === "policy_change") {
     const allowed = ["daily_limit", "max_per_tx", "expiry", "pause"] as const;
     const field = typeof value.field === "string" && (allowed as readonly string[]).includes(value.field)
@@ -576,6 +691,29 @@ function normalizeAction(input: unknown, index: number): ParsedAction {
   }
 
   throw new PraxisInputError(`unsupported action kind "${String(value.kind)}"`);
+}
+
+function readCadence(value: unknown): DcaCadence {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new PraxisInputError("schedule_dca requires a cadence object");
+  }
+  const cadence = value as Record<string, unknown>;
+  if (cadence.type === "daily") return { type: "daily" };
+  if (cadence.type === "weekly") {
+    const weekday = cadence.weekday === undefined ? new Date().getUTCDay() : cadence.weekday;
+    if (typeof weekday !== "number" || !Number.isInteger(weekday) || weekday < 0 || weekday > 6) {
+      throw new PraxisInputError("schedule_dca weekly cadence needs weekday 0-6");
+    }
+    return { type: "weekly", weekday };
+  }
+  if (cadence.type === "monthly") {
+    const day = cadence.day === undefined ? new Date().getUTCDate() : cadence.day;
+    if (typeof day !== "number" || !Number.isInteger(day) || day < 1 || day > 31) {
+      throw new PraxisInputError("schedule_dca monthly cadence needs day 1-31");
+    }
+    return { type: "monthly", day };
+  }
+  throw new PraxisInputError("schedule_dca cadence type must be daily, weekly, or monthly");
 }
 
 function readRequiredString(value: unknown, name: string): string {

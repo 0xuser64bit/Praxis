@@ -153,21 +153,63 @@ describe("deterministic parser — stock intents (C04)", () => {
     expect(r.outcome === "actions" && r.actions[0]).toEqual({ kind: "research", token: "OPENAI" });
   });
 
-  test("recurring phrasing clarifies with a one-time offer (no silent schedule)", () => {
+  test("recurring phrasing becomes a schedule (C06: mechanical DCA)", () => {
     const r = parseIntentLocallyForDemo("buy $50 openai every monday");
-    expect(r.outcome).toBe("clarify");
-    expect(r.outcome === "clarify" && r.question).toMatch(/one-time buy/);
+    expect(r.outcome === "actions" && r.actions[0]).toEqual({
+      kind: "schedule_dca",
+      asset: "OPENAI",
+      amountHuman: "50",
+      recipient: undefined,
+      cadence: { type: "weekly", weekday: 1 },
+    });
   });
 
-  test("recurring phrasing inside a transfer shape also clarifies", () => {
+  test("recurring phrasing keeps an explicit recipient", () => {
     const r = parseIntentLocallyForDemo("buy $50 openai for maya every monday");
+    expect(r.outcome === "actions" && r.actions[0]).toEqual({
+      kind: "schedule_dca",
+      asset: "OPENAI",
+      amountHuman: "50",
+      recipient: "maya",
+      cadence: { type: "weekly", weekday: 1 },
+    });
+  });
+
+  test("daily/weekly/monthly shorthands parse", () => {
+    const d = parseIntentLocallyForDemo("dca 10 openai daily");
+    expect(d.outcome === "actions" && d.actions[0].kind).toBe("schedule_dca");
+    const w = parseIntentLocallyForDemo("buy $5 spacex weekly");
+    expect(w.outcome === "actions" && w.actions[0]).toMatchObject({ kind: "schedule_dca", asset: "SPACEX" });
+    const m = parseIntentLocallyForDemo("buy $5 spacex monthly");
+    expect(m.outcome === "actions" && m.actions[0].kind).toBe("schedule_dca");
+  });
+
+  test("unknown cadence clarifies instead of scheduling", () => {
+    const r = parseIntentLocallyForDemo("buy $50 openai every someday");
     expect(r.outcome).toBe("clarify");
   });
 
-  test("basket phrasing clarifies with the universe (no invented splits)", () => {
+  test("known baskets become one atomic basket action (C06)", () => {
+    const a = parseIntentLocallyForDemo("buy ai basket $50");
+    expect(a.outcome === "actions" && a.actions[0]).toEqual({
+      kind: "basket_buy",
+      basket: "ai basket",
+      amountHuman: "50",
+      recipient: undefined,
+    });
+    const b = parseIntentLocallyForDemo("buy $100 index for maya");
+    expect(b.outcome === "actions" && b.actions[0]).toEqual({
+      kind: "basket_buy",
+      basket: "index",
+      amountHuman: "100",
+      recipient: "maya",
+    });
+  });
+
+  test("unknown baskets clarify with the menu (no invented splits)", () => {
     const r = parseIntentLocallyForDemo("buy mag7 basket $100");
     expect(r.outcome).toBe("clarify");
-    expect(r.outcome === "clarify" && r.question).toMatch(/OPENAI.*SPACEX|single stock/);
+    expect(r.outcome === "clarify" && r.question).toMatch(/Available: index, ai/);
   });
 
   test("daily-limit edits still win over the recurring gate", () => {

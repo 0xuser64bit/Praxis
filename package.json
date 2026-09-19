@@ -18,6 +18,7 @@
     "praxis:setup-token-accounts": "bun scripts/setup-token-accounts.ts",
     "praxis:tokencheck": "bun scripts/tokencheck.ts",
     "praxis:stockscheck": "bun scripts/stockscheck.ts",
+    "praxis:stocks-dca": "bun scripts/stocks-dca.ts",
     "praxis:localcheck": "bun scripts/localcheck.ts"
   },
   "dependencies": {

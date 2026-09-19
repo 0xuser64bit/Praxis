@@ -127,6 +127,32 @@ describe("stateStore persistence", () => {
     expect(loaded?.activity[0].ts).toBe(399);
   });
 
+  test("round-trips DCA schedules alongside threads", () => {
+    const owner = randomAddress();
+    saveProviderState(owner, {
+      threads: [threadReferencing("p-keep")],
+      proposals: { "p-keep": proposal("p-keep") },
+      activity: [],
+      contacts: [],
+      schedules: [{
+        id: "s-1",
+        asset: "OPENAI",
+        amount: 50_000_000n,
+        decimals: 6,
+        recipientAddress: randomAddress(),
+        recipientName: "you",
+        cadence: { type: "weekly", weekday: 1 },
+        nextFireTs: 9_999_999_999_999,
+        createdAt: 1_000,
+        threadId: "t-p-keep",
+      }],
+    });
+    const loaded = loadProviderState(owner);
+    expect(loaded?.schedules).toHaveLength(1);
+    expect(loaded!.schedules![0].amount).toBe(50_000_000n);
+    expect(loaded!.schedules![0].cadence).toEqual({ type: "weekly", weekday: 1 });
+  });
+
   test("returns undefined for an unknown owner", () => {
     expect(loadProviderState(randomAddress())).toBeUndefined();
   });

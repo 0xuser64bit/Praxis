@@ -6,6 +6,7 @@ import {
   type AddressBookEntry,
   type AgentBlock,
   type AllowListKind,
+  type ClarifyOption,
   type Message,
   type PolicyChangeRow,
   type PolicyUpdate,
@@ -19,6 +20,7 @@ import {
 import {
   AegisClient,
   type OwnerAction,
+  type TransferSimulation,
   type UnsignedOwnerTransaction,
 } from "../aegis/client";
 import { JUPITER_PROGRAM_ID } from "../aegis/constants";
@@ -41,9 +43,18 @@ import {
   type PraxisServerConfig,
 } from "../env";
 import { PraxisConfigError, PraxisInputError, PraxisNotFoundError } from "../errors";
-import { formatSol, parseHumanUnits, SOL_DECIMALS } from "../units";
+import { formatSol, formatUnits, parseHumanUnits, SOL_DECIMALS } from "../units";
 import { getStateRepository, type StateRepository } from "./stateRepository";
 import type { StoredProviderState } from "./stateSerialization";
+import {
+  advanceCadence,
+  availableBaskets,
+  describeCadence,
+  resolveBasket,
+  splitBasket,
+  type DcaSchedule,
+} from "../stocks/schedules";
+import { fetchPrestocksEntries, findPrestocksEntry } from "../stocks/prestocks";
 import { errorFields, logger } from "../observability/logger";
 
 interface StoreState {
@@ -51,6 +62,8 @@ interface StoreState {
   proposals: Record<string, ActionProposal>;
   activity: ActivityEntry[];
   contacts: AddressBookEntry[];
+  /** Stocklana C06: mechanical DCA schedules (persisted; cron fires emit proposals). */
+  schedules: DcaSchedule[];
   policy?: PolicyView;
   /** threadId -> ms timestamp when thinking started (TTL-guarded, never persisted). */
   thinking: Record<string, number>;
@@ -163,9 +176,81 @@ export class PraxisServerProvider implements PraxisProvider {
       proposals: initialState?.proposals ?? {},
       activity: initialState?.activity ?? [],
       contacts: savedContacts,
+      schedules: initialState?.schedules ?? [],
       thinking: {},
     };
   }
+
+  /**
+   * Price source seam for basket splits (production: PreStocks tokenPrice).
+   * A public field so tests can stub it without network access.
+   */
+  basketPriceSource = async (symbols: string[]): Promise<Map<string, number>> => {
+    const entries = await fetchPrestocksEntries(this.config.prestocksApiUrl, this.config.prestocksTimeoutMs);
+    const out = new Map<string, number>();
+    for (const symbol of symbols) {
+      const entry = findPrestocksEntry(entries, symbol);
+      if (entry) out.set(symbol, entry.tokenPrice);
+    }
+    return out;
+  };
+
+  /** Durable DCA schedules for this wallet (read path for the cron route). */
+  getSchedules = (): DcaSchedule[] => [...this.state.schedules];
+
+  /**
+   * Fire every due DCA schedule: each emits ONE transfer proposal through the
+   * same simulate + policy-check path as a one-off buy. Never signs — every
+   * fire needs a user signature. Advances each schedule past `nowMs` (with a
+   * capped catch-up so a long-dead schedule fires once, not 500 times).
+   */
+  fireDueSchedules = async (
+    nowMs: number = Date.now(),
+  ): Promise<Array<{ scheduleId: string; proposalId: string; allowed: boolean }>> => {
+    return withOwnerLock(this.ownerKey, async () => {
+      const fired: Array<{ scheduleId: string; proposalId: string; allowed: boolean }> = [];
+      for (const schedule of this.state.schedules) {
+        if (schedule.nextFireTs > nowMs) continue;
+        const token = this.token(schedule.asset);
+        const preview = await this.previewTransfer(token, schedule.amount, schedule.recipientAddress);
+        const proposal = this.storeTransferProposal({
+          token,
+          amount: schedule.amount,
+          recipientName: schedule.recipientName,
+          recipientAddress: schedule.recipientAddress,
+          preview,
+        });
+        const thread = this.getThread(schedule.threadId);
+        if (thread) {
+          const ts = nowSeconds();
+          thread.messages = [
+            ...thread.messages,
+            {
+              id: this.id("m"),
+              role: "agent",
+              ts,
+              blocks: [{
+                type: "proposal",
+                text: `Scheduled buy fired (${describeCadence(schedule.cadence)}): ${schedule.asset} for ${schedule.recipientName}.`,
+                proposalId: proposal.id,
+              }],
+            },
+          ];
+          thread.updatedAt = ts;
+        }
+        let next = schedule.nextFireTs;
+        let hops = 0;
+        while (next <= nowMs && hops < 1000) {
+          next = advanceCadence(schedule.cadence, next);
+          hops++;
+        }
+        schedule.nextFireTs = hops >= 1000 ? advanceCadence(schedule.cadence, nowMs) : next;
+        fired.push({ scheduleId: schedule.id, proposalId: proposal.id, allowed: preview.check.allowed });
+      }
+      if (fired.length > 0) await this.commit();
+      return fired;
+    });
+  };
 
   // --- refresh ---
   async refreshPolicy(): Promise<PolicyView> {
@@ -279,7 +364,7 @@ export class PraxisServerProvider implements PraxisProvider {
       let title: string | undefined;
       try {
         const intent = await this.parseIntent(text);
-        const result = await this.blocksForIntent(intent);
+        const result = await this.blocksForIntent(intent, tid);
         blocks = result.blocks;
         title = result.title;
       } catch (error) {
@@ -502,7 +587,10 @@ export class PraxisServerProvider implements PraxisProvider {
     }
   }
 
-  private async blocksForIntent(intent: ParsedIntent): Promise<{ blocks: AgentBlock[]; title?: string }> {
+  private async blocksForIntent(
+    intent: ParsedIntent,
+    threadId?: string,
+  ): Promise<{ blocks: AgentBlock[]; title?: string }> {
     if (intent.outcome === "clarify") {
       return {
         blocks: [
@@ -527,19 +615,24 @@ export class PraxisServerProvider implements PraxisProvider {
       (a, b) => (a.kind === "save_contact" ? -1 : 0) - (b.kind === "save_contact" ? -1 : 0),
     );
     for (const action of ordered) {
-      const result = await this.blockForAction(action);
+      const result = await this.blockForAction(action, threadId);
       blocks.push(...result.blocks);
       title ??= result.title;
     }
     return { blocks, title };
   }
 
-  private async blockForAction(action: ParsedAction): Promise<{ blocks: AgentBlock[]; title?: string }> {
+  private async blockForAction(
+    action: ParsedAction,
+    threadId?: string,
+  ): Promise<{ blocks: AgentBlock[]; title?: string }> {
     if (action.kind === "transfer") return this.transferBlock(action);
     if (action.kind === "research") return this.researchBlock(action.token);
     if (action.kind === "policy_question") return this.policyQuestionBlock(action.topic);
     if (action.kind === "save_contact") return this.saveContactBlock(action.label, action.address);
     if (action.kind === "policy_change") return this.policyChangeBlock(action);
+    if (action.kind === "schedule_dca") return this.scheduleDcaBlock(action, threadId);
+    if (action.kind === "basket_buy") return this.basketBlock(action);
     return this.swapStubBlock(action);
   }
 
@@ -739,47 +832,16 @@ export class PraxisServerProvider implements PraxisProvider {
     // dedicated token envelope (agent_transfer_spl). The asset's own decimals
     // drive amount parsing and display.
     const token = this.token(action.asset);
-    const isSol = token.symbol === "SOL";
     const amount = parseHumanUnits(action.amountHuman, token.decimals);
-    const recipient = new PublicKey(resolved.entry.address);
-    const preview = isSol
-      ? await this.aegis.simulateAgentTransfer(recipient, amount)
-      : await this.aegis.simulateAgentTransferSpl(recipient, token, amount);
-
-    const proposal: ActionProposal = {
-      id: this.id("p"),
-      detail: {
-        kind: "transfer",
-        amount,
-        asset: token,
-        recipientName: resolved.entry.name,
-        recipientAddress: resolved.entry.address,
-        recipientNote: resolved.entry.note,
-      },
-      networkFee: preview.networkFee,
-      simulation: preview.simulation,
-      check: preview.check,
-      state: preview.check.allowed ? "pending" : "blocked",
-    };
-    this.state.proposals[proposal.id] = proposal;
-
-    if (!preview.check.allowed) {
-      this.state.activity = [
-        {
-          id: this.id("a"),
-          kind: "transfer",
-          label: resolved.entry.name,
-          asset: token.symbol,
-          amount,
-          decimals: token.decimals,
-          result: "rejected",
-          reason: preview.check.reason,
-          reasonCode: preview.check.reasonCode,
-          ts: nowSeconds(),
-        },
-        ...this.state.activity,
-      ];
-    }
+    const preview = await this.previewTransfer(token, amount, resolved.entry.address);
+    const proposal = this.storeTransferProposal({
+      token,
+      amount,
+      recipientName: resolved.entry.name,
+      recipientAddress: resolved.entry.address,
+      recipientNote: resolved.entry.note,
+      preview,
+    });
 
     return {
       blocks: [
@@ -791,6 +853,250 @@ export class PraxisServerProvider implements PraxisProvider {
       ],
       title: `Send to ${resolved.entry.name.split(" ")[0]}`,
     };
+  }
+
+  /**
+   * Simulate a transfer through Aegis without storing anything. Shared by
+   * one-off sends, DCA fires, and basket previews so every path runs the same
+   * on-chain simulation + policy verdict.
+   */
+  private async previewTransfer(
+    token: TokenInfo,
+    amount: bigint,
+    recipientAddress: string,
+  ): Promise<TransferSimulation> {
+    const recipient = new PublicKey(recipientAddress);
+    if (token.symbol === "SOL") return this.aegis.simulateAgentTransfer(recipient, amount);
+    return this.aegis.simulateAgentTransferSpl(recipient, token, amount);
+  }
+
+  /**
+   * Store a simulated transfer as a proposal (plus a rejected-activity row when
+   * blocked, matching the one-off send path). Pure bookkeeping — no chain I/O.
+   */
+  private storeTransferProposal(args: {
+    token: TokenInfo;
+    amount: bigint;
+    recipientName: string;
+    recipientAddress: string;
+    recipientNote?: string;
+    preview: TransferSimulation;
+  }): ActionProposal {
+    const proposal: ActionProposal = {
+      id: this.id("p"),
+      detail: {
+        kind: "transfer",
+        amount: args.amount,
+        asset: args.token,
+        recipientName: args.recipientName,
+        recipientAddress: args.recipientAddress,
+        recipientNote: args.recipientNote,
+      },
+      networkFee: args.preview.networkFee,
+      simulation: args.preview.simulation,
+      check: args.preview.check,
+      state: args.preview.check.allowed ? "pending" : "blocked",
+    };
+    this.state.proposals[proposal.id] = proposal;
+
+    if (!args.preview.check.allowed) {
+      this.state.activity = [
+        {
+          id: this.id("a"),
+          kind: "transfer",
+          label: args.recipientName,
+          asset: args.token.symbol,
+          amount: args.amount,
+          decimals: args.token.decimals,
+          result: "rejected",
+          reason: args.preview.check.reason,
+          reasonCode: args.preview.check.reasonCode,
+          ts: nowSeconds(),
+        },
+        ...this.state.activity,
+      ];
+    }
+    return proposal;
+  }
+
+  /** Resolve a DCA/basket recipient: named contact, or the owner's own wallet. */
+  private resolveSelfOrContact(
+    recipient: string | undefined,
+  ): { address: string; name: string; note?: string } | { clarify: string; options: ClarifyOption[] } {
+    if (!recipient) {
+      return {
+        address: this.requireOwnerWallet().toBase58(),
+        name: "you",
+      };
+    }
+    const resolved = this.addressBook.resolve(recipient);
+    if (resolved.kind !== "exact") {
+      return { clarify: resolved.question, options: resolved.options };
+    }
+    return { address: resolved.entry.address, name: resolved.entry.name, note: resolved.entry.note };
+  }
+
+  /** Strict token lookup (no SYSTEM_PROGRAM fallback): DCA/baskets need a real mint. */
+  private knownToken(symbol: string): TokenInfo | undefined {
+    const normalized = symbol.trim().replace(/^\$/, "").toUpperCase();
+    return this.config.tokens.find((item) => item.symbol.toUpperCase() === normalized);
+  }
+
+  private async scheduleDcaBlock(
+    action: Extract<ParsedAction, { kind: "schedule_dca" }>,
+    threadId?: string,
+  ): Promise<{ blocks: AgentBlock[]; title?: string }> {
+    const token = this.knownToken(action.asset);
+    if (!token) {
+      return {
+        blocks: [{
+          type: "clarify",
+          text: `"${action.asset}" isn't a configured token, so I can't schedule buys for it. Try one of: ${this.config.tokens.map((t) => t.symbol).join(", ")}.`,
+          options: [],
+        }],
+      };
+    }
+    let amount: bigint;
+    try {
+      amount = parseHumanUnits(action.amountHuman, token.decimals);
+    } catch {
+      return {
+        blocks: [{
+          type: "clarify",
+          text: `"${action.amountHuman}" isn't a valid ${token.symbol} amount. Try e.g. "buy $50 ${token.symbol} every Monday".`,
+          options: [],
+        }],
+      };
+    }
+    if (amount <= 0n) {
+      return {
+        blocks: [{ type: "clarify", text: "The recurring amount has to be greater than zero.", options: [] }],
+      };
+    }
+
+    const target = this.resolveSelfOrContact(action.recipient);
+    if ("clarify" in target) {
+      return { blocks: [{ type: "clarify", text: target.clarify, options: target.options }] };
+    }
+
+    const nowMs = Date.now();
+    const schedule: DcaSchedule = {
+      id: this.id("s"),
+      asset: token.symbol,
+      amount,
+      decimals: token.decimals,
+      recipientAddress: target.address,
+      recipientName: target.name,
+      cadence: action.cadence,
+      nextFireTs: advanceCadence(action.cadence, nowMs),
+      createdAt: nowMs,
+      threadId: threadId ?? "t-welcome",
+    };
+    this.state.schedules = [schedule, ...this.state.schedules];
+
+    const human = formatUnits(amount, token.decimals);
+    return {
+      blocks: [{
+        type: "notice",
+        tone: "success",
+        text: `Scheduled ${human} ${token.symbol} ${describeCadence(action.cadence)} for ${target.name} — I'll propose each buy for your signature. Nothing moves until you sign.`,
+      }],
+      title: `${token.symbol} recurring buy`,
+    };
+  }
+
+  private async basketBlock(
+    action: Extract<ParsedAction, { kind: "basket_buy" }>,
+  ): Promise<{ blocks: AgentBlock[]; title?: string }> {
+    const constituents = resolveBasket(action.basket);
+    if (!constituents) {
+      return {
+        blocks: [{
+          type: "clarify",
+          text: `I don't know the "${action.basket}" basket. Available: ${availableBaskets().join(", ")} — e.g. "buy ai basket $50".`,
+          options: availableBaskets().map((label) => ({ label, value: label })),
+        }],
+      };
+    }
+    const totalUsd = Number(action.amountHuman);
+    if (!Number.isFinite(totalUsd) || totalUsd <= 0) {
+      return {
+        blocks: [{
+          type: "clarify",
+          text: `"${action.amountHuman}" isn't a valid USD total. Try e.g. "buy ai basket $50".`,
+          options: [],
+        }],
+      };
+    }
+
+    const target = this.resolveSelfOrContact(action.recipient);
+    if ("clarify" in target) {
+      return { blocks: [{ type: "clarify", text: target.clarify, options: target.options }] };
+    }
+
+    const tokens = new Map<string, TokenInfo>();
+    for (const symbol of constituents) {
+      const token = this.knownToken(symbol);
+      if (!token) {
+        return {
+          blocks: [{
+            type: "clarify",
+            text: `${symbol} isn't a configured token right now, so I can't build this basket. Try a single-stock buy instead.`,
+            options: [],
+          }],
+        };
+      }
+      tokens.set(symbol, token);
+    }
+
+    // Price every constituent BEFORE simulating anything: a missing price
+    // clarifies the whole basket — never a guessed split.
+    const prices = await this.basketPriceSource(constituents);
+    const shares = splitBasket(totalUsd, constituents, prices, (symbol) => tokens.get(symbol)!.decimals);
+    if (!shares) {
+      return {
+        blocks: [{
+          type: "clarify",
+          text: `I can't price every stock in this basket right now (PreStocks quotes unavailable). Try again shortly, or buy a single stock.`,
+          options: [],
+        }],
+      };
+    }
+
+    // All-or-clarify: simulate every constituent first. A single blocked share
+    // voids the basket and stores nothing — no partial proposals, no activity.
+    const previews = new Map<string, TransferSimulation>();
+    for (const share of shares) {
+      const preview = await this.previewTransfer(tokens.get(share.symbol)!, share.amount, target.address);
+      if (!preview.check.allowed) {
+        return {
+          blocks: [{
+            type: "clarify",
+            text: `Basket blocked: ${share.symbol} would be rejected (${preview.check.reason ?? "policy"}). Nothing was proposed — adjust your caps, or buy the allowed stocks individually.`,
+            options: [],
+          }],
+        };
+      }
+      previews.set(share.symbol, preview);
+    }
+
+    const blocks: AgentBlock[] = [];
+    for (const share of shares) {
+      const token = tokens.get(share.symbol)!;
+      const proposal = this.storeTransferProposal({
+        token,
+        amount: share.amount,
+        recipientName: target.name,
+        recipientAddress: target.address,
+        preview: previews.get(share.symbol)!,
+      });
+      blocks.push({
+        type: "proposal",
+        text: `Basket share ${blocks.length + 1} of ${shares.length}: ${formatUnits(share.amount, token.decimals)} ${share.symbol} (~$${(totalUsd / shares.length).toFixed(2)}).`,
+        proposalId: proposal.id,
+      });
+    }
+    return { blocks, title: `${action.basket} basket` };
   }
 
   private async researchBlock(token: string): Promise<{ blocks: AgentBlock[]; title?: string }> {
@@ -975,6 +1281,7 @@ export class PraxisServerProvider implements PraxisProvider {
       proposals: this.state.proposals,
       activity: this.state.activity,
       contacts: this.state.contacts,
+      schedules: this.state.schedules,
     };
     await this.repository.save(this.ownerKey, state);
   }

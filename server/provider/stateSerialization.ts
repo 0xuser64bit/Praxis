@@ -5,6 +5,7 @@ import type {
   AgentBlock,
   Thread,
 } from "@praxis/shared";
+import type { DcaSchedule } from "../stocks/schedules";
 
 /**
  * The durable slice of a wallet's provider state. Policy/activity that lives
@@ -17,11 +18,14 @@ export interface StoredProviderState {
   proposals: Record<string, ActionProposal>;
   activity: ActivityEntry[];
   contacts: AddressBookEntry[];
+  /** Stocklana C06: mechanical DCA schedules (cron fires emit proposals). */
+  schedules?: DcaSchedule[];
 }
 
 export const STORE_VERSION = 1;
 export const MAX_THREADS = 50;
 export const MAX_ACTIVITY = 250;
+export const MAX_SCHEDULES = 50;
 
 /**
  * Bound the persisted document: keep the newest threads/activity and drop
@@ -44,6 +48,10 @@ export function compactState(state: StoredProviderState): StoredProviderState {
     }
   }
 
+  const schedules = [...(state.schedules ?? [])]
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, MAX_SCHEDULES);
+
   const proposals: Record<string, ActionProposal> = {};
   for (const id of referenced) {
     const proposal = state.proposals[id];
@@ -57,7 +65,7 @@ export function compactState(state: StoredProviderState): StoredProviderState {
     }
   }
 
-  return { threads, proposals, activity, contacts: state.contacts ?? [] };
+  return { threads, proposals, activity, contacts: state.contacts ?? [], schedules };
 }
 
 function collectProposalId(block: AgentBlock, out: Set<string>) {
@@ -76,6 +84,7 @@ export function normalizeStoredState(raw: unknown): StoredProviderState | undefi
     proposals: isRecord(state.proposals) ? state.proposals : {},
     activity: Array.isArray(state.activity) ? state.activity : [],
     contacts: Array.isArray(state.contacts) ? state.contacts : [],
+    schedules: Array.isArray(state.schedules) ? state.schedules : [],
   };
 }
 

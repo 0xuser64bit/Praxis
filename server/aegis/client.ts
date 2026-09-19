@@ -65,6 +65,8 @@ import {
 import type { ActionLogEntry, PolicyCheckResult, TokenInfo } from "@praxis/shared";
 import { remaining } from "@praxis/shared";
 import { formatSol, formatUnits, parseHumanUnits, SOL_DECIMALS } from "../units";
+import { envTimeout, withTimeout } from "../api/timeout";
+import { errorFields, logger } from "../observability/logger";
 
 /**
  * An owner/admin policy action. Built server-side as an unsigned transaction the
@@ -132,19 +134,37 @@ const BOOTSTRAP_MAX_PER_TX = parseHumanUnits("50", SOL_DECIMALS);
 const BOOTSTRAP_DAILY_LIMIT = parseHumanUnits("5", SOL_DECIMALS);
 const BOOTSTRAP_VAULT_FUNDING = parseHumanUnits("1", SOL_DECIMALS);
 
-let connection: Connection | undefined;
-let researchConnection: Connection | undefined;
+const connections = new Map<string, Connection>();
+
+function connectionKey(url: string, commitment: string): string {
+  return `${url}::${commitment}`;
+}
 
 export function getConnection(config = getServerConfig()): Connection {
-  if (!connection) connection = new Connection(config.rpcUrl, config.commitment);
+  const key = connectionKey(config.rpcUrl, config.commitment);
+  let connection = connections.get(key);
+  if (!connection) {
+    connection = new Connection(config.rpcUrl, config.commitment);
+    connections.set(key, connection);
+  }
   return connection;
 }
 
 /** Read-only connection for token research. Defaults to mainnet-beta because the
  *  configured tokens are mainnet mints, independent of where transfers execute. */
 export function getResearchConnection(config = getServerConfig()): Connection {
-  if (!researchConnection) researchConnection = new Connection(config.researchRpcUrl, config.commitment);
+  const key = connectionKey(config.researchRpcUrl, config.commitment);
+  let researchConnection = connections.get(key);
+  if (!researchConnection) {
+    researchConnection = new Connection(config.researchRpcUrl, config.commitment);
+    connections.set(key, researchConnection);
+  }
   return researchConnection;
+}
+
+/** Test seam: drop cached connections (e.g. after env change in tests). */
+export function resetConnectionsForTests() {
+  connections.clear();
 }
 
 export class AegisClient {
@@ -209,7 +229,10 @@ export class AegisClient {
     const vaultAddress = findVaultPda(policyAddress, this.config.programId);
     const [policyInfo, vaultBalance] = await Promise.all([
       this.conn.getAccountInfo(policyAddress, this.config.commitment),
-      this.conn.getBalance(vaultAddress, this.config.commitment).catch(() => 0),
+      // Fail CLOSED on vault-balance RPC faults: masking as 0 would render an
+      // empty vault and invite a double-fund. A throw surfaces as an error
+      // state instead of a wrong zero.
+      this.conn.getBalance(vaultAddress, this.config.commitment),
     ]);
 
     if (!policyInfo) {
@@ -292,14 +315,7 @@ export class AegisClient {
     await signer.signTransaction(tx);
 
     try {
-      const sig = await this.conn.sendRawTransaction(tx.serialize(), {
-        skipPreflight: Boolean(opts.skipPreflight),
-        preflightCommitment: this.config.commitment,
-      });
-      const confirmation = await this.conn.confirmTransaction(
-        { signature: sig, ...latestBlockhash },
-        this.config.commitment,
-      );
+      const { sig, confirmation } = await this.sendAndConfirm(tx.serialize(), latestBlockhash, opts);
       const logs = await this.logsForSignature(sig);
       const customCode = extractCustomErrorCode(confirmation.value.err, logs);
       const reasonCode = customCode === undefined ? undefined : reasonFromAegisErrorCode(customCode);
@@ -398,14 +414,7 @@ export class AegisClient {
     await signer.signTransaction(tx);
 
     try {
-      const sig = await this.conn.sendRawTransaction(tx.serialize(), {
-        skipPreflight: Boolean(opts.skipPreflight),
-        preflightCommitment: this.config.commitment,
-      });
-      const confirmation = await this.conn.confirmTransaction(
-        { signature: sig, ...latestBlockhash },
-        this.config.commitment,
-      );
+      const { sig, confirmation } = await this.sendAndConfirm(tx.serialize(), latestBlockhash, opts);
       const logs = await this.logsForSignature(sig);
       const customCode = extractCustomErrorCode(confirmation.value.err, logs);
       const reasonCode = customCode === undefined ? undefined : reasonFromAegisErrorCode(customCode);
@@ -591,7 +600,14 @@ export class AegisClient {
     const vault = findVaultPda(new PublicKey(policy.address), this.config.programId);
     const vaultTokenAccount = findAssociatedTokenAddress(vault, new PublicKey(policy.tokenMint));
     const info = await this.conn.getAccountInfo(vaultTokenAccount, this.config.commitment);
-    const balance = info ? info.data.readBigUInt64LE(64) : 0n;
+    if (!info) return;
+    // SPL token account layout: amount is a u64 LE at byte offset 64 (165-byte
+    // account). Guard length so a short/malformed account throws InputError,
+    // not a RangeError 500.
+    if (info.data.length < 72) {
+      throw new PraxisInputError("Vault token account has unexpected layout; refusing teardown.");
+    }
+    const balance = info.data.readBigUInt64LE(64);
     if (balance > 0n) {
       throw new PraxisInputError(
         "Move your SPL tokens out of the vault before deleting your agent (SOL-only teardown for now).",
@@ -981,16 +997,36 @@ export class AegisClient {
     };
   }
 
+  /**
+   * Send a signed transaction and wait for confirmation with bounded timeouts
+   * so a hung RPC never hangs a Next.js function indefinitely.
+   */
+  private async sendAndConfirm(
+    raw: Uint8Array,
+    latestBlockhash: { blockhash: string; lastValidBlockHeight: number },
+    opts: { skipPreflight?: boolean } = {},
+  ): Promise<{ sig: string; confirmation: Awaited<ReturnType<Connection["confirmTransaction"]>> }> {
+    const sendMs = envTimeout("PRAXIS_RPC_READ_TIMEOUT_MS", 8000);
+    const sig = await withTimeout(
+      this.conn.sendRawTransaction(raw, {
+        skipPreflight: Boolean(opts.skipPreflight),
+        preflightCommitment: this.config.commitment,
+      }),
+      sendMs,
+      "sendRawTransaction",
+    );
+    const confirmation = await withTimeout(
+      this.conn.confirmTransaction({ signature: sig, ...latestBlockhash }, this.config.commitment),
+      60_000,
+      "confirmTransaction",
+    );
+    return { sig, confirmation };
+  }
+
   private async sendOwnerTransaction(instructions: TransactionInstruction[], owner: Keypair): Promise<string> {
     const { tx, latestBlockhash } = await this.buildTransaction(instructions, owner.publicKey);
     tx.sign(owner);
-    const sig = await this.conn.sendRawTransaction(tx.serialize(), {
-      preflightCommitment: this.config.commitment,
-    });
-    const confirmation = await this.conn.confirmTransaction(
-      { signature: sig, ...latestBlockhash },
-      this.config.commitment,
-    );
+    const { sig, confirmation } = await this.sendAndConfirm(tx.serialize(), latestBlockhash);
     if (confirmation.value.err) {
       throw new Error(`owner transaction failed: ${JSON.stringify(confirmation.value.err)}`);
     }
@@ -1004,8 +1040,19 @@ export class AegisClient {
   }
 
   private async chainTime(): Promise<number> {
-    const slot = await this.conn.getSlot(this.config.commitment);
-    return (await this.conn.getBlockTime(slot)) ?? Math.floor(Date.now() / 1000);
+    const ms = envTimeout("PRAXIS_RPC_READ_TIMEOUT_MS", 8000);
+    try {
+      const slot = await withTimeout(this.conn.getSlot(this.config.commitment), ms, "getSlot");
+      const blockTime = await withTimeout(
+        this.conn.getBlockTime(slot),
+        ms,
+        "getBlockTime",
+      );
+      if (typeof blockTime === "number") return blockTime;
+    } catch (error) {
+      logger.warn("aegis.chain_time_fallback", errorFields(error));
+    }
+    return Math.floor(Date.now() / 1000);
   }
 
   private async logsForSignature(sig: string): Promise<string[]> {

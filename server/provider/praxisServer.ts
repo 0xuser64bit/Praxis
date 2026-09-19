@@ -64,6 +64,40 @@ function ownerKeyForConfig(config: PraxisServerConfig): string {
 }
 
 /**
+ * Per-wallet async mutex (single-instance). The provider is reconstructed per
+ * request from the repository, so two concurrent `send`/`signProposal` calls
+ * for the same wallet would otherwise load → mutate → save on stale snapshots
+ * and drop messages or double-execute a proposal. Serializing mutating calls
+ * per ownerKey fixes the single-instance race; cross-instance races still rely
+ * on single-writer affinity (documented in ARCHITECTURE.md).
+ */
+const ownerLocks = new Map<string, Promise<void>>();
+
+async function withOwnerLock<T>(ownerKey: string, fn: () => Promise<T>): Promise<T> {
+  const prev = ownerLocks.get(ownerKey) ?? Promise.resolve();
+  let release = () => {};
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = prev.then(() => current);
+  ownerLocks.set(ownerKey, tail);
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    release();
+    // Drop the tail once settled if no waiter chained after us.
+    void tail.then(() => {
+      if (ownerLocks.get(ownerKey) === tail) ownerLocks.delete(ownerKey);
+    });
+  }
+}
+
+export function resetOwnerLocksForTests() {
+  ownerLocks.clear();
+}
+
+/**
  * Build a provider for a wallet, loading its durable state from the configured
  * {@link StateRepository} on every call. Async because a managed-database backend
  * loads over the network.
@@ -209,100 +243,110 @@ export class PraxisServerProvider implements PraxisProvider {
   };
 
   send = async (threadId: string | null, text: string): Promise<{ threadId: string }> => {
-    // `newThread` is idempotent: it returns the id if the thread already exists,
-    // and creates it otherwise. Passing the caller's id through it (rather than
-    // requiring the thread to pre-exist) means a thread created in a prior
-    // request — possibly persisted by a different serverless instance — is never
-    // rejected as "unknown" here; at worst we re-materialize an empty thread.
-    const tid = this.newThread(threadId ?? undefined);
-    const thread = this.requireThread(tid);
-    const ts = nowSeconds();
+    return withOwnerLock(this.ownerKey, async () => {
+      // `newThread` is idempotent: it returns the id if the thread already exists,
+      // and creates it otherwise. Passing the caller's id through it (rather than
+      // requiring the thread to pre-exist) means a thread created in a prior
+      // request — possibly persisted by a different serverless instance — is never
+      // rejected as "unknown" here; at worst we re-materialize an empty thread.
+      const tid = this.newThread(threadId ?? undefined);
+      const thread = this.requireThread(tid);
+      const ts = nowSeconds();
 
-    thread.messages = [...thread.messages, { id: this.id("m"), role: "user", ts, text }];
-    thread.updatedAt = ts;
-    this.state.thinking = { ...this.state.thinking, [tid]: true };
-    this.commitInBackground();
+      thread.messages = [...thread.messages, { id: this.id("m"), role: "user", ts, text }];
+      thread.updatedAt = ts;
+      this.state.thinking = { ...this.state.thinking, [tid]: true };
+      await this.commit();
 
-    let blocks: AgentBlock[];
-    let title: string | undefined;
-    try {
-      const intent = await this.parseIntent(text);
-      const result = await this.blocksForIntent(intent);
-      blocks = result.blocks;
-      title = result.title;
-    } catch (error) {
-      blocks = [
-        {
-          type: "prose",
-          text: error instanceof Error ? error.message : "The agent could not parse that request.",
-        },
-      ];
-    }
+      let blocks: AgentBlock[];
+      let title: string | undefined;
+      try {
+        const intent = await this.parseIntent(text);
+        const result = await this.blocksForIntent(intent);
+        blocks = result.blocks;
+        title = result.title;
+      } catch (error) {
+        blocks = [
+          {
+            type: "prose",
+            text: error instanceof Error ? error.message : "The agent could not parse that request.",
+          },
+        ];
+      }
 
-    const reply: Message = { id: this.id("m"), role: "agent", ts: nowSeconds(), blocks };
-    thread.messages = [...thread.messages, reply];
-    if (title && (thread.title === "New session" || thread.messages.length <= 2)) thread.title = title;
-    thread.updatedAt = reply.ts;
-    this.state.thinking = { ...this.state.thinking, [tid]: false };
-    await this.commit();
-    return { threadId: tid };
+      const reply: Message = { id: this.id("m"), role: "agent", ts: nowSeconds(), blocks };
+      thread.messages = [...thread.messages, reply];
+      if (title && (thread.title === "New session" || thread.messages.length <= 2)) thread.title = title;
+      thread.updatedAt = reply.ts;
+      this.state.thinking = { ...this.state.thinking, [tid]: false };
+      await this.commit();
+      return { threadId: tid };
+    });
   };
 
   signProposal = async (proposalId: string): Promise<void> => {
-    const proposal = this.state.proposals[proposalId];
-    if (!proposal) throw new PraxisNotFoundError(`unknown proposal ${proposalId}`);
-    if (proposal.state !== "pending") return;
+    return withOwnerLock(this.ownerKey, async () => {
+      const proposal = this.state.proposals[proposalId];
+      if (!proposal) throw new PraxisNotFoundError(`unknown proposal ${proposalId}`);
+      if (proposal.state !== "pending") return;
 
-    proposal.state = "signing";
-    this.commitInBackground();
-
-    if (proposal.detail.kind === "swap") {
-      proposal.state = "blocked";
-      proposal.simulation = "agent_swap is a typed stub; Jupiter CPI is not implemented.";
-      this.logSwapRejection(proposal);
+      proposal.state = "signing";
+      // Persist synchronously BEFORE executing on-chain: a concurrent second
+      // POST that loads state after this point sees `signing` (not `pending`)
+      // and returns early instead of double-submitting.
       await this.commit();
-      return;
-    }
 
-    const recipient = new PublicKey(proposal.detail.recipientAddress);
-    const asset = proposal.detail.asset;
-    const isSol = asset.symbol === "SOL";
-    const execution = isSol
-      ? await this.aegis.executeAgentTransfer(recipient, proposal.detail.amount)
-      : await this.aegis.executeAgentTransferSpl(recipient, asset, proposal.detail.amount);
-    proposal.check = execution.check;
-    proposal.sig = execution.sig;
-    proposal.state = execution.status === "confirmed" ? "signed" : "blocked";
-    proposal.simulation = execution.status === "confirmed"
-      ? `Confirmed through Aegis ${isSol ? "agent_transfer" : "agent_transfer_spl"}`
-      : "Rejected by Aegis during execution";
+      if (proposal.detail.kind === "swap") {
+        proposal.state = "blocked";
+        proposal.simulation = "agent_swap is a typed stub; Jupiter CPI is not implemented.";
+        this.logSwapRejection(proposal);
+        await this.commit();
+        return;
+      }
 
-    this.state.activity = [
-      {
-        id: this.id("a"),
-        kind: "transfer",
-        label: proposal.detail.recipientName,
-        asset: asset.symbol,
-        amount: proposal.detail.amount,
-        decimals: asset.decimals,
-        result: execution.status === "confirmed" ? "allowed" : "rejected",
-        reason: execution.check.reason,
-        reasonCode: execution.check.reasonCode,
-        ts: nowSeconds(),
-        sig: execution.sig,
-      },
-      ...this.state.activity,
-    ];
+      const recipient = new PublicKey(proposal.detail.recipientAddress);
+      const asset = proposal.detail.asset;
+      const isSol = asset.symbol === "SOL";
+      const execution = isSol
+        ? await this.aegis.executeAgentTransfer(recipient, proposal.detail.amount)
+        : await this.aegis.executeAgentTransferSpl(recipient, asset, proposal.detail.amount);
+      proposal.check = execution.check;
+      proposal.sig = execution.sig;
+      proposal.state = execution.status === "confirmed" ? "signed" : "blocked";
+      proposal.simulation = execution.status === "confirmed"
+        ? `Confirmed through Aegis ${isSol ? "agent_transfer" : "agent_transfer_spl"}`
+        : "Rejected by Aegis during execution";
 
-    await this.refreshPolicy().catch(() => undefined);
-    await this.commit();
+      this.state.activity = [
+        {
+          id: this.id("a"),
+          kind: "transfer",
+          label: proposal.detail.recipientName,
+          asset: asset.symbol,
+          amount: proposal.detail.amount,
+          decimals: asset.decimals,
+          result: execution.status === "confirmed" ? "allowed" : "rejected",
+          reason: execution.check.reason,
+          reasonCode: execution.check.reasonCode,
+          ts: nowSeconds(),
+          sig: execution.sig,
+        },
+        ...this.state.activity,
+      ];
+
+      await this.refreshPolicy().catch(() => undefined);
+      await this.commit();
+    });
   };
 
   cancelProposal = async (proposalId: string): Promise<void> => {
-    const proposal = this.state.proposals[proposalId];
-    if (!proposal) return;
-    proposal.state = "cancelled";
-    await this.commit();
+    return withOwnerLock(this.ownerKey, async () => {
+      const proposal = this.state.proposals[proposalId];
+      if (!proposal) return;
+      if (proposal.state !== "pending") return;
+      proposal.state = "cancelled";
+      await this.commit();
+    });
   };
 
   // --- policy dashboard ---

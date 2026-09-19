@@ -115,7 +115,7 @@ creates its Aegis policy PDA and funds the vault with 1 SOL. Then try
 
 ### App subdomain (`app.`)
 
-One project serves both hosts; `middleware.ts` routes by `Host` header
+One project serves both hosts; `proxy.ts` routes by `Host` header
 (routing table unit-tested in `server/web/__tests__/hostRouting.test.ts`):
 
 | Request | Result |

@@ -19,7 +19,7 @@ function apexHostname(): string {
   return "usepraxis.fun";
 }
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const route = routeByHost(req.headers.get("host"), req.nextUrl.pathname, apexHostname());
 
   if (route.type === "passthrough") return NextResponse.next();

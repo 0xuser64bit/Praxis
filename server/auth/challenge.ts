@@ -61,9 +61,11 @@ export function verifyWalletChallenge(args: {
   nonce: string;
   signature: string;
 }, request: Request): string {
+  pruneChallenges();
   const address = normalizeWallet(args.address);
   const nonce = args.nonce.trim();
   if (!nonce) throw new PraxisInputError("nonce is required");
+  if (nonce.length > 512) throw new PraxisInputError("nonce is too long");
 
   const challenge = verifyChallengePayload(nonce);
   if (!challenge || usedChallenges.has(nonce)) {

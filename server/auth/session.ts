@@ -52,7 +52,11 @@ export function readSession(request: Request): PraxisSession | null {
 
   const payload = verifyToken(token);
   if (!payload) return null;
-  if (payload.exp <= nowSeconds()) return null;
+  const now = nowSeconds();
+  if (payload.exp <= now) return null;
+  // Reject tokens minted in the future (clock skew tolerance 60s) — a forged
+  // or replayed iat far ahead would otherwise extend the session window.
+  if (payload.iat > now + 60) return null;
 
   return {
     walletAddress: payload.sub,

@@ -393,11 +393,30 @@ export async function requireMutationAuth(request: Request): Promise<PraxisSessi
 }
 
 export function assertSameOrigin(request: Request) {
-  const origin = request.headers.get("origin");
-  if (!origin) return;
   const expected = new URL(request.url).origin;
-  if (origin !== expected) {
+  const origin = request.headers.get("origin");
+  if (origin) {
+    if (origin !== expected) {
+      throw new PraxisAuthError("Cross-origin Praxis API mutations are not allowed.");
+    }
+    return;
+  }
+  // Headerless POSTs (curl, some wallets): fall back to Sec-Fetch-Site and
+  // Referer before relying on SameSite cookies alone.
+  const fetchSite = request.headers.get("sec-fetch-site")?.toLowerCase();
+  if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") {
     throw new PraxisAuthError("Cross-origin Praxis API mutations are not allowed.");
+  }
+  const referer = request.headers.get("referer");
+  if (referer) {
+    try {
+      if (new URL(referer).origin !== expected) {
+        throw new PraxisAuthError("Cross-origin Praxis API mutations are not allowed.");
+      }
+    } catch (error) {
+      if (error instanceof PraxisAuthError) throw error;
+      throw new PraxisAuthError("Cross-origin Praxis API mutations are not allowed.");
+    }
   }
 }
 

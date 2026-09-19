@@ -76,6 +76,23 @@ for (const p of proposals) {
 
 See [sdk/README.md](sdk/README.md) for the full surface.
 
+## Stocks (PreStocks)
+
+Text to invest in pre-IPO stocks on Solana, with limits even a hacked AI can't
+break: `buy $40 openai`, `buy $50 spacex every monday`, `buy ai basket $60`.
+Same Aegis envelope — per-stock caps, allow-lists, expiry — enforced on-chain.
+
+```bash
+PRAXIS_STOCKS_ENABLED=1 bun run dev   # 8 PreStocks mints, switcher in Policy → SPL
+bun run praxis:stocksgate             # offline honesty gate (CI-grade, no network)
+bun run praxis:demo -- --stocks       # funded-cluster demo: research, buy, block, pause, resume
+```
+
+DCA schedules emit proposals (never auto-sign); baskets are all-or-nothing —
+any blocked or unpriceable constituent clarifies the whole basket. Stock quotes
+via the [PreStocks API](https://prestocks.com/); pre-IPO mints here are
+PreStocks-only by bounty exclusivity. Submission copy: [docs/SUBMISSION.md](docs/SUBMISSION.md).
+
 ## Future scope
 
 Praxis is a strong devnet MVP. The production seams — managed Postgres state,
@@ -88,9 +105,9 @@ Deliberately **not** built yet:
   There is no Jupiter CPI and no `agent_swap` instruction. A real swap path must
   enforce mint/program allow-lists and value caps *inside the program*, not in a
   quote or backend — that is the bar for adding it.
-- Scheduled / DCA actions — only with mechanical triggers and the same Aegis
-  envelope.
-- Wallet-signed SPL token-envelope setup and managed vault-funding UX.
+- Auto-signing DCA fires (schedules emit proposals today; each fire still needs
+  a signature — auto-sign stays out by design).
+- Managed vault-funding UX (token-vault funding is script-driven for now).
 - A durable indexer for rejected actions (the on-chain log stores allowed
   actions; rejections currently live as failed-tx logs).
 

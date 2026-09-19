@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { Connection, Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import { ComputeBudgetProgram, Connection, Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 
 import { AegisClient } from "../client";
 import { ASSOCIATED_TOKEN_PROGRAM_ID, DEFAULT_AEGIS_PROGRAM_ID } from "../constants";
@@ -406,6 +406,55 @@ describe("submitSignedTransaction", () => {
         { expectedFeePayer: wallet },
       ),
     ).rejects.toThrow(/Aegis|ATA CreateIdempotent/);
+  });
+
+  test("accepts wallet-appended ComputeBudget priority-fee instructions", async () => {
+    const config = makeConfig();
+    const wallet = config.ownerAddress!;
+    // Wallets (e.g. Phantom) append SetComputeUnitLimit + SetComputeUnitPrice to
+    // the unsigned draft on sign. The relay gate must not mistake those for an
+    // open-relay attack: they move no funds.
+    const withFees = new Transaction({ feePayer: wallet, blockhash: BLOCKHASH, lastValidBlockHeight: 321 }).add(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 10_000 }),
+      // ...alongside a genuine Aegis instruction (content is irrelevant to the gate).
+      SystemProgram.transfer({ fromPubkey: wallet, toPubkey: wallet, lamports: 0 }),
+    );
+    // Rewrite the placeholder transfer's program id to the Aegis program so the
+    // tx is [budget, budget, aegis] — the shape a signed bootstrap produces.
+    withFees.instructions[2]!.programId = config.programId;
+    const client = new AegisClient(config, fakeConnection());
+    await expect(
+      client.submitSignedTransaction(
+        {
+          transaction: withFees.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
+          blockhash: BLOCKHASH,
+          lastValidBlockHeight: 321,
+        },
+        { expectedFeePayer: wallet },
+      ),
+    ).resolves.toBe("owner-sig");
+  });
+
+  test("still rejects a ComputeBudget-shaped disguise on another program", async () => {
+    const config = makeConfig();
+    const wallet = config.ownerAddress!;
+    // Right shape, wrong program: a muted SystemProgram transfer must not pass
+    // just because it is small.
+    const evil = new Transaction({ feePayer: wallet, blockhash: BLOCKHASH, lastValidBlockHeight: 321 }).add(
+      SystemProgram.transfer({ fromPubkey: wallet, toPubkey: Keypair.generate().publicKey, lamports: 1 }),
+    );
+    const client = new AegisClient(config, fakeConnection());
+    await expect(
+      client.submitSignedTransaction(
+        {
+          transaction: evil.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
+          blockhash: BLOCKHASH,
+          lastValidBlockHeight: 321,
+        },
+        { expectedFeePayer: wallet },
+      ),
+    ).rejects.toThrow(/blocked program 11111111111111111111111111111111/);
   });
 
   test("accepts a builder-produced configureToken draft that includes an ATA create", async () => {

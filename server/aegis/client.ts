@@ -17,6 +17,7 @@ import {
 import {
   AEGIS_OPERATIONAL_ERROR,
   ASSOCIATED_TOKEN_PROGRAM_ID,
+  COMPUTE_BUDGET_PROGRAM_ID,
   JUPITER_PROGRAM_ID,
   reasonFromAegisErrorCode,
   SYSTEM_PROGRAM_ID,
@@ -868,10 +869,12 @@ export class AegisClient {
    * Gate a wallet-signed owner transaction before the backend relays it. The
    * owner-action builder ({@link ownerActionInstructions}) only emits Aegis
    * instructions and SPL Associated-Token CreateIdempotent ixs (for vault /
-   * recipient ATA setup). Anything else — e.g. a raw SOL transfer — means the
-   * client assembled its own transaction and is trying to use the backend as an
-   * open relay. Refuse that. On-chain `has_one = owner` still binds Aegis ixs
-   * to the signer's own policy.
+   * recipient ATA setup). Wallets may additionally append ComputeBudget
+   * priority-fee ixs (see {@link isWalletPriorityFeeIx}) — those move no funds
+   * and the fee payer is the signing owner themself. Anything else — e.g. a raw
+   * SOL transfer — means the client assembled its own transaction and is trying
+   * to use the backend as an open relay. Refuse that. On-chain `has_one = owner`
+   * still binds Aegis ixs to the signer's own policy.
    */
   private assertSubmittableOwnerTransaction(
     raw: Buffer,
@@ -891,8 +894,10 @@ export class AegisClient {
     for (const ix of tx.instructions) {
       if (ix.programId.equals(this.config.programId)) continue;
       if (isAssociatedTokenCreateIdempotent(ix)) continue;
+      if (isWalletPriorityFeeIx(ix)) continue;
       throw new PraxisInputError(
-        "Signed owner transaction may only contain Aegis instructions or ATA CreateIdempotent.",
+        "Signed owner transaction may only contain Aegis instructions, ATA CreateIdempotent, " +
+          `or ComputeBudget priority-fee instructions (blocked program ${ix.programId.toBase58()}).`,
       );
     }
 
@@ -1021,6 +1026,19 @@ function isAssociatedTokenCreateIdempotent(ix: TransactionInstruction): boolean 
   if (!ix.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID)) return false;
   // CreateIdempotent is a single-byte instruction: [1].
   return ix.data.length === 1 && ix.data[0] === 1;
+}
+
+/**
+ * Wallet-appended ComputeBudget priority-fee instructions. Layouts per the
+ * ComputeBudget program: SetComputeUnitLimit is `[2, units:u32]` (5 bytes),
+ * SetComputeUnitPrice is `[3, microLamports:u64]` (9 bytes). Only these two
+ * wallet-emitted variants pass — never a blank check for the program id.
+ */
+function isWalletPriorityFeeIx(ix: TransactionInstruction): boolean {
+  if (!ix.programId.equals(COMPUTE_BUDGET_PROGRAM_ID)) return false;
+  if (ix.data.length === 5 && ix.data[0] === 2) return true;
+  if (ix.data.length === 9 && ix.data[0] === 3) return true;
+  return false;
 }
 
 /** Cluster-level rejection with no Aegis reason code — still honor the day window. */

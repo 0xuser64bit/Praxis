@@ -21,6 +21,16 @@ export const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey(
 );
 
 /**
+ * Compute Budget program. Wallets (e.g. Phantom) legitimately append
+ * SetComputeUnitLimit / SetComputeUnitPrice instructions for priority fees.
+ * These move no funds — the fee payer is the signing owner themself — so the
+ * owner-submit relay gate allows them (see `isWalletPriorityFeeIx`).
+ */
+export const COMPUTE_BUDGET_PROGRAM_ID = new PublicKey(
+  "ComputeBudget111111111111111111111111111111",
+);
+
+/**
  * Jupiter aggregator (v6). Used by the agent-layer swap allow-list check: a swap
  * is only routable if Jupiter is in the policy's `allowed_programs`. NOTE: the
  * on-chain `agent_swap` CPI is not built (v2) — this gates the agent-layer

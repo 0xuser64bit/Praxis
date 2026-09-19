@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Keypair } from "@solana/web3.js";
 
 import { POST as signProposal } from "../sign-proposal/route";
+import { GET as health } from "../../health/route";
 import { POST as updatePolicy } from "../update-policy/route";
 import { POST as authVerify } from "../auth/verify/route";
 import { GET as getPolicy } from "../get-policy/route";
@@ -43,6 +44,15 @@ function authed(path: string, body?: unknown): Request {
     body,
   });
 }
+
+describe("health", () => {
+  test("200 without a session, no-store", async () => {
+    const res = await health();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+});
 
 describe("mutation auth gating", () => {
   test("401 without a session", async () => {

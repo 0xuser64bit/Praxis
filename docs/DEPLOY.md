@@ -73,6 +73,18 @@ never commit keypairs.
 cp .env.example .env
 ```
 
+Local dependencies (Docker — Postgres + Redis for prod-parity state):
+
+```bash
+docker compose up -d   # postgres on :5433 (brew owns :5432), redis on :6379
+bun run praxis:localcheck   # proves both backends against the live containers
+```
+
+Point `.env` at them: `DATABASE_URL=postgresql://praxis:praxis@localhost:5433/praxis`
+with `PRAXIS_STATE_BACKEND=postgres`, plus `REDIS_URL=redis://localhost:6379` with
+`PRAXIS_RATE_LIMITER=redis`. Hosted deploys keep Neon + Upstash REST — see
+"Hosting on Vercel" below.
+
 The only values you usually hand-edit:
 
 ```bash

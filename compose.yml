@@ -1,0 +1,50 @@
+# Praxis local dependencies (dev only — never production data).
+#
+#   docker compose up -d        # start postgres + redis
+#   docker compose down         # stop (data survives in named volumes)
+#   docker compose down -v      # stop AND wipe local data
+#
+# The app points at these via .env:
+#   # Host port 5433: a Homebrew postgres already owns 5432 on dev machines.
+# (The container still listens on 5432 internally.) App URL:
+#   DATABASE_URL=postgresql://praxis:praxis@localhost:5433/praxis
+#   PRAXIS_STATE_BACKEND=postgres
+#   REDIS_URL=redis://localhost:6379
+#   PRAXIS_RATE_LIMITER=redis
+# Hosted deploys keep using Neon (DATABASE_URL) + Upstash REST — see docs/DEPLOY.md.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: praxis
+      POSTGRES_PASSWORD: praxis
+      POSTGRES_DB: praxis
+    ports:
+      - "5433:5432"
+    volumes:
+      - praxis-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U praxis -d praxis"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - praxis-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  praxis-pgdata:
+  praxis-redisdata:

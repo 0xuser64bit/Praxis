@@ -17,7 +17,8 @@
     "praxis:swapcheck": "bun scripts/swapcheck.ts",
     "praxis:setup-token-accounts": "bun scripts/setup-token-accounts.ts",
     "praxis:tokencheck": "bun scripts/tokencheck.ts",
-    "praxis:stockscheck": "bun scripts/stockscheck.ts"
+    "praxis:stockscheck": "bun scripts/stockscheck.ts",
+    "praxis:localcheck": "bun scripts/localcheck.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
@@ -25,13 +26,16 @@
     "@tabler/icons-react": "^3.44.0",
     "bs58": "^6.0.0",
     "next": "16.2.6",
+    "pg": "^8.23.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "redis": "^6.2.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/bun": "^1.3.14",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

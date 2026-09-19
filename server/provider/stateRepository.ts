@@ -1,4 +1,5 @@
 import { PraxisConfigError } from "../errors";
+import { createPgExecutor, isLocalPostgresUrl } from "./pgStateExecutor";
 import { PostgresStateRepository } from "./postgresStateRepository";
 import { loadProviderState, saveProviderState } from "./stateStore";
 import { compactState, type StoredProviderState } from "./stateSerialization";
@@ -78,7 +79,15 @@ export function getStateRepository(): StateRepository {
         "PRAXIS_STATE_BACKEND=postgres requires DATABASE_URL (or POSTGRES_URL / PRAXIS_DATABASE_URL).",
       );
     }
-    cached = new PostgresStateRepository(url, compactState);
+    // The neon() driver only speaks to Neon infrastructure; vanilla Postgres
+    // (local Docker) needs node-postgres. Localhost auto-selects pg unless
+    // PRAXIS_PG_DRIVER explicitly says otherwise.
+    const driver = process.env.PRAXIS_PG_DRIVER?.trim().toLowerCase();
+    if (driver && driver !== "pg" && driver !== "neon") {
+      throw new PraxisConfigError(`PRAXIS_PG_DRIVER must be "pg" or "neon" (got "${driver}").`);
+    }
+    const usePg = driver === "pg" || (!driver && isLocalPostgresUrl(url));
+    cached = new PostgresStateRepository(usePg ? createPgExecutor(url).sql : url, compactState);
   } else {
     cached = new FsStateRepository();
   }

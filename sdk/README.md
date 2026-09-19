@@ -83,7 +83,9 @@ toBaseUnits("500000000");            // 500000000n
 |------|---------|
 | Auth | `connect()`, `session()`, `logout()` |
 | Conversation | `ask()`, `send()`, `newThread()`, `signProposal()`, `cancelProposal()` |
-| Reads | `getPolicy()`, `getThreads()`, `getThread()`, `getProposal()`, `getActivity()`, `getAddressBook()`, `isThinking()`, `getVersion()` |
+| Reads | `getPolicy()`, `getThreads()`, `getThread()`, `getProposal()`, `getActivity()`, `getAddressBook()`, `getSchedules()`, `isThinking()`, `getVersion()` |
+| Contacts | `addContact()`, `removeContact()` — labels only, no signing power |
+| Recurring | `cancelSchedule()` — stop a recurring buy (fires only ever emit proposals) |
 | Policy (server-key) | `bootstrapPolicy()`, `fundVault()`, `withdrawVault()`, `updatePolicy()`, `configureToken()`, `prepareTokenAccounts()`, `revokeAgent()`, `rotateAgent()`, `addToAllowList()`, `removeFromAllowList()`, `deleteAgent()` |
 | Owner (wallet-signed) | `buildOwnerTransaction()`, `submitOwnerTransaction()` |
 | Stocks (PreStocks) | `getTokenUniverse()`, `getStockResearch()` — see `examples/stocks-dca.ts` |

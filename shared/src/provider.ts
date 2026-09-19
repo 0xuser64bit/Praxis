@@ -112,6 +112,36 @@ export interface ActionProposal {
 }
 
 // ---------------------------------------------------------------------------
+// Recurring buys — mechanical schedules. Each fire emits one transfer
+// proposal through the same policy checks as a one-off buy; nothing ever
+// auto-signs. Amount is base units of the asset (bigint in memory, decimal
+// string on the wire, per the money rule).
+// ---------------------------------------------------------------------------
+
+/** When a recurring buy fires. `weekday`: 0=Sunday..6=Saturday (UTC). */
+export type DcaCadenceView =
+  | { type: "daily" }
+  | { type: "weekly"; weekday: number }
+  | { type: "monthly"; day: number };
+
+export interface DcaScheduleView {
+  id: string;
+  /** Canonical asset symbol, e.g. "OPENAI". */
+  asset: string;
+  /** Per-fire amount in the token's base units (never float). */
+  amount: BaseUnits;
+  decimals: number;
+  recipientAddress: Address;
+  recipientName: string;
+  cadence: DcaCadenceView;
+  /** Unix milliseconds of the next fire. */
+  nextFireTs: number;
+  createdAt: number;
+  /** Thread the schedule was created in (fires append proposals there). */
+  threadId: string;
+}
+
+// ---------------------------------------------------------------------------
 // Conversation — a multi-turn thread of user lines and agent blocks. The agent
 // can reply with prose, ask a clarifying question, propose an action, or return
 // read-only research.
@@ -273,6 +303,10 @@ export interface PraxisProvider {
   signProposal(proposalId: string): Promise<void>;
   /** Dismiss a pending proposal without signing. */
   cancelProposal(proposalId: string): Promise<void>;
+  /** List recurring-buy schedules (each fire emits one proposal; never signs). */
+  getSchedules(): DcaScheduleView[];
+  /** Stop a recurring-buy schedule. Unknown ids are a no-op (idempotent). */
+  cancelSchedule(scheduleId: string): Promise<void>;
   /** Start a fresh empty thread; returns its id. */
   newThread(): string;
 

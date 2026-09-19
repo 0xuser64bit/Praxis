@@ -163,6 +163,18 @@ describe("DCA schedules", () => {
     await provider.send(null, "buy $50 openai every monday");
     expect(await provider.fireDueSchedules(Date.now())).toEqual([]);
   });
+
+  test("cancelSchedule stops a schedule (idempotent on unknown ids)", async () => {
+    const { provider } = build();
+    await provider.send(null, "buy $50 openai every monday");
+    const schedule = provider.getSchedules()[0];
+    await provider.cancelSchedule(schedule.id);
+    expect(provider.getSchedules()).toEqual([]);
+    // A cancelled schedule never fires, and re-cancelling is a no-op.
+    expect(await provider.fireDueSchedules(schedule.nextFireTs + 1)).toEqual([]);
+    await provider.cancelSchedule(schedule.id);
+    await provider.cancelSchedule("s-does-not-exist");
+  });
 });
 
 describe("basket buys", () => {

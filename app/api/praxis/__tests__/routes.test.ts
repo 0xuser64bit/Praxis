@@ -12,6 +12,8 @@ import { GET as getProposal } from "../get-proposal/route";
 import { GET as getProposals } from "../get-proposals/route";
 import { GET as getThread } from "../get-thread/route";
 import { POST as sendRoute } from "../send/route";
+import { GET as getSchedules } from "../get-schedules/route";
+import { POST as cancelSchedule } from "../cancel-schedule/route";
 import { POST as bootstrapPolicy } from "../bootstrap-policy/route";
 import { POST as ownerBuild } from "../owner/build/route";
 import { POST as ownerSubmit } from "../owner/submit/route";
@@ -159,6 +161,31 @@ describe("read auth gating", () => {
     const res = await getProposals(authed("/api/praxis/get-proposals"));
     expect(res.status).toBe(200);
     expect(Array.isArray(await res.json())).toBe(true);
+  });
+
+  test("get-schedules returns a JSON array (empty for a fresh wallet)", async () => {
+    const res = await getSchedules(authed("/api/praxis/get-schedules"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+  });
+
+  test("get-schedules: 401 without a session", async () => {
+    const res = await getSchedules(makeRequest(`${ORIGIN}/api/praxis/get-schedules`));
+    expect(res.status).toBe(401);
+  });
+
+  test("cancel-schedule: 401 without a session", async () => {
+    const res = await cancelSchedule(
+      makeRequest(`${ORIGIN}/api/praxis/cancel-schedule`, { origin: ORIGIN, body: { scheduleId: "s-x" } }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test("cancel-schedule: 400 on a missing id, 200 on an unknown id (idempotent)", async () => {
+    const bad = await cancelSchedule(authed("/api/praxis/cancel-schedule", {}));
+    expect(bad.status).toBe(400);
+    const ok = await cancelSchedule(authed("/api/praxis/cancel-schedule", { scheduleId: "s-does-not-exist" }));
+    expect(ok.status).toBe(200);
   });
 });
 

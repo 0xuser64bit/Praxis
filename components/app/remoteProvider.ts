@@ -5,6 +5,7 @@ import type {
   ActivityEntry,
   AddressBookEntry,
   AllowListKind,
+  DcaScheduleView,
   PolicyUpdate,
   PolicyView,
   ProviderConnectionState,
@@ -45,6 +46,7 @@ interface RemoteStoreState {
   policy?: PolicyView;
   activity: ActivityEntry[];
   addressBook: AddressBookEntry[];
+  schedules: DcaScheduleView[];
   thinking: Record<string, boolean>;
   connection: ProviderConnectionState;
 }
@@ -55,6 +57,7 @@ function createEmptyState(): RemoteStoreState {
     proposals: {},
     activity: [],
     addressBook: [],
+    schedules: [],
     thinking: {},
     connection: { mode: "api", phase: "loading" },
   };
@@ -82,7 +85,7 @@ export class RemotePraxisProvider implements PraxisProvider {
    * Keep the app live without a websocket: while the tab is visible, re-pull
    * policy + activity on an interval so a confirmation that lands after the
    * optimistic refresh (or any out-of-band change) actually surfaces. Refresh is
-   * five flat parallel reads, so this is cheap and well under the read limit.
+   * six flat parallel reads, so this is cheap and well under the read limit.
    * Background ticks fail silently — a transient blip must not tear the app down
    * to an error screen mid-flow.
    */
@@ -117,6 +120,7 @@ export class RemotePraxisProvider implements PraxisProvider {
   };
   getActivity = (): ActivityEntry[] => this.state.activity;
   getAddressBook = (): AddressBookEntry[] => this.state.addressBook;
+  getSchedules = (): DcaScheduleView[] => this.state.schedules;
   isThinking = (threadId: string): boolean => Boolean(this.state.thinking[threadId]);
   getConnectionState = (): ProviderConnectionState => this.state.connection;
 
@@ -209,6 +213,11 @@ export class RemotePraxisProvider implements PraxisProvider {
 
   cancelProposal = async (proposalId: string): Promise<void> => {
     await this.mutate(() => this.post("/api/praxis/cancel-proposal", { proposalId }));
+    await this.refreshAll();
+  };
+
+  cancelSchedule = async (scheduleId: string): Promise<void> => {
+    await this.mutate(() => this.post("/api/praxis/cancel-schedule", { scheduleId }));
     await this.refreshAll();
   };
 
@@ -329,12 +338,13 @@ export class RemotePraxisProvider implements PraxisProvider {
       // come back as a single batch (`get-proposals`) rather than one request per
       // proposal block, which previously made refresh O(proposals) sequential
       // round-trips on every mutation and could trip the read rate limit.
-      const [threads, policy, activity, addressBook, proposalList] = await Promise.all([
+      const [threads, policy, activity, addressBook, proposalList, schedules] = await Promise.all([
         this.get<Thread[]>("/api/praxis/get-threads"),
         this.get<PolicyView>("/api/praxis/get-policy"),
         this.get<ActivityEntry[]>("/api/praxis/get-activity"),
         this.get<AddressBookEntry[]>("/api/praxis/get-address-book"),
         this.get<ActionProposal[]>("/api/praxis/get-proposals"),
+        this.get<DcaScheduleView[]>("/api/praxis/get-schedules"),
       ]);
       // A newer refresh started while we were awaiting — its snapshot is fresher,
       // so discard ours rather than clobber it with stale data.
@@ -350,6 +360,7 @@ export class RemotePraxisProvider implements PraxisProvider {
         activity,
         addressBook,
         proposals,
+        schedules,
         connection: { mode: "api", phase: "ready" },
       };
       this.notify();

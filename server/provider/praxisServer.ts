@@ -451,6 +451,18 @@ export class PraxisServerProvider implements PraxisProvider {
     });
   };
 
+  /**
+   * Stop a recurring-buy schedule. Idempotent: an unknown id is a no-op so a
+   * retried tap (or a schedule that just fired) never errors.
+   */
+  cancelSchedule = async (scheduleId: string): Promise<void> => {
+    return withOwnerLock(this.ownerKey, async () => {
+      const before = this.state.schedules.length;
+      this.state.schedules = this.state.schedules.filter((s) => s.id !== scheduleId);
+      if (this.state.schedules.length !== before) await this.commit();
+    });
+  };
+
   // --- policy dashboard ---
   bootstrapPolicy = async (fundLamports?: bigint): Promise<void> => {
     this.assertBackendOwnerSigningAvailable();

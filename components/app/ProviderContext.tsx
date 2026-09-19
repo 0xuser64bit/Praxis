@@ -10,6 +10,7 @@ import type {
   ActionProposal,
   ActivityEntry,
   AddressBookEntry,
+  DcaScheduleView,
   PolicyView,
   ProviderConnectionState,
   PraxisProvider,
@@ -61,5 +62,7 @@ export const useProposal = (id: string): ActionProposal | undefined =>
 export const useThinking = (id: string): boolean => useStore((p) => p.isThinking(id));
 export const useAddressBook = (): AddressBookEntry[] =>
   useStore((p) => p.getAddressBook());
+export const useSchedules = (): DcaScheduleView[] =>
+  useStore((p) => p.getSchedules());
 export const useConnectionState = (): ProviderConnectionState =>
   useStore((p) => p.getConnectionState());

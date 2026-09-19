@@ -19,6 +19,7 @@ import {
 } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { StockSwitcher, useActiveStock } from "./ActiveStock";
 import { useActivity } from "./ProviderContext";
 import { Label } from "./ui";
 import { formatUnits, shortenAddress } from "./lib/units";
@@ -30,9 +31,18 @@ export function ActivityLog() {
   const activity = useActivity();
   const [filter, setFilter] = useState<Filter>("all");
   const now = useNow();
+  // Stocklana C05: the feed follows the active stock. Entries carry the asset
+  // symbol (SPL rows resolve it from the on-chain mint), so filtering by symbol
+  // is exact without a schema change.
+  const { stocksEnabled, activeMint, symbolFor } = useActiveStock();
+  const activeSymbol = activeMint ? symbolFor(activeMint) : null;
 
   const rejected = activity.filter((a) => a.result === "rejected").length;
-  const shown = activity.filter((a) => filter === "all" || a.result === filter);
+  const shown = activity.filter(
+    (a) =>
+      (filter === "all" || a.result === filter) &&
+      (!activeSymbol || a.asset === activeSymbol),
+  );
 
   return (
     <div className="flex-1 overflow-y-auto px-8 py-7 max-[760px]:px-5">
@@ -45,8 +55,14 @@ export function ActivityLog() {
             <p className="mt-2.5 text-[14px] text-[var(--text-secondary)]">
               Every agent action and its on-chain Aegis verdict. Allowed actions are
               recorded on-chain; rejections are shown for this session.{" "}
-              {activity.length} actions · {rejected} rejected.
+              {activity.length} actions · {rejected} rejected
+              {activeSymbol ? ` · ${activeSymbol} only` : ""}.
             </p>
+            {stocksEnabled && (
+              <div className="mt-3">
+                <StockSwitcher label="Filter activity by stock" />
+              </div>
+            )}
           </div>
           <div className="flex shrink-0 gap-1 rounded-lg bg-[var(--bg-elevated)] p-1 [border:0.5px_solid_var(--border)]">
             {(["all", "allowed", "rejected"] as const).map((f) => (

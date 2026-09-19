@@ -5,6 +5,7 @@ import { POST as signProposal } from "../sign-proposal/route";
 import { POST as updatePolicy } from "../update-policy/route";
 import { POST as authVerify } from "../auth/verify/route";
 import { GET as getPolicy } from "../get-policy/route";
+import { GET as getStockUniverse } from "../get-stock-universe/route";
 import { GET as getProposal } from "../get-proposal/route";
 import { GET as getProposals } from "../get-proposals/route";
 import { GET as getThread } from "../get-thread/route";
@@ -13,6 +14,7 @@ import { POST as bootstrapPolicy } from "../bootstrap-policy/route";
 import { POST as ownerBuild } from "../owner/build/route";
 import { POST as ownerSubmit } from "../owner/submit/route";
 import { createSessionCookie } from "@/server/auth/session";
+import { resetConfigForTests } from "@/server/env";
 import { makeRequest } from "@/server/testing/fixtures";
 
 const ORIGIN = "https://praxis.test";
@@ -146,6 +148,58 @@ describe("read auth gating", () => {
     const res = await getProposals(authed("/api/praxis/get-proposals"));
     expect(res.status).toBe(200);
     expect(Array.isArray(await res.json())).toBe(true);
+  });
+});
+
+describe("stocklana C05: stock universe + policy mint view", () => {
+  const OPENAI_MINT = "PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF";
+
+  test("get-stock-universe: 401 without a session", async () => {
+    const res = await getStockUniverse(makeRequest(`${ORIGIN}/api/praxis/get-stock-universe`));
+    expect(res.status).toBe(401);
+  });
+
+  test("get-stock-universe: [] when the stocks flag is off (default)", async () => {
+    const prev = process.env.PRAXIS_STOCKS_ENABLED;
+    delete process.env.PRAXIS_STOCKS_ENABLED;
+    resetConfigForTests();
+    try {
+      const res = await getStockUniverse(authed("/api/praxis/get-stock-universe"));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual([]);
+    } finally {
+      if (prev === undefined) delete process.env.PRAXIS_STOCKS_ENABLED;
+      else process.env.PRAXIS_STOCKS_ENABLED = prev;
+      resetConfigForTests();
+    }
+  });
+
+  test("get-stock-universe: 8 verified PreStocks entries when enabled", async () => {
+    const prev = process.env.PRAXIS_STOCKS_ENABLED;
+    process.env.PRAXIS_STOCKS_ENABLED = "1";
+    resetConfigForTests();
+    try {
+      const res = await getStockUniverse(authed("/api/praxis/get-stock-universe"));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Array<{ symbol: string; mint: string; decimals: number }>;
+      expect(body).toHaveLength(8);
+      expect(body.find((s) => s.symbol === "OPENAI")?.mint).toBe(OPENAI_MINT);
+      for (const entry of body) expect(entry.decimals).toBeGreaterThan(0);
+    } finally {
+      if (prev === undefined) delete process.env.PRAXIS_STOCKS_ENABLED;
+      else process.env.PRAXIS_STOCKS_ENABLED = prev;
+      resetConfigForTests();
+    }
+  });
+
+  test("get-policy: 400 on an invalid ?mint= (never reaches the chain)", async () => {
+    const res = await getPolicy(authed("/api/praxis/get-policy?mint=not-a-pubkey"));
+    expect(res.status).toBe(400);
+  });
+
+  test("get-policy: 400 on an empty ?mint=", async () => {
+    const res = await getPolicy(authed("/api/praxis/get-policy?mint="));
+    expect(res.status).toBe(400);
   });
 });
 

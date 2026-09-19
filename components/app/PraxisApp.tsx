@@ -1,5 +1,6 @@
 "use client";
 
+import { ActiveStockProvider } from "./ActiveStock";
 import { AppShell } from "./AppShell";
 import { ApiAuthGate } from "./AuthGate";
 import { ProviderProvider } from "./ProviderContext";
@@ -49,7 +50,9 @@ export function PraxisApp() {
 
   const app = (
     <ProviderProvider>
-      <AppShell />
+      <ActiveStockProvider>
+        <AppShell />
+      </ActiveStockProvider>
     </ProviderProvider>
   );
 

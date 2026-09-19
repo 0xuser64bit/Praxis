@@ -26,6 +26,7 @@ import { useState, type ReactNode } from "react";
 
 import { Button } from "@/components/praxis/Button";
 
+import { StockSwitcher, useActiveStock } from "./ActiveStock";
 import { RevokeDialog } from "./RevokeDialog";
 import { useAddressBook, usePolicy, useProvider } from "./ProviderContext";
 import { Card, Dot, Label } from "./ui";
@@ -426,8 +427,14 @@ function TokenEnvelopeCard({
   onPrepareAccounts: () => void;
 }) {
   const configured = policy.tokenMint !== SYSTEM_PROGRAM;
+  const { stocks, stocksEnabled, activeMint, symbolFor } = useActiveStock();
+  // Envelope label prefers the stock universe (OPENAI over a bare mint), then
+  // the static catalog, then a generic fallback. Stock decimals are 6
+  // (provisional — docs/PRESTOCKS-SPIKE.md); mintDecimals falls back to 6 too.
+  const stockSymbol = symbolFor(policy.tokenMint);
   const decimals = mintDecimals(policy.tokenMint);
-  const symbol = mintLabel(policy.tokenMint) ?? "TOKEN";
+  const symbol = stockSymbol ?? mintLabel(policy.tokenMint) ?? "TOKEN";
+  const universeIndex = stocks.findIndex((s) => s.mint === policy.tokenMint);
 
   // Default caps when (re)selecting a token: 200 per-tx / 500 daily, in its units.
   const defaultsFor = (mint: string): TokenEnvelopeConfig => ({
@@ -437,6 +444,8 @@ function TokenEnvelopeCard({
   });
 
   const pick = (mint: string) => onConfigure(defaultsFor(mint));
+  const activeNeedsSwitch = stocksEnabled && activeMint !== null && activeMint !== policy.tokenMint;
+  const activeSymbol = activeMint ? (symbolFor(activeMint) ?? "stock") : null;
 
   return (
     <Card className="mt-4 p-5">
@@ -444,13 +453,31 @@ function TokenEnvelopeCard({
         <Label>Token transfers (SPL)</Label>
         {configured && (
           <span className="inline-flex items-center gap-2 rounded-full bg-[var(--bg-elevated)] px-3 py-1 text-[11px] [border:0.5px_solid_var(--border)]">
-            <span className="text-[var(--text-primary)]">{symbol}</span>
+            <span className="text-[var(--text-primary)]">
+              {symbol}
+              {universeIndex >= 0 && (
+                <span className="text-[var(--text-tertiary)]">
+                  {" "}vault · {universeIndex + 1} of {stocks.length}
+                </span>
+              )}
+            </span>
             <span className="[font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
               {shortenAddress(policy.tokenMint)}
             </span>
           </span>
         )}
       </div>
+
+      {stocksEnabled && (
+        <div className="mb-4">
+          <StockSwitcher />
+          <p className="mt-2 text-[12px] leading-[1.5] text-[var(--text-tertiary)]">
+            One vault per stock — the envelope holds a single mint at a time.
+            Switching reconfigures caps for that mint; per-mint spend counters
+            never mix.
+          </p>
+        </div>
+      )}
 
       {!configured ? (
         <div>
@@ -470,10 +497,30 @@ function TokenEnvelopeCard({
                 {m.label}
               </button>
             ))}
+            {stocks.map((s) => (
+              <button
+                key={s.mint}
+                type="button"
+                onClick={() => pick(s.mint)}
+                className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] [transition:color_0.15s] hover:text-[var(--accent)]"
+              >
+                <IconPlus size={11} />
+                {s.symbol}
+              </button>
+            ))}
           </div>
         </div>
       ) : (
         <div className="flex flex-col gap-4">
+          {activeNeedsSwitch && (
+            <button
+              type="button"
+              onClick={() => activeMint && pick(activeMint)}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-[var(--accent)] [border:0.5px_solid_var(--border-strong)] [transition:background_0.15s] hover:bg-[var(--bg-elevated)]"
+            >
+              Switch envelope to {activeSymbol}
+            </button>
+          )}
           <TokenSpend policy={policy} now={now} decimals={decimals} symbol={symbol} />
           <div className="h-px bg-[var(--border)]" />
           <CapRow

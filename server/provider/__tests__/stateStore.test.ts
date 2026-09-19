@@ -36,14 +36,14 @@ function activity(over: Partial<ActivityEntry> = {}): ActivityEntry {
   };
 }
 
-function proposal(id: string): ActionProposal {
+function proposal(id: string, state: ActionProposal["state"] = "pending"): ActionProposal {
   return {
     id,
     detail: { kind: "transfer", amount: 1n, asset: USDC, recipientName: "Maya", recipientAddress: randomAddress() },
     networkFee: 5000n,
     simulation: "ok",
     check: { allowed: true, spentToday: 0n, dailyLimit: 10n, remaining: 10n },
-    state: "pending",
+    state,
   };
 }
 
@@ -82,13 +82,31 @@ describe("stateStore persistence", () => {
     const owner = randomAddress();
     saveProviderState(owner, {
       threads: [threadReferencing("p-keep")],
-      proposals: { "p-keep": proposal("p-keep"), "p-orphan": proposal("p-orphan") },
+      proposals: {
+        "p-keep": proposal("p-keep"),
+        "p-orphan": proposal("p-orphan", "blocked"),
+      },
       activity: [],
       contacts: [],
     });
     const loaded = loadProviderState(owner);
     expect(loaded?.proposals["p-keep"]).toBeDefined();
     expect(loaded?.proposals["p-orphan"]).toBeUndefined();
+  });
+
+  test("retains actionable (pending/signing) orphans so sign never 404s", () => {
+    const owner = randomAddress();
+    saveProviderState(owner, {
+      threads: [threadReferencing("p-keep")],
+      proposals: {
+        "p-keep": proposal("p-keep"),
+        "p-actionable": proposal("p-actionable", "signing"),
+      },
+      activity: [],
+      contacts: [],
+    });
+    const loaded = loadProviderState(owner);
+    expect(loaded?.proposals["p-actionable"]).toBeDefined();
   });
 
   test("caps threads at 50 newest and activity at 250 newest", () => {

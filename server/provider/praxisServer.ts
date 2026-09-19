@@ -52,8 +52,11 @@ interface StoreState {
   activity: ActivityEntry[];
   contacts: AddressBookEntry[];
   policy?: PolicyView;
-  thinking: Record<string, boolean>;
+  /** threadId -> ms timestamp when thinking started (TTL-guarded, never persisted). */
+  thinking: Record<string, number>;
 }
+
+const THINKING_TTL_MS = 5 * 60 * 1000;
 
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 
@@ -217,20 +220,31 @@ export class PraxisServerProvider implements PraxisProvider {
   };
   getActivity = (): ActivityEntry[] => [...this.state.activity].sort((a, b) => b.ts - a.ts);
   getAddressBook = (): AddressBookEntry[] => this.addressBook.all();
-  isThinking = (threadId: string): boolean => Boolean(this.state.thinking[threadId]);
+  isThinking = (threadId: string): boolean => {
+    const startedAt = this.state.thinking[threadId];
+    if (!startedAt) return false;
+    // A crash between thinking=true and thinking=false would otherwise leave a
+    // stale `true` until the next send completes; expire it after the TTL.
+    if (Date.now() - startedAt > THINKING_TTL_MS) return false;
+    return true;
+  };
   getConnectionState = () => ({ mode: "api" as const, phase: "ready" as const });
   /**
-   * A durable state cursor: the newest mutation timestamp across persisted
-   * threads and activity (unix seconds). The provider is reconstructed per
-   * request, so an in-memory counter would always read ~0; deriving the cursor
-   * from state instead makes it stable across serverless instances and lets a
-   * polling client (or the SDK) detect "something changed at or after T".
+   * A durable state cursor derived from persisted state (stable across
+   * serverless instances). Base is the newest mutation timestamp (unix
+   * seconds); the low digits fold in message/proposal counts so two mutations
+   * within the same second still advance the cursor for polling clients.
    */
   getVersion = (): number => {
     let cursor = 0;
-    for (const thread of this.state.threads) cursor = Math.max(cursor, thread.updatedAt);
+    let messages = 0;
+    for (const thread of this.state.threads) {
+      cursor = Math.max(cursor, thread.updatedAt);
+      messages += thread.messages.length;
+    }
     for (const entry of this.state.activity) cursor = Math.max(cursor, entry.ts);
-    return cursor;
+    const proposals = Object.keys(this.state.proposals).length;
+    return cursor * 10_000 + (messages % 1_000) * 10 + (proposals % 10);
   };
 
   // --- conversation ---
@@ -258,7 +272,7 @@ export class PraxisServerProvider implements PraxisProvider {
 
       thread.messages = [...thread.messages, { id: this.id("m"), role: "user", ts, text }];
       thread.updatedAt = ts;
-      this.state.thinking = { ...this.state.thinking, [tid]: true };
+      this.state.thinking = { ...this.state.thinking, [tid]: Date.now() };
       await this.commit();
 
       let blocks: AgentBlock[];
@@ -281,7 +295,7 @@ export class PraxisServerProvider implements PraxisProvider {
       thread.messages = [...thread.messages, reply];
       if (title && (thread.title === "New session" || thread.messages.length <= 2)) thread.title = title;
       thread.updatedAt = reply.ts;
-      this.state.thinking = { ...this.state.thinking, [tid]: false };
+      delete this.state.thinking[tid];
       await this.commit();
       return { threadId: tid };
     });

@@ -18,7 +18,12 @@ export function Conversation({
   const thread = useThread(threadId);
   const thinking = useThinking(threadId);
   const { toast } = useToast();
-  const toasted = useRef<Set<string>>(new Set());
+  // Ids seen for the currently baselined thread. A thread's history is
+  // snapshotted silently the first time we see it in this mount — only
+  // messages that arrive AFTER that baseline get a toast. Otherwise every
+  // view switch (which remounts this component) replays all historical
+  // notices as popups.
+  const seen = useRef<{ threadId: string; ids: Set<string> } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -29,14 +34,20 @@ export function Conversation({
   }, [messageCount, thinking]);
 
   // Surface a toast when a new agent reply carries a notice block (e.g. a saved
-  // contact). Deduped by message id so re-renders don't re-fire.
+  // contact). Only messages that arrive after the thread's baseline toast —
+  // history never re-fires, no matter how often this view remounts.
   useEffect(() => {
     if (!thread) return;
+    const current = seen.current;
+    if (!current || current.threadId !== thread.id) {
+      seen.current = { threadId: thread.id, ids: new Set(thread.messages.map((m) => m.id)) };
+      return;
+    }
     for (const m of thread.messages) {
-      if (m.role !== "agent" || toasted.current.has(m.id)) continue;
+      if (m.role !== "agent" || current.ids.has(m.id)) continue;
+      current.ids.add(m.id);
       const notice = m.blocks.find((b) => b.type === "notice");
       if (notice && notice.type === "notice") {
-        toasted.current.add(m.id);
         toast(notice.text, notice.tone);
       }
     }

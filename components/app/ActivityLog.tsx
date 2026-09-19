@@ -24,6 +24,7 @@ import { useState } from "react";
 import { StockSwitcher, useActiveStock } from "./ActiveStock";
 import { useActivity, useProvider, useSchedules } from "./ProviderContext";
 import { Label } from "./ui";
+import { explorerTxUrl } from "./lib/explorer";
 import { formatUnits, shortenAddress } from "./lib/units";
 import { useNow } from "./lib/useNow";
 
@@ -157,7 +158,7 @@ function ActivityRow({ entry, now }: { entry: ActivityEntry; now: number }) {
             <>
               <span aria-hidden>·</span>
               <a
-                href={`https://explorer.solana.com/tx/${encodeURIComponent(entry.sig)}`}
+                href={explorerTxUrl(entry.sig)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 [transition:color_0.15s] hover:text-[var(--accent)]"

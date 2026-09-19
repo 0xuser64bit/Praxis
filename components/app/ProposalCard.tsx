@@ -22,6 +22,7 @@ import { Eyebrow } from "@/components/praxis/Eyebrow";
 import { PolicyCheckBanner } from "./PolicyCheckBanner";
 import { useProposal, useProvider } from "./ProviderContext";
 import { formatSol, formatUnits, formatUsd, shortenAddress } from "./lib/units";
+import { explorerTxUrl } from "./lib/explorer";
 
 type Flow = { label: string; primary: string; unit?: string; sub: string; compact?: boolean };
 type Meta = { label: string; value: ReactNode; ok?: boolean; mono?: boolean };
@@ -170,7 +171,7 @@ export function ProposalCard({
             </div>
             {proposal.sig ? (
               <a
-                href={`https://explorer.solana.com/tx/${encodeURIComponent(proposal.sig)}`}
+                href={explorerTxUrl(proposal.sig)}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="View transaction on Solana Explorer"

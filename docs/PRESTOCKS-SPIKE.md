@@ -43,3 +43,33 @@ bun run praxis:stockscheck
 `agent_transfer_spl` + `checkTokenTransferPolicy` path. `swap X for <stock>` stays `swap_stub`
 blocked with honest copy. This decision flips to swap-route only if a C01-follow-up probe shows
 a Jupiter route behind the existing mint/program allow-lists — as its own commit with evidence here.
+
+## C08 demo runbook (judge-clickable evidence)
+
+Offline gate (no network, CI-grade):
+
+```bash
+bun run praxis:stocksgate   # 8-mint universe, MintNotAllowed mirror, swap-stub,
+                            # research degrade, DCA/basket pure paths — all green
+```
+
+Live probe (needs network):
+
+```bash
+bun run praxis:stockscheck   # PreStocks API shape + prices
+```
+
+Funded-cluster demo (devnet keys + SOL for rent, `PRAXIS_STOCKS_ENABLED=1`):
+
+```bash
+bun run praxis:demo -- --stocks
+# research OPENAI → buy $40 simulate (honest verdict) → $500 blocked by 200/tx
+# cap → pause → resume. Moves no value; pause/resume are the only submitted txs.
+```
+
+DCA schedules (owner wallet, same cluster):
+
+```bash
+bun run praxis:stocks-dca -- --list   # inspect schedules
+bun run praxis:stocks-dca -- --fire    # emit proposals for due schedules (never signs)
+```

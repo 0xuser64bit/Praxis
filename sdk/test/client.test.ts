@@ -333,7 +333,8 @@ describe("mutations", () => {
     expect(calls.find((c) => c.path === "/remove-contact")?.body).toEqual({ key: "ops" });
   });
 
-  test("submitOwnerTransaction posts the signed tx fields", async () => {    const { fetch, calls } = fakeServer({
+  test("submitOwnerTransaction posts the signed tx fields", async () => {
+    const { fetch, calls } = fakeServer({
       "POST /owner/submit": () => ({ body: { sig: "5xSig" } }),
     });
     const client = new PraxisClient({ baseUrl: BASE, fetch });

@@ -209,7 +209,8 @@ export function PolicyDashboard() {
             />
 
             <Card className="mt-4 p-5">
-              <Label className="mb-4">Allow-lists</Label>              <div className="flex flex-col gap-5">
+              <Label className="mb-4">Allow-lists</Label>
+              <div className="flex flex-col gap-5">
                 <AllowList
                   kind="programs"
                   title="Programs"

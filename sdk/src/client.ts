@@ -9,6 +9,7 @@ import type {
   AgentMessage,
   AllowListKind,
   BaseUnitString,
+  DcaSchedule,
   OwnerAction,
   PolicyUpdate,
   PolicyView,
@@ -180,6 +181,26 @@ export class PraxisClient {
 
   cancelProposal(proposalId: string): Promise<void> {
     return this.post<void>("/cancel-proposal", { proposalId });
+  }
+
+  /** List recurring-buy schedules (each fire emits one proposal; never signs). */
+  getSchedules(): Promise<DcaSchedule[]> {
+    return this.get<DcaSchedule[]>("/get-schedules");
+  }
+
+  /** Stop a recurring-buy schedule. Unknown ids are a no-op (idempotent). */
+  cancelSchedule(scheduleId: string): Promise<void> {
+    return this.post<void>("/cancel-schedule", { scheduleId });
+  }
+
+  /** Save (or rename) an address-book contact. Labels have no signing power. */
+  addContact(label: string, address: string): Promise<void> {
+    return this.post<void>("/add-contact", { label, address });
+  }
+
+  /** Remove a contact by address or label (case-insensitive, idempotent). */
+  removeContact(key: string): Promise<void> {
+    return this.post<void>("/remove-contact", { key });
   }
 
   // --- reads ---------------------------------------------------------------

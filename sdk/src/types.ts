@@ -234,6 +234,33 @@ export interface ActivityEntry {
   sig?: string;
 }
 
+// --- Recurring buys ----------------------------------------------------------
+
+/** When a recurring buy fires. `weekday`: 0=Sunday..6=Saturday (UTC). */
+export type DcaCadence =
+  | { type: "daily" }
+  | { type: "weekly"; weekday: number }
+  | { type: "monthly"; day: number };
+
+/**
+ * One recurring-buy schedule from `GET /get-schedules`. Each fire emits one
+ * transfer proposal through the same policy checks as a one-off buy — nothing
+ * ever auto-signs. Money is a base-unit string per the money rule above.
+ */
+export interface DcaSchedule {
+  id: string;
+  asset: string;
+  amount: BaseUnitString;
+  decimals: number;
+  recipientAddress: Address;
+  recipientName: string;
+  cadence: DcaCadence;
+  /** Unix milliseconds of the next fire. */
+  nextFireTs: number;
+  createdAt: number;
+  threadId: string;
+}
+
 // --- Owner transactions (wallet-signed path) -------------------------------
 
 export interface UnsignedOwnerTransaction {

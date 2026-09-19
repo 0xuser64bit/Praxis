@@ -299,8 +299,41 @@ describe("mutations", () => {
     expect(calls.find((c) => c.path === "/delete-agent")?.body).toEqual({});
   });
 
-  test("submitOwnerTransaction posts the signed tx fields", async () => {
+  test("schedules and contacts hit their routes with the right bodies", async () => {
+    const ok = () => ({ body: { ok: true } });
+    const schedule = {
+      id: "s-1",
+      asset: "OPENAI",
+      amount: "50000000",
+      decimals: 6,
+      recipientAddress: ADDRESS,
+      recipientName: "you",
+      cadence: { type: "weekly", weekday: 1 },
+      nextFireTs: 1,
+      createdAt: 0,
+      threadId: "t-1",
+    };
     const { fetch, calls } = fakeServer({
+      "GET /get-schedules": () => ({ body: [schedule] }),
+      "POST /cancel-schedule": ok,
+      "POST /add-contact": ok,
+      "POST /remove-contact": ok,
+    });
+    const client = new PraxisClient({ baseUrl: BASE, fetch });
+
+    const schedules = await client.getSchedules();
+    expect(schedules).toHaveLength(1);
+    expect(schedules[0].asset).toBe("OPENAI");
+    await client.cancelSchedule("s-1");
+    await client.addContact("Ops", ADDRESS);
+    await client.removeContact("ops");
+
+    expect(calls.find((c) => c.path === "/cancel-schedule")?.body).toEqual({ scheduleId: "s-1" });
+    expect(calls.find((c) => c.path === "/add-contact")?.body).toEqual({ label: "Ops", address: ADDRESS });
+    expect(calls.find((c) => c.path === "/remove-contact")?.body).toEqual({ key: "ops" });
+  });
+
+  test("submitOwnerTransaction posts the signed tx fields", async () => {    const { fetch, calls } = fakeServer({
       "POST /owner/submit": () => ({ body: { sig: "5xSig" } }),
     });
     const client = new PraxisClient({ baseUrl: BASE, fetch });

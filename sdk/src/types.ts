@@ -176,6 +176,17 @@ export interface ResearchData {
   summary: string;
 }
 
+/**
+ * Stocklana C07: one PreStocks entry from `GET /get-stock-universe`.
+ * Empty unless the server runs with `PRAXIS_STOCKS_ENABLED=1`.
+ */
+export interface StockUniverseEntry {
+  symbol: string;
+  name: string;
+  mint: Address;
+  decimals: number;
+}
+
 export interface PolicyChangeRow {
   label: string;
   from: string;

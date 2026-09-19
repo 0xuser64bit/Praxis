@@ -86,6 +86,7 @@ toBaseUnits("500000000");            // 500000000n
 | Reads | `getPolicy()`, `getThreads()`, `getThread()`, `getProposal()`, `getActivity()`, `getAddressBook()`, `isThinking()`, `getVersion()` |
 | Policy (server-key) | `bootstrapPolicy()`, `fundVault()`, `withdrawVault()`, `updatePolicy()`, `configureToken()`, `prepareTokenAccounts()`, `revokeAgent()`, `rotateAgent()`, `addToAllowList()`, `removeFromAllowList()`, `deleteAgent()` |
 | Owner (wallet-signed) | `buildOwnerTransaction()`, `submitOwnerTransaction()` |
+| Stocks (PreStocks) | `getTokenUniverse()`, `getStockResearch()` — see `examples/stocks-dca.ts` |
 
 `session()` returns the current `SessionInfo` or `null` when signed out.
 

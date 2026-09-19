@@ -12,8 +12,10 @@ import type {
   OwnerAction,
   PolicyUpdate,
   PolicyView,
+  ResearchData,
   SessionInfo,
   SignedOwnerTransaction,
+  StockUniverseEntry,
   Thread,
   TokenEnvelopeConfig,
   UnsignedOwnerTransaction,
@@ -205,6 +207,31 @@ export class PraxisClient {
   }
   getVersion(): Promise<number> {
     return this.get<number>("/get-version");
+  }
+
+  // --- stocks (PreStocks universe; empty unless the server enables it) ------
+
+  /**
+   * The server's stock universe (`[]` when `PRAXIS_STOCKS_ENABLED` is off).
+   * Read-only; symbols/mints here are the only pre-IPO stocks Praxis will
+   * touch (bounty exclusivity is enforced server-side).
+   */
+  getTokenUniverse(): Promise<StockUniverseEntry[]> {
+    return this.get<StockUniverseEntry[]>("/get-stock-universe");
+  }
+
+  /**
+   * Read-only research for a stock symbol, via the agent (`research <symbol>`).
+   * Returns neutral market data — never advice. Throws when the agent has no
+   * research to show (unknown symbol or unavailable quotes).
+   */
+  async getStockResearch(symbol: string): Promise<ResearchData> {
+    const { message } = await this.ask(`research ${symbol}`);
+    const block = message.blocks.find((b) => b.type === "research");
+    if (!block || block.type !== "research") {
+      throw new PraxisApiError(404, "NotFound", `No research available for ${symbol}.`);
+    }
+    return block.data;
   }
 
   // --- policy / owner mutations (server-key mode) --------------------------

@@ -376,3 +376,102 @@ describe("units", () => {
     expect(() => fromBaseUnits(Number.MAX_SAFE_INTEGER + 1)).toThrow();
   });
 });
+
+describe("stocks (C07)", () => {
+  test("getTokenUniverse returns the server universe shape", async () => {
+    const { fetch, calls } = fakeServer({
+      "GET /get-stock-universe": () => ({
+        body: [
+          { symbol: "OPENAI", name: "OpenAI PreStocks", mint: "PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF", decimals: 6 },
+          { symbol: "SPACEX", name: "SpaceX PreStocks", mint: "PreANxuXjsy2pvisWWMNB6YaJNzr7681wJJr2rHsfTh", decimals: 6 },
+        ],
+      }),
+    });
+    const client = new PraxisClient({ baseUrl: BASE, fetch });
+    const universe = await client.getTokenUniverse();
+    expect(universe).toHaveLength(2);
+    expect(universe[0]).toMatchObject({ symbol: "OPENAI", decimals: 6 });
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toContain("GET /get-stock-universe");
+  });
+
+  test("getStockResearch extracts the research block", async () => {
+    const { fetch } = fakeServer({
+      "POST /send": () => ({ body: { threadId: "t1" } }),
+      "GET /get-thread": () => ({
+        body: {
+          id: "t1",
+          title: "research",
+          updatedAt: 1,
+          messages: [
+            { id: "m1", role: "user", ts: 1, text: "research openai" },
+            {
+              id: "m2",
+              role: "agent",
+              ts: 2,
+              blocks: [{
+                type: "research",
+                text: "data",
+                data: { token: "OPENAI", mint: "PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF", metrics: [], summary: "neutral" },
+              }],
+            },
+          ],
+        },
+      }),
+    });
+    const client = new PraxisClient({ baseUrl: BASE, fetch });
+    const data = await client.getStockResearch("openai");
+    expect(data.token).toBe("OPENAI");
+  });
+
+  test("getStockResearch throws when the agent has no research", async () => {
+    const { fetch } = fakeServer({
+      "POST /send": () => ({ body: { threadId: "t1" } }),
+      "GET /get-thread": () => ({
+        body: {
+          id: "t1",
+          title: "x",
+          updatedAt: 1,
+          messages: [{ id: "m1", role: "agent", ts: 2, blocks: [{ type: "prose", text: "nope" }] }],
+        },
+      }),
+    });
+    const client = new PraxisClient({ baseUrl: BASE, fetch });
+    await expect(client.getStockResearch("wat")).rejects.toThrow(/No research available/);
+  });
+
+  test("money stays base-unit strings end to end (no float path)", async () => {
+    const { fetch } = fakeServer({
+      "GET /get-stock-universe": () => ({
+        body: [{ symbol: "OPENAI", name: "o", mint: "m", decimals: 6 }],
+      }),
+      "POST /send": () => ({ body: { threadId: "t1" } }),
+      "GET /get-thread": () => ({
+        body: {
+          id: "t1",
+          title: "x",
+          updatedAt: 1,
+          messages: [
+            { id: "m2", role: "agent", ts: 2, blocks: [{ type: "proposal", text: "x", proposalId: "p1" }] },
+          ],
+        },
+      }),
+      "GET /get-proposal": () => ({
+        body: {
+          id: "p1",
+          detail: { kind: "transfer", amount: "3000000", recipientName: "you", recipientAddress: "Y", asset: { symbol: "OPENAI", mint: "m", decimals: 6, verified: true } },
+          networkFee: "5000",
+          simulation: "ok",
+          check: { allowed: true, spentToday: "0", dailyLimit: "500000000", remaining: "500000000" },
+          state: "pending",
+        },
+      }),
+    });
+    const client = new PraxisClient({ baseUrl: BASE, fetch });
+    const universe = await client.getTokenUniverse();
+    expect(typeof universe[0].mint).toBe("string");
+    const { proposals } = await client.ask("buy ai basket $60");
+    const detail = proposals[0].detail;
+    expect(detail.kind === "transfer" && typeof detail.amount).toBe("string");
+    expect(baseUnitsToHuman((detail as { amount: string }).amount, 6)).toBe("3");
+  });
+});

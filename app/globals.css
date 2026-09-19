@@ -146,6 +146,18 @@ body::after {
   }
 }
 
+/* Top-center toast pill — drops in from above and fades. */
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 /* Visible keyboard focus across all interactive elements. */
 :focus-visible {
   outline: 2px solid var(--accent);

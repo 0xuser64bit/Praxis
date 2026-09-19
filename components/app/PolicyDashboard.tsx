@@ -297,6 +297,7 @@ function DangerZone({
           value={confirm}
           onChange={(event) => setConfirm(event.target.value)}
           placeholder="Type DELETE to confirm"
+          aria-label="Type DELETE to confirm deletion"
           className="h-9 flex-1 rounded-md bg-[var(--bg)] px-3 text-[13px] text-[var(--text-primary)] [border:0.5px_solid_var(--border)] outline-none focus:[border-color:var(--danger)]"
         />
         <button
@@ -611,6 +612,7 @@ function CapRow({
           <input
             autoFocus
             value={draft}
+            aria-label={`Edit ${label}`}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") commit();
@@ -816,6 +818,7 @@ function VaultCard({
                 autoFocus
                 inputMode="decimal"
                 value={draft}
+                aria-label={mode === "withdraw" ? "Withdraw amount in SOL" : "Fund amount in SOL"}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => event.key === "Enter" && submit()}
                 placeholder={mode === "withdraw" ? formatSol(policy.vaultBalance) : "0.5"}
@@ -971,6 +974,7 @@ function AllowList({
               if (e.key === "Enter") add(draft);
             }}
             placeholder="paste address…"
+            aria-label="Paste address to add to allow-list"
             className="w-[150px] rounded-md bg-[var(--bg)] px-2.5 py-1 [font-family:var(--font-mono)] text-[11px] text-[var(--text-primary)] outline-none [border:0.5px_solid_var(--border)] placeholder:text-[var(--text-quaternary)] focus:[border-color:var(--border-bright)]"
           />
           {draft.trim() && (

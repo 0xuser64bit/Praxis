@@ -6,7 +6,7 @@
  */
 
 import { IconAlertTriangle } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/praxis/Button";
 
@@ -20,13 +20,22 @@ export function RevokeDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-[rgba(0,0,0,0.6)] px-6 backdrop-blur-[2px] [animation:fadeUp_0.2s_ease]"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="Revoke agent"
+      aria-labelledby="revoke-title"
+      aria-describedby="revoke-desc"
     >
       <div
         className="w-full max-w-[420px] rounded-2xl bg-[var(--bg-card)] p-6 [border:0.5px_solid_var(--border-strong)] [box-shadow:0_40px_100px_-30px_rgba(0,0,0,0.8)]"
@@ -39,12 +48,18 @@ export function RevokeDialog({
           >
             <IconAlertTriangle size={18} />
           </span>
-          <h2 className="[font-family:var(--font-serif)] text-[22px] tracking-[-0.01em]">
+          <h2
+            id="revoke-title"
+            className="[font-family:var(--font-serif)] text-[22px] tracking-[-0.01em]"
+          >
             Revoke the agent?
           </h2>
         </div>
 
-        <p className="mt-4 text-[14px] leading-[1.6] text-[var(--text-secondary)]">
+        <p
+          id="revoke-desc"
+          className="mt-4 text-[14px] leading-[1.6] text-[var(--text-secondary)]"
+        >
           This zeroes the agent&rsquo;s session key on-chain in a single transaction. Its very next
           action will fail. Your funds stay in the vault; only the agent loses signing power. You can
           rotate in a fresh key at any time.
@@ -56,6 +71,7 @@ export function RevokeDialog({
             className="flex-1 justify-center py-[11px]"
             onClick={onClose}
             disabled={busy}
+            autoFocus
           >
             Keep agent
           </Button>
@@ -81,7 +97,10 @@ export function RevokeDialog({
           </button>
         </div>
         {error && (
-          <p className="mt-3 rounded-lg bg-[rgba(199,91,91,0.1)] px-3 py-2 text-[12px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]">
+          <p
+            role="alert"
+            className="mt-3 rounded-lg bg-[rgba(199,91,91,0.1)] px-3 py-2 text-[12px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]"
+          >
             {error}
           </p>
         )}

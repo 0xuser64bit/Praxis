@@ -53,7 +53,7 @@ export function Composer({
           disabled ? "opacity-60" : ""
         }`}
       >
-        <span className="[font-family:var(--font-mono)] text-[var(--accent)]">›</span>
+        <span aria-hidden="true" className="[font-family:var(--font-mono)] text-[var(--accent)]">›</span>
         <input
           value={value}
           onChange={(e) => setValue(e.target.value)}

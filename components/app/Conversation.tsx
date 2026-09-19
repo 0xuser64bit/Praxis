@@ -42,7 +42,16 @@ export function Conversation({
     }
   }, [thread, toast]);
 
-  if (!thread) return null;
+  if (!thread) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-8 py-7 text-center">
+        <p className="text-[14px] text-[var(--text-secondary)]">This session no longer exists.</p>
+        <p className="text-[13px] text-[var(--text-tertiary)]">
+          It may have been trimmed from history — start a new session to continue.
+        </p>
+      </div>
+    );
+  }
 
   const onSend = (text: string) => {
     setError(null);
@@ -69,7 +78,10 @@ export function Conversation({
       </div>
 
       {error && (
-        <div className="mx-6 mb-3 rounded-lg bg-[rgba(199,91,91,0.10)] px-3 py-2 text-[12px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]">
+        <div
+          role="alert"
+          className="mx-6 mb-3 rounded-lg bg-[rgba(199,91,91,0.10)] px-3 py-2 text-[12px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]"
+        >
           {error}
         </div>
       )}
@@ -84,7 +96,7 @@ function messageFromError(error: unknown, fallback: string): string {
 
 function Thinking() {
   return (
-    <div className="mb-7">
+    <div className="mb-7" role="status" aria-label="Praxis is thinking">
       <div className="mb-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
         Praxis
       </div>

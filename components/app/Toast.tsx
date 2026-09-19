@@ -17,20 +17,36 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
   }, []);
 
+  const dismiss = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
   return (
     <Ctx.Provider value={{ toast }}>
       {children}
-      <div className="pointer-events-none fixed bottom-5 right-5 z-50 flex flex-col gap-2">
+      <div
+        aria-live="polite"
+        role="status"
+        className="pointer-events-none fixed bottom-5 right-5 z-50 flex flex-col gap-2"
+      >
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`pointer-events-auto max-w-[320px] rounded-lg px-3.5 py-2.5 text-[13px] leading-[1.4] shadow-lg [border:0.5px_solid_var(--border)] ${
+            className={`pointer-events-auto flex max-w-[320px] items-start gap-2 rounded-lg px-3.5 py-2.5 text-[13px] leading-[1.4] shadow-lg [border:0.5px_solid_var(--border)] ${
               t.tone === "success"
                 ? "bg-[rgba(91,160,110,0.14)] text-[var(--success,#5BA06E)]"
                 : "bg-[var(--bg-elevated)] text-[var(--text-secondary)]"
             }`}
           >
-            {t.text}
+            <span className="min-w-0 flex-1">{t.text}</span>
+            <button
+              type="button"
+              onClick={() => dismiss(t.id)}
+              aria-label="Dismiss notification"
+              className="shrink-0 opacity-60 hover:opacity-100"
+            >
+              ×
+            </button>
           </div>
         ))}
       </div>

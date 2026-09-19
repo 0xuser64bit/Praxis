@@ -51,6 +51,7 @@ import {
   availableBaskets,
   describeCadence,
   resolveBasket,
+  sameCadence,
   splitBasket,
   type DcaSchedule,
 } from "../stocks/schedules";
@@ -1057,6 +1058,27 @@ export class PraxisServerProvider implements PraxisProvider {
       return { blocks: [{ type: "clarify", text: target.clarify, options: target.options }] };
     }
 
+    const human = formatUnits(amount, token.decimals);
+    // Two identical schedules would double-fire the same buy, so the second
+    // identical request is a no-op with an explanation — never a silent double.
+    const duplicate = this.state.schedules.find(
+      (s) =>
+        s.asset === token.symbol
+        && s.amount === amount
+        && s.recipientAddress === target.address
+        && sameCadence(s.cadence, action.cadence),
+    );
+    if (duplicate) {
+      return {
+        blocks: [{
+          type: "notice",
+          tone: "info",
+          text: `You already have ${human} ${token.symbol} ${describeCadence(action.cadence)} for ${target.name} scheduled — I didn't create a duplicate. Stop it in Activity → Recurring buys to replace it.`,
+        }],
+        title: `${token.symbol} recurring buy`,
+      };
+    }
+
     const nowMs = Date.now();
     const schedule: DcaSchedule = {
       id: this.id("s"),
@@ -1072,7 +1094,6 @@ export class PraxisServerProvider implements PraxisProvider {
     };
     this.state.schedules = [schedule, ...this.state.schedules];
 
-    const human = formatUnits(amount, token.decimals);
     return {
       blocks: [{
         type: "notice",

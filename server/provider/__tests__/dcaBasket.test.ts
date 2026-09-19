@@ -164,6 +164,26 @@ describe("DCA schedules", () => {
     expect(await provider.fireDueSchedules(Date.now())).toEqual([]);
   });
 
+  test("repeating the identical schedule is a no-op with an explanation", async () => {
+    const { provider } = build();
+    await provider.send(null, "buy $50 openai every monday");
+    const { threadId } = await provider.send(null, "buy $50 openai every monday");
+
+    expect(provider.getSchedules()).toHaveLength(1);
+    const blocks = agentBlocks(provider, threadId);
+    expect(blocks.some((b) => b.type === "proposal")).toBe(false);
+    const notice = blocks.find((b) => b.type === "notice");
+    expect(notice?.type === "notice" && notice.text).toMatch(/already have/i);
+  });
+
+  test("a different amount or cadence is a separate schedule", async () => {
+    const { provider } = build();
+    await provider.send(null, "buy $50 openai every monday");
+    await provider.send(null, "buy $60 openai every monday");
+    await provider.send(null, "buy $50 openai daily");
+    expect(provider.getSchedules()).toHaveLength(3);
+  });
+
   test("cancelSchedule stops a schedule (idempotent on unknown ids)", async () => {
     const { provider } = build();
     await provider.send(null, "buy $50 openai every monday");

@@ -7,6 +7,7 @@ import {
   describeCadence,
   parseCadence,
   resolveBasket,
+  sameCadence,
   splitBasket,
 } from "../schedules";
 
@@ -88,5 +89,16 @@ describe("splitBasket", () => {
   test("invalid totals return null", () => {
     expect(splitBasket(0, ["OPENAI"], new Map([["OPENAI", 10]]), () => 6)).toBeNull();
     expect(splitBasket(NaN, ["OPENAI"], new Map([["OPENAI", 10]]), () => 6)).toBeNull();
+  });
+});
+
+describe("sameCadence", () => {
+  test("equal rhythms match, different ones do not", () => {
+    expect(sameCadence({ type: "daily" }, { type: "daily" })).toBe(true);
+    expect(sameCadence({ type: "weekly", weekday: 1 }, { type: "weekly", weekday: 1 })).toBe(true);
+    expect(sameCadence({ type: "weekly", weekday: 1 }, { type: "weekly", weekday: 2 })).toBe(false);
+    expect(sameCadence({ type: "monthly", day: 15 }, { type: "monthly", day: 15 })).toBe(true);
+    expect(sameCadence({ type: "monthly", day: 15 }, { type: "monthly", day: 1 })).toBe(false);
+    expect(sameCadence({ type: "daily" }, { type: "weekly", weekday: 1 })).toBe(false);
   });
 });

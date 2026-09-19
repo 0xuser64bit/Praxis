@@ -84,6 +84,15 @@ export function describeCadence(cadence: DcaCadence): string {
   return "monthly";
 }
 
+/** True when two cadences fire on the same rhythm (used for duplicate detection). */
+export function sameCadence(a: DcaCadence, b: DcaCadence): boolean {
+  if (a.type !== b.type) return false;
+  if (a.type === "daily") return true;
+  if (a.type === "weekly" && b.type === "weekly") return a.weekday === b.weekday;
+  if (a.type === "monthly" && b.type === "monthly") return a.day === b.day;
+  return false;
+}
+
 /**
  * Nominal period per cadence. Monthly is a fixed 30 days (documented
  * approximation — fires are mechanical proposals, not calendar contracts).

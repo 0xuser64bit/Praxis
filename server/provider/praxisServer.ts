@@ -66,7 +66,7 @@ import {
   resolveMintDecimals,
   supportedTokenPrograms,
 } from "../stocks/mintDecimals";
-import { hasProvisionalDecimals } from "../stocks/universe";
+import { hasProvisionalDecimals, isStockSymbol } from "../stocks/universe";
 import { errorFields, logger } from "../observability/logger";
 
 interface StoreState {
@@ -244,6 +244,7 @@ export class PraxisServerProvider implements PraxisProvider {
           amount: schedule.amount,
           recipientName: schedule.recipientName,
           recipientAddress: schedule.recipientAddress,
+          usdEstimate: await this.usdEstimateFor(token, schedule.amount),
           preview,
         });
         const thread = this.getThread(schedule.threadId);
@@ -955,6 +956,7 @@ export class PraxisServerProvider implements PraxisProvider {
       recipientName: resolved.entry.name,
       recipientAddress: resolved.entry.address,
       recipientNote: resolved.entry.note,
+      usdEstimate: await this.usdEstimateFor(token, amount),
       preview,
     });
 
@@ -995,6 +997,7 @@ export class PraxisServerProvider implements PraxisProvider {
     recipientName: string;
     recipientAddress: string;
     recipientNote?: string;
+    usdEstimate?: string;
     preview: TransferSimulation;
   }): ActionProposal {
     const proposal: ActionProposal = {
@@ -1006,6 +1009,7 @@ export class PraxisServerProvider implements PraxisProvider {
         recipientName: args.recipientName,
         recipientAddress: args.recipientAddress,
         recipientNote: args.recipientNote,
+        usdEstimate: args.usdEstimate,
       },
       networkFee: args.preview.networkFee,
       simulation: args.preview.simulation,
@@ -1055,6 +1059,28 @@ export class PraxisServerProvider implements PraxisProvider {
   private transferableSymbols(): string[] {
     const symbols = this.config.tokens.map((token) => token.symbol);
     return symbols.includes("SOL") ? symbols : ["SOL", ...symbols];
+  }
+
+  /**
+   * USD value of `amount` for display, from a real price source.
+   *
+   * Only tokenized stocks have one here (the PreStocks quote, already cached
+   * 60s). Everything else returns undefined, and the card shows no dollar
+   * figure — better than the client's hardcoded rate table inventing "$0.00"
+   * for any symbol it has never heard of.
+   */
+  private async usdEstimateFor(token: TokenInfo, amount: bigint): Promise<string | undefined> {
+    if (!this.config.stocksEnabled || !isStockSymbol(token.symbol)) return undefined;
+    try {
+      const prices = await this.basketPriceSource([token.symbol]);
+      const price = prices.get(token.symbol);
+      if (!price || !Number.isFinite(price) || price <= 0) return undefined;
+      const whole = Number(amount) / 10 ** token.decimals;
+      const usd = whole * price;
+      return Number.isFinite(usd) ? usd.toFixed(2) : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /** Strict token lookup (no SYSTEM_PROGRAM fallback): DCA/baskets need a real mint. */
@@ -1245,6 +1271,7 @@ export class PraxisServerProvider implements PraxisProvider {
         amount: share.amount,
         recipientName: target.name,
         recipientAddress: target.address,
+        usdEstimate: await this.usdEstimateFor(token, share.amount),
         preview: previews.get(share.symbol)!,
       });
       blocks.push({

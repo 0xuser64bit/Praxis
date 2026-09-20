@@ -21,10 +21,11 @@ import { Eyebrow } from "@/components/praxis/Eyebrow";
 
 import { PolicyCheckBanner } from "./PolicyCheckBanner";
 import { useProposal, useProvider } from "./ProviderContext";
-import { formatSol, formatUnits, formatUsd, shortenAddress } from "./lib/units";
+import { formatSol, formatUnits, formatUsd, shortenAddress, usdDisplay } from "./lib/units";
 import { explorerTxUrl } from "./lib/explorer";
 
-type Flow = { label: string; primary: string; unit?: string; sub: string; compact?: boolean };
+/** `sub` is optional: we render no dollar line rather than a fabricated one. */
+type Flow = { label: string; primary: string; unit?: string; sub?: string; compact?: boolean };
 type Meta = { label: string; value: ReactNode; ok?: boolean; mono?: boolean };
 
 export function ProposalCard({
@@ -237,9 +238,11 @@ function FlowCol({ flow }: { flow: Flow }) {
         {flow.primary}
         {flow.unit && <span className="text-[22px] text-[var(--text-tertiary)]"> {flow.unit}</span>}
       </div>
-      <div className="mt-1.5 truncate [font-family:var(--font-mono)] text-[12px] text-[var(--text-tertiary)]">
-        {flow.sub}
-      </div>
+      {flow.sub && (
+        <div className="mt-1.5 truncate [font-family:var(--font-mono)] text-[12px] text-[var(--text-tertiary)]">
+          {flow.sub}
+        </div>
+      )}
     </div>
   );
 }
@@ -250,13 +253,17 @@ function describe(
 ): { from: Flow; to: Flow; meta: Meta[] } {
   const feeSol = `${formatSol(proposal.networkFee)} SOL`;
   const feeUsd = formatUsd(proposal.networkFee, 9, "SOL");
+  const fee = feeUsd ? `${feeSol} (${feeUsd})` : feeSol;
   if (detail.kind === "transfer") {
     return {
       from: {
         label: "Send",
         primary: formatUnits(detail.amount, detail.asset.decimals, { maxFrac: 4 }),
         unit: detail.asset.symbol,
-        sub: formatUsd(detail.amount, detail.asset.decimals, detail.asset.symbol),
+        // Prefer the server's real price (PreStocks quote for a stock) over
+        // the client's small rate table, which knows only SOL/USDC/JUP/BONK
+        // and used to render "$0.00" for everything else.
+        sub: usdDisplay(detail.usdEstimate, detail.amount, detail.asset.decimals, detail.asset.symbol),
       },
       to: {
         label: "To",
@@ -265,7 +272,7 @@ function describe(
         compact: true,
       },
       meta: [
-        { label: "Network fee", value: `${feeSol} (${feeUsd})` },
+        { label: "Network fee", value: fee },
         { label: "Simulation", value: proposal.simulation, ok: proposal.check.allowed },
       ],
     };
@@ -288,7 +295,7 @@ function describe(
     meta: [
       { label: "Route", value: detail.route, mono: true },
       { label: "Price impact", value: `${(detail.priceImpactBps / 100).toFixed(2)}%` },
-      { label: "Network fee", value: feeUsd },
+      { label: "Network fee", value: fee },
       { label: "Simulation", value: proposal.simulation, ok: proposal.check.allowed },
     ],
   };

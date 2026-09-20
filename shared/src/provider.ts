@@ -67,6 +67,14 @@ export interface TransferDetail {
   recipientName: string;
   recipientAddress: Address;
   recipientNote?: string;
+  /**
+   * Server-computed USD value of `amount`, as a decimal string, when a real
+   * price is available (tokenized stocks price from the PreStocks API).
+   *
+   * Absent means "we don't know" — the UI then shows no dollar figure rather
+   * than a made-up one. It is display-only and never feeds base-unit math.
+   */
+  usdEstimate?: string;
 }
 
 /**

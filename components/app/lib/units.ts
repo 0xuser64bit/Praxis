@@ -8,7 +8,12 @@
 
 export const LAMPORTS_PER_SOL_DECIMALS = 9;
 
-/** Display-only spot rates. Approximate, used to render "≈ $…" — never for accounting. */
+/**
+ * Display-only spot rates for the handful of assets the client knows, used to
+ * render "≈ $…". Approximate and never used for accounting. Anything absent
+ * has NO client-side rate — see `formatUsd`, which returns undefined rather
+ * than pretending the value is zero.
+ */
 export const DISPLAY_RATES_USD: Record<string, number> = {
   SOL: 186.42,
   USDC: 1,
@@ -88,15 +93,38 @@ export function formatSol(lamports: bigint, maxFrac = 4): string {
  * it is purely a display annotation ("≈ $93.21") — it never feeds back into
  * any base-unit value.
  */
-export function formatUsd(units: bigint, decimals: number, symbol: string): string {
-  const rate = DISPLAY_RATES_USD[symbol] ?? 0;
+export function formatUsd(units: bigint, decimals: number, symbol: string): string | undefined {
+  const rate = DISPLAY_RATES_USD[symbol];
+  if (rate === undefined) return undefined;
   const human = Number(units) / 10 ** decimals;
-  const usd = human * rate;
+  return formatUsdAmount(human * rate);
+}
+
+/** Render a USD number the same way, wherever the figure came from. */
+export function formatUsdAmount(usd: number): string | undefined {
+  if (!Number.isFinite(usd)) return undefined;
   const digits = usd > 0 && usd < 1 ? 4 : 2;
   return `≈ $${usd.toLocaleString("en-US", {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   })}`;
+}
+
+/**
+ * Prefer a server-computed USD figure (a real price, e.g. the PreStocks quote)
+ * over the client's small rate table; show nothing when neither knows.
+ */
+export function usdDisplay(
+  serverEstimate: string | undefined,
+  units: bigint,
+  decimals: number,
+  symbol: string,
+): string | undefined {
+  if (serverEstimate) {
+    const parsed = Number(serverEstimate);
+    if (Number.isFinite(parsed)) return formatUsdAmount(parsed);
+  }
+  return formatUsd(units, decimals, symbol);
 }
 
 /** first4…last4 address shortener. */

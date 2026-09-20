@@ -4,7 +4,8 @@ import { Container } from "@/components/praxis/Container";
 import { Eyebrow } from "@/components/praxis/Eyebrow";
 
 const GUARANTEES = [
-  "Per-transaction and daily spend caps",
+  "Per-transaction and rolling daily spend caps",
+  "A separate token envelope, with caps of its own",
   "Allow-listed recipients, mints, and programs",
   "A session key with a hard expiry",
   "Instant revoke — the key dies on-chain",

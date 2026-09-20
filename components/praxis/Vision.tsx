@@ -8,18 +8,24 @@ type Phase = {
   body: string;
 };
 
+/**
+ * Kept honest against what has already shipped. Phase 01 used to be
+ * "recurring & scheduled action" — which has been running since the
+ * scheduler landed, and a roadmap that promises a feature the product
+ * already has is a roadmap nobody reads twice.
+ */
 const PHASES: Phase[] = [
   {
     num: "01",
     phase: "Next",
-    title: "Recurring & scheduled action",
-    body: "DCA, subscriptions, payroll, treasury sweeps. This is the first thing you genuinely can't do safely any other way — the agent acts while you're asleep, inside caps it still can't exceed. The envelope is what makes “set it and forget it” sane instead of reckless.",
+    title: "Swaps the program can police",
+    body: "Live Jupiter routing — but only once mint, program, and value limits live inside the swap instruction itself. A swap that could slip outside the envelope would break the whole promise, so it ships when the program can bound it, not a day sooner. Until then the intent is parsed, priced, previewed and refused.",
   },
   {
     num: "02",
     phase: "In design",
-    title: "Swaps the chain enforces",
-    body: "Live Jupiter routing — but only once mint, program, and value limits live inside the swap instruction itself. A swap that could slip outside the envelope would break the whole promise, so it ships when the program can police it, not a day sooner.",
+    title: "Refusals as durable as approvals",
+    body: "An allowed action lands in the program's own ActionLog; a refused one reverts, so its proof lives only in a failed transaction's logs. That asymmetry is backwards for a product whose argument is the refusal. An indexer that keeps rejections as permanently as the chain keeps approvals fixes it.",
   },
   {
     num: "03",
@@ -38,14 +44,15 @@ export function Vision() {
             — 06 / What&apos;s next
           </Eyebrow>
           <h2 className="[font-family:var(--font-serif)] text-[clamp(40px,5.5vw,72px)] leading-[1.02] tracking-[-0.03em] [&_em]:text-[var(--accent)] [&_em]:italic">
-            Today it sends.
+            Today it acts.
             <br />
-            Next, it <em>acts.</em>
+            Next, it <em>trades.</em>
           </h2>
           <p className="mt-7 max-w-[560px] text-[19px] leading-[1.55] text-[var(--text-secondary)]">
-            The send flow already proves the thesis: an agent can hold signing
-            power without being able to misuse it. Everything next widens what
-            it can do — without ever leaving the envelope.
+            Sends, token transfers and recurring buys already prove the thesis:
+            an agent can hold signing power without being able to misuse it.
+            Everything next widens what it can do — without ever widening the
+            envelope it does it inside.
           </p>
         </div>
 

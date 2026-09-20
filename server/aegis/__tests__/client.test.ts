@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { ComputeBudgetProgram, Connection, Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 
 import { AegisClient } from "../client";
-import { ASSOCIATED_TOKEN_PROGRAM_ID, DEFAULT_AEGIS_PROGRAM_ID } from "../constants";
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  DEFAULT_AEGIS_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+} from "../constants";
 import { findPolicyPda, findVaultPda } from "../pdas";
 import { PraxisConfigError, PraxisInputError } from "../../errors";
 import { DEFAULT_PRESTOCKS_API_URL, DEFAULT_PRESTOCKS_TIMEOUT_MS, DEFAULT_TOKENS, type PraxisServerConfig } from "../../env";
@@ -19,6 +24,29 @@ beforeEach(() => {
   delete process.env.PRAXIS_AGENT_PUBLIC_KEY;
   delete process.env.PRAXIS_AGENT_SIGNER_URL;
 });
+
+/** A classic-SPL mint account (82-byte base; decimals at byte 44). */
+function mintAccount(decimals = 6) {
+  const data = Buffer.alloc(82);
+  data[44] = decimals;
+  return { data, owner: TOKEN_PROGRAM_ID, lamports: 1, executable: false };
+}
+
+/**
+ * `getAccountInfo` that distinguishes the policy account from a mint. The
+ * movability pre-check reads the mint, so a fake that returns the policy for
+ * every address would make every configureToken look like a Token-2022 mint.
+ */
+function accountsFor(policyAddress: PublicKey, policyData: Buffer, mints: PublicKey[]) {
+  const mintSet = new Set(mints.map((m) => m.toBase58()));
+  return async (address: PublicKey) => {
+    if (address.equals(policyAddress)) {
+      return { data: policyData, owner: DEFAULT_AEGIS_PROGRAM_ID, lamports: 1, executable: false };
+    }
+    if (mintSet.has(address.toBase58())) return mintAccount();
+    return { data: policyData, owner: DEFAULT_AEGIS_PROGRAM_ID, lamports: 1, executable: false };
+  };
+}
 
 function fakeConnection(over: Partial<Record<string, unknown>> = {}): Connection {
   return {
@@ -211,12 +239,7 @@ describe("buildUnsignedOwnerTransaction", () => {
     const client = new AegisClient(
       config,
       fakeConnection({
-        getAccountInfo: async () => ({
-          data: policyData,
-          owner: DEFAULT_AEGIS_PROGRAM_ID,
-          lamports: 1,
-          executable: false,
-        }),
+        getAccountInfo: accountsFor(config.policyAddress!, policyData, [mint]),
         getBalance: async () => 0,
         // No existing ATAs — force a vault CreateIdempotent.
         getMultipleAccountsInfo: async () => [null],
@@ -458,6 +481,35 @@ describe("submitSignedTransaction", () => {
     ).rejects.toThrow(/blocked program 11111111111111111111111111111111/);
   });
 
+  test("refuses to configure an envelope for a Token-2022 mint", async () => {
+    // agent_transfer_spl is classic-SPL only, so this envelope could never be
+    // used — catching it here beats an on-chain revert the owner paid for.
+    const config = makeConfig();
+    const mint = Keypair.generate().publicKey;
+    const policyData = encodePolicyAccount(policyFixture({ address: config.policyAddress!.toBase58() }));
+    const token2022 = Buffer.alloc(902);
+    token2022[44] = 9;
+    const client = new AegisClient(
+      config,
+      fakeConnection({
+        getAccountInfo: async (address: PublicKey) =>
+          address.equals(mint)
+            ? { data: token2022, owner: TOKEN_2022_PROGRAM_ID, lamports: 1, executable: false }
+            : { data: policyData, owner: DEFAULT_AEGIS_PROGRAM_ID, lamports: 1, executable: false },
+        getBalance: async () => 0,
+        getMultipleAccountsInfo: async () => [null],
+      }),
+    );
+    await expect(
+      client.buildUnsignedOwnerTransaction(config.ownerAddress!, {
+        kind: "configureToken",
+        tokenMint: mint.toBase58(),
+        tokenMaxPerTx: 10n,
+        tokenDailyLimit: 100n,
+      }),
+    ).rejects.toThrow(/classic SPL Token/);
+  });
+
   test("accepts a builder-produced configureToken draft that includes an ATA create", async () => {
     const config = makeConfig();
     const mint = Keypair.generate().publicKey;
@@ -465,12 +517,7 @@ describe("submitSignedTransaction", () => {
       policyFixture({ address: config.policyAddress!.toBase58() }),
     );
     const conn = fakeConnection({
-      getAccountInfo: async () => ({
-        data: policyData,
-        owner: DEFAULT_AEGIS_PROGRAM_ID,
-        lamports: 1,
-        executable: false,
-      }),
+      getAccountInfo: accountsFor(config.policyAddress!, policyData, [mint]),
       getBalance: async () => 0,
       getMultipleAccountsInfo: async () => [null],
     });

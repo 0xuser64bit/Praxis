@@ -24,6 +24,7 @@ import {
   TOKEN_PROGRAM_ID,
 } from "./constants";
 import { decodeActionLog, decodePolicyAccount } from "./codec";
+import { checkMintMovable } from "../stocks/mintDecimals";
 import {
   buildAgentTransferIx,
   buildAgentTransferSplIx,
@@ -763,6 +764,7 @@ export class AegisClient {
         throw new PraxisInputError("Token per-transaction cap cannot exceed the token daily limit.");
       }
       const mint = validatePublicKey(action.tokenMint);
+      await this.assertMintMovable(mint);
       const configure = buildConfigureTokenIx(
         { ...this.addresses({ policy }), owner: ownerPubkey },
         {
@@ -818,6 +820,30 @@ export class AegisClient {
         allowedMints: field === "allowedMints" ? [...next] : current.allowedMints,
       }),
     ];
+  }
+
+  /**
+   * Refuse an envelope for a mint `agent_transfer_spl` could never move.
+   *
+   * The instruction requires the classic SPL Token program, and the ATA
+   * derivation here bakes that program id into the address — so configuring a
+   * Token-2022 mint produces a policy whose agent transfers can only ever
+   * fail, plus an ATA create that reverts. Catch it while it is still a
+   * readable error instead of an on-chain rejection the owner paid fees for.
+   */
+  private async assertMintMovable(mint: PublicKey): Promise<void> {
+    if (process.env.PRAXIS_ALLOW_UNVERIFIED_MINTS === "1") return;
+    const verdict = await checkMintMovable(this.conn, mint.toBase58(), TOKEN_PROGRAM_ID.toBase58());
+    if (verdict.movable) return;
+    if (verdict.reason === "wrong-token-program") {
+      throw new PraxisInputError(
+        `This mint is owned by ${verdict.programId}, but Aegis can only move classic SPL Token ` +
+          "mints. Configuring it would create an envelope the agent could never use.",
+      );
+    }
+    throw new PraxisInputError(
+      "This mint could not be found on the cluster Praxis transfers on, so its envelope cannot be configured.",
+    );
   }
 
   /**

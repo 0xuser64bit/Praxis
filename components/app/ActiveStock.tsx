@@ -31,6 +31,12 @@ export interface StockUniverseEntry {
   name: string;
   mint: string;
   decimals: number;
+  /**
+   * False when Aegis cannot move this mint (Token-2022 vs the program's
+   * classic-SPL requirement). Such a stock is research-only: offering it as
+   * an envelope would be offering a control whose every use fails.
+   */
+  transferable?: boolean;
 }
 
 interface ActiveStockApi {
@@ -68,6 +74,8 @@ export function ActiveStockProvider({ children }: { children: ReactNode }) {
           (s): s is StockUniverseEntry =>
             Boolean(s) && typeof s.symbol === "string" && typeof s.mint === "string",
         );
+        // An older backend omits the flag; assume not transferable rather than
+        // presenting an envelope control that cannot work.
         setStocks(list);
         try {
           const saved = window.localStorage.getItem(STORAGE_KEY);

@@ -733,7 +733,7 @@ function TokenEnvelopeCard({
                 {m.label}
               </button>
             ))}
-            {stocks.map((s) => (
+            {stocks.filter((s) => s.transferable).map((s) => (
               <button
                 key={s.mint}
                 type="button"
@@ -746,6 +746,13 @@ function TokenEnvelopeCard({
               </button>
             ))}
           </div>
+          {stocks.some((s) => !s.transferable) && (
+            <p className="mt-3 text-[12px] leading-[1.5] text-[var(--text-tertiary)]">
+              Pre-IPO stocks aren&rsquo;t listed here: they&rsquo;re Token-2022 mints, and Aegis
+              can only move classic SPL Token. Research and policy previews still work —
+              buys stay unsigned until the program supports them.
+            </p>
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-4">

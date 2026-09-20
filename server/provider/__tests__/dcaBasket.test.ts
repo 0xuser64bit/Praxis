@@ -11,7 +11,7 @@ import type { AegisClient, TransferExecution, TransferSimulation } from "../../a
 import { DEFAULT_AEGIS_PROGRAM_ID } from "../../aegis/constants";
 import { DEFAULT_PRESTOCKS_API_URL, DEFAULT_PRESTOCKS_TIMEOUT_MS, DEFAULT_TOKENS, type PraxisServerConfig } from "../../env";
 import { findPolicyPda } from "../../aegis/pdas";
-import { buildStockTokens } from "../../stocks/universe";
+import { STOCK_SYMBOLS, buildStockTokens } from "../../stocks/universe";
 import { policyFixture } from "../../testing/fixtures";
 
 let prevDir: string | undefined;
@@ -72,7 +72,16 @@ class FakeAegis {
   }
 }
 
-const STOCK_TOKENS = buildStockTokens();
+/**
+ * Confirmed decimals for the stock universe. Stock mints carry a placeholder
+ * scale until it is verified, and the provider refuses amount math against an
+ * unverified one — so a test that exercises buys has to supply the confirmed
+ * values, exactly as an operator would via `PRAXIS_STOCK_DECIMALS`.
+ */
+const STOCK_DECIMALS: Record<string, number> = Object.fromEntries(
+  STOCK_SYMBOLS.map((symbol) => [symbol, 6]),
+);
+const STOCK_TOKENS = buildStockTokens(STOCK_DECIMALS);
 
 function makeConfig(over: Partial<PraxisServerConfig> = {}): PraxisServerConfig {
   const owner = Keypair.generate();
@@ -92,6 +101,7 @@ function makeConfig(over: Partial<PraxisServerConfig> = {}): PraxisServerConfig 
     prestocksApiUrl: DEFAULT_PRESTOCKS_API_URL,
     prestocksTimeoutMs: DEFAULT_PRESTOCKS_TIMEOUT_MS,
     stockUniverse: undefined,
+    stockDecimals: STOCK_DECIMALS,
     ...over,
   };
 }
@@ -248,5 +258,56 @@ describe("basket buys", () => {
     const blocks = agentBlocks(provider, threadId);
     expect(blocks.some((b) => b.type === "clarify")).toBe(true);
     expect(Object.keys(provider.getAllProposals())).toHaveLength(0);
+  });
+});
+
+describe("unverified mint decimals", () => {
+  /**
+   * The PreStocks API does not report decimals. Until the scale is confirmed —
+   * from the chain, or by an operator override — parsing "$50 OPENAI" could
+   * move a thousand times the intended quantity. Every amount path must refuse
+   * rather than guess.
+   */
+  function buildUnverified() {
+    // No overrides and an unreachable RPC: the scale cannot be confirmed.
+    const config = makeConfig({ stockDecimals: {}, tokens: [...DEFAULT_TOKENS, ...buildStockTokens()] });
+    const provider = new PraxisServerProvider(
+      config,
+      new FakeAegis(policyFixture()) as unknown as AegisClient,
+    );
+    return provider;
+  }
+
+  test("a one-off buy clarifies instead of moving a guessed amount", async () => {
+    const provider = buildUnverified();
+    // A resolvable recipient, so the clarify we assert on is about the scale
+    // and not about the address book.
+    await provider.addContact("maya", "ALUMw7kSn9xn67suHr2ti21CXBQVNMuRk7uWSM1WuXEt");
+    const { threadId } = await provider.send(null, "buy 40 openai to maya");
+    const blocks = agentBlocks(provider, threadId);
+    expect(blocks.some((b) => b.type === "proposal")).toBe(false);
+    expect(blocks.some((b) => b.type === "clarify" && /decimals/i.test(b.text))).toBe(true);
+  });
+
+  test("a recurring buy is not scheduled with a guessed scale", async () => {
+    const provider = buildUnverified();
+    const { threadId } = await provider.send(null, "buy $50 openai every monday");
+    expect(provider.getSchedules()).toHaveLength(0);
+    expect(agentBlocks(provider, threadId).some((b) => b.type === "clarify")).toBe(true);
+  });
+
+  test("a basket is voided rather than split across a guessed scale", async () => {
+    const provider = buildUnverified();
+    const { threadId } = await provider.send(null, "buy ai basket $60");
+    const blocks = agentBlocks(provider, threadId);
+    expect(blocks.some((b) => b.type === "proposal")).toBe(false);
+    expect(blocks.some((b) => b.type === "clarify")).toBe(true);
+  });
+
+  test("SOL is unaffected — its scale was never in question", async () => {
+    const provider = buildUnverified();
+    await provider.addContact("maya", "ALUMw7kSn9xn67suHr2ti21CXBQVNMuRk7uWSM1WuXEt");
+    const { threadId } = await provider.send(null, "send 0.5 sol to maya");
+    expect(agentBlocks(provider, threadId).some((b) => b.type === "proposal")).toBe(true);
   });
 });

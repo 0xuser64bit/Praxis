@@ -48,6 +48,7 @@ function makeConfig(over: Partial<PraxisServerConfig> = {}): PraxisServerConfig 
     prestocksApiUrl: DEFAULT_PRESTOCKS_API_URL,
     prestocksTimeoutMs: DEFAULT_PRESTOCKS_TIMEOUT_MS,
     stockUniverse: undefined,
+    stockDecimals: {},
     ...over,
   };
 }

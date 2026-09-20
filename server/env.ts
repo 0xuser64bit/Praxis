@@ -9,6 +9,7 @@ import { DEFAULT_AEGIS_PROGRAM_ID, SYSTEM_PROGRAM_ID } from "./aegis/constants";
 import { findPolicyPda } from "./aegis/pdas";
 import { PraxisConfigError } from "./errors";
 import { STOCK_SYMBOLS, buildStockTokens } from "./stocks/universe";
+import { primeMintDecimals } from "./stocks/mintDecimals";
 
 const DEFAULT_CONTACTS: AddressBookEntry[] = [
   {
@@ -94,6 +95,12 @@ export interface PraxisServerConfig {
   prestocksTimeoutMs: number;
   /** `undefined` = full 8-symbol universe; otherwise a subset of known symbols. */
   stockUniverse: string[] | undefined;
+  /**
+   * Operator-confirmed decimals per stock symbol (`PRAXIS_STOCK_DECIMALS`).
+   * The PreStocks API omits decimals; anything not listed here is resolved
+   * from the chain before any amount math, never guessed.
+   */
+  stockDecimals: Record<string, number>;
 }
 
 export const DEFAULT_PRESTOCKS_API_URL = "https://prestocks.com/api/prestocks";
@@ -123,6 +130,7 @@ export function getServerConfig(): PraxisServerConfig {
 
   const stocksEnabled = process.env.PRAXIS_STOCKS_ENABLED?.trim() === "1";
   const stockUniverse = parseStockUniverse(process.env.PRAXIS_STOCK_UNIVERSE);
+  const stockDecimals = parseStockDecimals(process.env.PRAXIS_STOCK_DECIMALS);
 
   cachedConfig = {
     geminiApiKey: process.env.GEMINI_API_KEY,
@@ -137,13 +145,21 @@ export function getServerConfig(): PraxisServerConfig {
     ownerKeypair,
     nextAgentKeypair,
     addressBook: parseAddressBook(process.env.PRAXIS_ADDRESS_BOOK),
-    tokens: parseTokens(process.env.PRAXIS_TOKENS, { stocksEnabled, stockUniverse }),
+    tokens: parseTokens(process.env.PRAXIS_TOKENS, { stocksEnabled, stockUniverse, stockDecimals }),
     indexerUrl: process.env.PRAXIS_INDEXER_URL,
     stocksEnabled,
     prestocksApiUrl: process.env.PRAXIS_PRESTOCKS_API_URL?.trim() || DEFAULT_PRESTOCKS_API_URL,
     prestocksTimeoutMs: parsePrestocksTimeout(process.env.PRAXIS_PRESTOCKS_TIMEOUT_MS),
     stockUniverse,
+    stockDecimals,
   };
+
+  // An operator override is authoritative: seed the resolver cache so the
+  // chain lookup is skipped entirely for those mints.
+  for (const token of cachedConfig.tokens) {
+    const override = stockDecimals[token.symbol];
+    if (override !== undefined) primeMintDecimals(token.mint, override);
+  }
 
   return cachedConfig;
 }
@@ -309,13 +325,47 @@ function defaultAddressBook(): AddressBookEntry[] {
 
 function parseTokens(
   raw: string | undefined,
-  stock: { stocksEnabled: boolean; stockUniverse: string[] | undefined },
+  stock: {
+    stocksEnabled: boolean;
+    stockUniverse: string[] | undefined;
+    stockDecimals: Record<string, number>;
+  },
 ): TokenInfo[] {
   const base = raw?.trim() ? parseBaseTokens(raw) : [...DEFAULT_TOKENS];
   if (!stock.stocksEnabled) return base;
   const seen = new Set(base.map((token) => token.mint));
-  const stocks = buildStockTokens({}, stock.stockUniverse).filter((token) => !seen.has(token.mint));
+  const stocks = buildStockTokens(stock.stockDecimals, stock.stockUniverse).filter(
+    (token) => !seen.has(token.mint),
+  );
   return [...base, ...stocks];
+}
+
+/**
+ * `PRAXIS_STOCK_DECIMALS` — a JSON map of confirmed per-symbol decimals, e.g.
+ * `{"OPENAI":9}`. An escape hatch for operators who have verified the mints
+ * (and for offline demos); anything omitted is resolved from the chain.
+ */
+function parseStockDecimals(raw: string | undefined): Record<string, number> {
+  if (!raw?.trim()) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new PraxisConfigError(`PRAXIS_STOCK_DECIMALS must be a valid JSON object (${String(error)})`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new PraxisConfigError("PRAXIS_STOCK_DECIMALS must be a JSON object of symbol → decimals");
+  }
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    const symbol = key.trim().replace(/^\$/, "").toUpperCase();
+    const decimals = Number(value);
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
+      throw new PraxisConfigError(`PRAXIS_STOCK_DECIMALS.${key} must be an integer from 0 to 18`);
+    }
+    out[symbol] = decimals;
+  }
+  return out;
 }
 
 function parseStockUniverse(raw: string | undefined): string[] | undefined {

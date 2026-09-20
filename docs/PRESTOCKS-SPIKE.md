@@ -24,7 +24,12 @@ display both, labeled, until semantics are confirmed with PreStocks. Never prese
 
 ## Open (not asserted — needs funded-RPC spike before C04)
 
-- [ ] `decimals` per mint (absent from API; resolve via `getTokenSupply` on mainnet).
+- [x] `decimals` per mint (absent from API). **Resolved by construction:** the
+      hard-coded `6` is no longer used for amount math. Decimals are read from
+      the mint account on the research RPC (mainnet) and cached for the process,
+      or supplied by the operator via `PRAXIS_STOCK_DECIMALS`. When neither is
+      available the agent refuses the buy rather than parsing against a guess —
+      see `server/stocks/mintDecimals.ts`.
 - [ ] DexScreener pairs / liquidity per mint.
 - [ ] Jupiter `USDC -> mint` routability at $10 (determines swap vs transfer-only).
 - [ ] Mint vs secondary-transfer mechanics (can the vault hold these SPLs directly? ATA creation OK?).

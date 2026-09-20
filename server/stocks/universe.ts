@@ -30,12 +30,28 @@ export const STOCK_LIST: StockEntry[] = [
 ];
 
 /**
- * Decimals are absent from the PreStocks API. Until the funded-RPC spike
- * (docs/PRESTOCKS-SPIKE.md open questions) confirms per-mint decimals, every
- * stock token uses this default. Amount math must treat it as provisional —
- * never silently mix with a confirmed-decimals path.
+ * Display-only placeholder scale for stock tokens.
+ *
+ * The PreStocks API does not report decimals, so `TokenInfo.decimals` for these
+ * mints cannot be trusted as the exponent for amount math. It is resolved from
+ * the chain at use time (`resolveMintDecimals`) or supplied by an operator
+ * override; this constant only keeps `TokenInfo` well-formed in between.
+ *
+ * Nothing that converts a human amount into base units may read it — see
+ * {@link hasProvisionalDecimals}.
  */
 export const DEFAULT_STOCK_DECIMALS = 6;
+
+/**
+ * True when this token's `decimals` is the placeholder above rather than a
+ * confirmed value, i.e. any stock mint whose decimals were not overridden.
+ * Callers doing amount math must resolve the real scale first and refuse the
+ * action if they cannot.
+ */
+export function hasProvisionalDecimals(symbol: string, overrides: Record<string, number> = {}): boolean {
+  const normalized = symbol.trim().replace(/^\$/, "").toUpperCase();
+  return isStockSymbol(normalized) && overrides[normalized] === undefined;
+}
 
 export const STOCK_SYMBOLS: string[] = STOCK_LIST.map((s) => s.symbol);
 

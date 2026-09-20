@@ -15,6 +15,9 @@ export const SYSTEM_PROGRAM_ID = new PublicKey("11111111111111111111111111111111
 /** SPL Token program — an allow-listed program for token-touching actions. */
 export const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 
+/** SPL Token-2022. Mints under it share the classic 82-byte base layout. */
+export const TOKEN_2022_PROGRAM_ID = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
+
 /** SPL Associated Token Account program — derives a wallet's canonical ATA. */
 export const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey(
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",

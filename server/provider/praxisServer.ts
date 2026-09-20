@@ -61,6 +61,8 @@ import {
   type DcaSchedule,
 } from "../stocks/schedules";
 import { fetchPrestocksEntries, findPrestocksEntry } from "../stocks/prestocks";
+import { resolveMintDecimals } from "../stocks/mintDecimals";
+import { hasProvisionalDecimals } from "../stocks/universe";
 import { errorFields, logger } from "../observability/logger";
 
 interface StoreState {
@@ -919,8 +921,9 @@ export class PraxisServerProvider implements PraxisProvider {
 
     // Native SOL routes through agent_transfer; an SPL token through the
     // dedicated token envelope (agent_transfer_spl). The asset's own decimals
-    // drive amount parsing and display.
-    const token = this.token(action.asset);
+    // drive amount parsing and display, so they must be the real ones.
+    const token = await this.withVerifiedDecimals(this.token(action.asset));
+    if (!token) return { blocks: [this.unverifiedDecimalsBlock(action.asset.toUpperCase())] };
     const amount = parseHumanUnits(action.amountHuman, token.decimals);
     const preview = await this.previewTransfer(token, amount, resolved.entry.address);
     const proposal = this.storeTransferProposal({
@@ -1035,8 +1038,8 @@ export class PraxisServerProvider implements PraxisProvider {
     action: Extract<ParsedAction, { kind: "schedule_dca" }>,
     threadId?: string,
   ): Promise<{ blocks: AgentBlock[]; title?: string }> {
-    const token = this.knownToken(action.asset);
-    if (!token) {
+    const known = this.knownToken(action.asset);
+    if (!known) {
       return {
         blocks: [{
           type: "clarify",
@@ -1045,6 +1048,10 @@ export class PraxisServerProvider implements PraxisProvider {
         }],
       };
     }
+    // Resolve the real scale before storing an amount: a schedule persists its
+    // per-fire amount in base units, so a wrong exponent is baked in forever.
+    const token = await this.withVerifiedDecimals(known);
+    if (!token) return { blocks: [this.unverifiedDecimalsBlock(known.symbol)] };
     let amount: bigint;
     try {
       amount = parseHumanUnits(action.amountHuman, token.decimals);
@@ -1145,8 +1152,8 @@ export class PraxisServerProvider implements PraxisProvider {
 
     const tokens = new Map<string, TokenInfo>();
     for (const symbol of constituents) {
-      const token = this.knownToken(symbol);
-      if (!token) {
+      const known = this.knownToken(symbol);
+      if (!known) {
         return {
           blocks: [{
             type: "clarify",
@@ -1155,6 +1162,10 @@ export class PraxisServerProvider implements PraxisProvider {
           }],
         };
       }
+      // All-or-clarify extends to scale: one unconfirmable mint voids the
+      // basket rather than splitting a total across a guessed exponent.
+      const token = await this.withVerifiedDecimals(known);
+      if (!token) return { blocks: [this.unverifiedDecimalsBlock(symbol)] };
       tokens.set(symbol, token);
     }
 
@@ -1326,6 +1337,34 @@ export class PraxisServerProvider implements PraxisProvider {
   private tokenForMint(mint: string | undefined): TokenInfo | undefined {
     if (!mint) return undefined;
     return this.config.tokens.find((item) => item.mint === mint);
+  }
+
+  /**
+   * A token with a scale that is safe to do amount math against.
+   *
+   * SOL and the configured SPL tokens carry known decimals. PreStocks mints do
+   * not: the API omits decimals and the universe fills in a placeholder, so
+   * parsing "40 OPENAI" against it could be off by orders of magnitude. For
+   * those, the real scale is read from the chain (mainnet, where the mints
+   * live) and cached — and if it cannot be confirmed we return `undefined`
+   * so the caller refuses the action instead of moving a guessed amount.
+   */
+  private async withVerifiedDecimals(token: TokenInfo): Promise<TokenInfo | undefined> {
+    if (!hasProvisionalDecimals(token.symbol, this.config.stockDecimals)) return token;
+    const decimals = await resolveMintDecimals(getResearchConnection(this.config), token.mint);
+    if (decimals === undefined) return undefined;
+    return decimals === token.decimals ? token : { ...token, decimals };
+  }
+
+  /** The message shown when a mint's scale cannot be confirmed. */
+  private unverifiedDecimalsBlock(symbol: string): AgentBlock {
+    return {
+      type: "clarify",
+      text:
+        `I can't confirm the on-chain decimals for ${symbol} right now, and I won't guess ` +
+        "the amount — getting that wrong would move the wrong quantity. Try again shortly.",
+      options: [],
+    };
   }
 
   private token(symbol: string): TokenInfo {

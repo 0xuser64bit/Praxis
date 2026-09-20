@@ -186,4 +186,8 @@ bun run praxis:setup-token-accounts  # prepare vault/recipient ATAs for SPL
 bun run praxis:moneyshots            # capture proposal/policy/activity states
 bun run praxis:swapcheck             # assert swaps stay blocked
 bun run praxis:tokencheck            # assert SPL envelope enforcement
+bun run praxis:reenablecheck         # revoke -> re-enable, signing follows the chain
+bun run praxis:reenablecycles        # the same, repeated N times (CYCLES=3)
+bun run praxis:policycheck           # chat-driven policy change lands on-chain
+bun run praxis:localcheck            # docker Postgres + Redis, incl. CAS rejection
 ```

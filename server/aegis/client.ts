@@ -874,12 +874,20 @@ export class AegisClient {
   ): Promise<string> {
     const raw = Buffer.from(input.transaction, "base64");
     this.assertSubmittableOwnerTransaction(raw, input, opts.expectedFeePayer);
-    const sig = await this.conn.sendRawTransaction(raw, {
-      preflightCommitment: this.config.commitment,
-    });
-    const confirmation = await this.conn.confirmTransaction(
-      { signature: sig, blockhash: input.blockhash, lastValidBlockHeight: input.lastValidBlockHeight },
-      this.config.commitment,
+    // Bounded like every other submit path (see sendAndConfirm): a hung RPC
+    // must not hold a serverless function open until the platform kills it.
+    const sig = await withTimeout(
+      this.conn.sendRawTransaction(raw, { preflightCommitment: this.config.commitment }),
+      envTimeout("PRAXIS_RPC_READ_TIMEOUT_MS", 8000),
+      "sendRawTransaction (owner)",
+    );
+    const confirmation = await withTimeout(
+      this.conn.confirmTransaction(
+        { signature: sig, blockhash: input.blockhash, lastValidBlockHeight: input.lastValidBlockHeight },
+        this.config.commitment,
+      ),
+      60_000,
+      "confirmTransaction (owner)",
     );
     if (confirmation.value.err) {
       throw new Error(`owner transaction failed: ${JSON.stringify(confirmation.value.err)}`);

@@ -22,7 +22,10 @@
     "praxis:stockscheck": "bun scripts/stockscheck.ts",
     "praxis:stocksgate": "bun scripts/stocksgate.ts",
     "praxis:stocks-dca": "bun scripts/stocks-dca.ts",
-    "praxis:localcheck": "bun scripts/localcheck.ts"
+    "praxis:localcheck": "bun scripts/localcheck.ts",
+    "praxis:reenablecheck": "bun scripts/reenable-smoke.ts",
+    "praxis:reenablecycles": "bun scripts/reenable-multicycle.ts",
+    "praxis:policycheck": "bun scripts/policychange-smoke.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

@@ -103,6 +103,14 @@ async function main() {
     assert("priced split is exact", split?.[0].amount === 3_000_000n && split?.[1].amount === 1_500_000n);
     assert("unpriceable split is null", splitBasket(60, ["OPENAI"], new Map(), () => 6) === null);
     assert("cadence advances", advanceCadence({ type: "daily" }, 1_000) === 1_000 + 86_400_000);
+    // A recurring buy must fire on the weekday it promises, not on whichever
+    // day it happened to be created. 2026-09-16 is a Wednesday.
+    const nextMonday = advanceCadence({ type: "weekly", weekday: 1 }, Date.UTC(2026, 8, 16, 9, 0));
+    assert(
+      "weekly fires on the named weekday",
+      new Date(nextMonday).getUTCDay() === 1 && nextMonday === Date.UTC(2026, 8, 21, 9, 0),
+      new Date(nextMonday).toISOString(),
+    );
   }
 
   // 6. DCA/basket intent shapes parse to the mechanical kinds.

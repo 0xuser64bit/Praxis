@@ -481,6 +481,10 @@ function DangerZone({
 }) {
   const [confirm, setConfirm] = useState("");
   const [confirming, setConfirming] = useState(false);
+  // Whether the delete we are showing an error for is OURS. The action error
+  // is shared across the whole dashboard, so without this the dialog would
+  // open displaying whatever unrelated action failed last.
+  const [deleteFailed, setDeleteFailed] = useState(false);
   const { busy, pendingKey, error } = useActionState();
   const deleting = pendingKey === actionKeys.deleteAgent;
   const tokenConfigured = policy.tokenMint !== SYSTEM_PROGRAM;
@@ -494,6 +498,7 @@ function DangerZone({
   // a failure is read next to the button that caused it rather than in a
   // banner at the top of a scrolled page.
   useActionCompletion([actionKeys.deleteAgent], (ok) => {
+    setDeleteFailed(!ok);
     if (!ok) return;
     setConfirming(false);
     setConfirm("");
@@ -533,7 +538,10 @@ function DangerZone({
         <button
           type="button"
           disabled={!armed || busy}
-          onClick={() => setConfirming(true)}
+          onClick={() => {
+            setDeleteFailed(false);
+            setConfirming(true);
+          }}
           className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md px-4 text-[13px] font-medium text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.4)] [transition:background_0.15s] hover:bg-[rgba(199,91,91,0.12)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           {deleting ? (
@@ -552,9 +560,15 @@ function DangerZone({
           busyLabel="Deleting…"
           cancelLabel="Keep agent"
           busy={deleting}
-          error={deleting ? null : error}
-          onClose={() => setConfirming(false)}
-          onConfirm={onDelete}
+          error={deleteFailed && !deleting ? error : null}
+          onClose={() => {
+            setConfirming(false);
+            setDeleteFailed(false);
+          }}
+          onConfirm={() => {
+            setDeleteFailed(false);
+            onDelete();
+          }}
         >
           <p>
             This wipes your policy on-chain and closes the vault. It{" "}

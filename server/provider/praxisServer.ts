@@ -297,7 +297,7 @@ export class PraxisServerProvider implements PraxisProvider {
         // Both native and SPL transfers render as a transfer row; the asset
         // distinguishes them, and the on-chain record carries historical mint.
         kind: "transfer",
-        label: this.addressBook.labelFor(entry.target),
+        label: this.destinationLabel(entry.target),
         asset: isSpl ? tokenAsset?.symbol ?? "TOKEN" : "SOL",
         amount: entry.amount,
         decimals: isSpl ? tokenAsset?.decimals ?? SOL_DECIMALS : SOL_DECIMALS,
@@ -451,7 +451,7 @@ export class PraxisServerProvider implements PraxisProvider {
         {
           id: this.id("a"),
           kind: "transfer",
-          label: proposal.detail.recipientName,
+          label: this.destinationLabel(proposal.detail.recipientAddress, proposal.detail.recipientName),
           asset: asset.symbol,
           amount: proposal.detail.amount,
           decimals: asset.decimals,
@@ -985,13 +985,21 @@ export class PraxisServerProvider implements PraxisProvider {
     // both untrue and the kind of small wrongness that makes people distrust
     // the rest of the card.
     const toSelf = action.toSelf === true;
+    const destination = toSelf
+      ? "No recipient named, so this settles into your own wallet."
+      : `Resolved ${resolved.name} from the address book.`;
+    // A dollar sign on the amount is not a unit here — "$40 openai" moves 40
+    // OPENAI, which at this price is two hundred times $40. The real figure is
+    // already the biggest text on the card, but nobody should have to notice
+    // that for themselves on the screen where they sign.
+    const reading = action.usdSigil
+      ? ` Reading "$${action.amountHuman}" as a quantity: ${formatUnits(amount, token.decimals)} ${token.symbol}, not $${action.amountHuman} worth of it.`
+      : "";
     return {
       blocks: [
         {
           type: "proposal",
-          text: toSelf
-            ? "No recipient named, so this settles into your own wallet."
-            : `Resolved ${resolved.name} from the address book.`,
+          text: `${destination}${reading}`,
           proposalId: proposal.id,
         },
       ],
@@ -1036,6 +1044,11 @@ export class PraxisServerProvider implements PraxisProvider {
         recipientName: args.recipientName,
         recipientAddress: args.recipientAddress,
         recipientNote: args.recipientNote,
+        // Derived from the address rather than threaded down from the parse,
+        // so every path that lands on the owner's own wallet says so: a bare
+        // buy, a schedule with no recipient, or an owner who pasted their own
+        // address.
+        toSelf: args.recipientAddress === this.config.ownerAddress?.toBase58() || undefined,
         usdEstimate: args.usdEstimate,
       },
       networkFee: args.preview.networkFee,
@@ -1050,7 +1063,7 @@ export class PraxisServerProvider implements PraxisProvider {
         {
           id: this.id("a"),
           kind: "transfer",
-          label: args.recipientName,
+          label: this.destinationLabel(args.recipientAddress, args.recipientName),
           asset: args.token.symbol,
           amount: args.amount,
           decimals: args.token.decimals,
@@ -1063,6 +1076,20 @@ export class PraxisServerProvider implements PraxisProvider {
       ];
     }
     return proposal;
+  }
+
+  /**
+   * How a transfer's destination reads in the activity feed.
+   *
+   * The owner's own wallet is never in their own address book, so it resolved
+   * to "Unlabeled recipient" on the durable on-chain rows — the audit trail
+   * being vague about the destination a bare buy produces every time. The log
+   * is the part of this product people are asked to trust; it does not get to
+   * shrug at the most common row in it.
+   */
+  private destinationLabel(address: string, known?: string): string {
+    if (address === this.config.ownerAddress?.toBase58()) return "Your wallet";
+    return known ?? this.addressBook.labelFor(address);
   }
 
   /** Resolve a recipient: named contact, or the owner's own wallet when none was named. */

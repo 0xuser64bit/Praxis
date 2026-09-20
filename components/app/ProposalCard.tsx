@@ -267,7 +267,9 @@ function describe(
       },
       to: {
         label: "To",
-        primary: detail.recipientName,
+        // "To: you" on a labelled column reads like a placeholder somebody
+        // forgot to fill in. Name the destination for what it is.
+        primary: detail.toSelf ? "Your wallet" : detail.recipientName,
         sub: shortenAddress(detail.recipientAddress),
         compact: true,
       },

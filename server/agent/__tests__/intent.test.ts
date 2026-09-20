@@ -127,6 +127,9 @@ describe("deterministic parser — stock intents (C04)", () => {
       asset: "OPENAI",
       amountHuman: "40",
       recipient: "maya",
+      // The "$" is a quantity here, not a unit — recorded so the reply can
+      // say so rather than leaving the reader to spot it on the card.
+      usdSigil: true,
     });
   });
 
@@ -279,6 +282,7 @@ describe("bare buy — no recipient named", () => {
       asset: "OPENAI",
       amountHuman: "40",
       toSelf: true,
+      usdSigil: true,
     });
   });
 
@@ -387,5 +391,40 @@ describe("LLM path — toSelf is explicit, never inferred", () => {
     await expect(parseIntentWithGemini("send 5 sol to alex", config)).rejects.toThrow(
       /recipient/i,
     );
+  });
+});
+
+/**
+ * The dollar sign is not a unit. "$40 openai" moves 40 OPENAI, which at a
+ * three-figure share price is two hundred times $40 — so the sigil is carried
+ * through the parse instead of being dropped at the regex, and the reply says
+ * which reading it took.
+ */
+describe("the $ sigil is recorded, not silently discarded", () => {
+  test("a dollar amount parses as a quantity and says so", () => {
+    const parsed = parseIntentLocallyForDemo("buy $40 openai");
+    expect(parsed.outcome).toBe("actions");
+    if (parsed.outcome !== "actions") return;
+    const action = parsed.actions[0];
+    expect(action.kind).toBe("transfer");
+    if (action.kind !== "transfer") return;
+    expect(action.amountHuman).toBe("40");
+    expect(action.usdSigil).toBe(true);
+  });
+
+  test("no sigil, no note", () => {
+    const parsed = parseIntentLocallyForDemo("buy 40 openai");
+    expect(parsed.outcome === "actions" && parsed.actions[0].kind === "transfer").toBe(true);
+    if (parsed.outcome !== "actions") return;
+    const action = parsed.actions[0];
+    expect(action.kind === "transfer" && action.usdSigil).toBeUndefined();
+  });
+
+  test("a named-recipient send records it too", () => {
+    const parsed = parseIntentLocallyForDemo("send $5 sol to maya");
+    if (parsed.outcome !== "actions") throw new Error("expected actions");
+    const action = parsed.actions[0];
+    expect(action.kind === "transfer" && action.usdSigil).toBe(true);
+    expect(action.kind === "transfer" && action.amountHuman).toBe("5");
   });
 });

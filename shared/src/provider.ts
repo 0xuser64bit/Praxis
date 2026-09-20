@@ -68,6 +68,16 @@ export interface TransferDetail {
   recipientAddress: Address;
   recipientNote?: string;
   /**
+   * The destination is the owner's own wallet.
+   *
+   * Derived from the address, not from how the request was phrased, so it is
+   * true whenever it is true — a bare `buy`, a schedule with no recipient, or
+   * an owner who pasted their own address. Surfaces are expected to say "your
+   * wallet" rather than render the contact name "you", which on a labelled
+   * column reads as a missing value.
+   */
+  toSelf?: true;
+  /**
    * Server-computed USD value of `amount`, as a decimal string, when a real
    * price is available (tokenized stocks price from the PreStocks API).
    *

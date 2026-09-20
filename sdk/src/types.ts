@@ -129,6 +129,8 @@ export interface TransferDetail {
   recipientName: string;
   recipientAddress: Address;
   recipientNote?: string;
+  /** The destination is the owner's own wallet (derived from the address). */
+  toSelf?: true;
 }
 
 export interface SwapDetail {

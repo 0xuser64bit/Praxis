@@ -4,14 +4,14 @@
   "description": "Typed client SDK for a hosted Praxis agent \u2014 natural-language Solana actions enforced on-chain by Aegis.",
   "license": "MIT",
   "author": "Praxis",
-  "homepage": "https://github.com/user-64bit/Praxis/tree/main/sdk#readme",
+  "homepage": "https://github.com/0xuser64bit/Praxis/tree/main/sdk#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/user-64bit/Praxis.git",
+    "url": "git+https://github.com/0xuser64bit/Praxis.git",
     "directory": "sdk"
   },
   "bugs": {
-    "url": "https://github.com/user-64bit/Praxis/issues"
+    "url": "https://github.com/0xuser64bit/Praxis/issues"
   },
   "type": "module",
   "main": "./dist/index.cjs",

@@ -41,6 +41,21 @@ export type ParsedAction =
        * envelope (and still refused if your recipient allow-list excludes it).
        */
       toSelf?: true;
+      /**
+       * The user wrote a dollar sign on the amount ("buy $40 openai").
+       *
+       * It is NOT a unit here — the number is a token quantity, which is what
+       * the program's caps, stored schedules and `praxis:stocksbuycheck` all
+       * already mean by it. Redefining it as dollars would silently change
+       * what every existing schedule buys and would un-break the over-cap
+       * demo that proves the thesis.
+       *
+       * But "$40" and "40 tokens" can be two hundred times apart, so the
+       * sigil is carried through rather than dropped at the regex, and the
+       * reply says which reading it took. The number on the card is the truth;
+       * this makes sure nobody has to infer that.
+       */
+      usdSigil?: true;
     }
   | {
       kind: "research";
@@ -141,6 +156,11 @@ const intentTool = {
               type: "string",
               description: "Saved contact label/name or pasted address.",
             },
+            usdSigil: {
+              type: "boolean",
+              description:
+                "True when the user wrote a dollar sign on the amount ('buy $40 openai'). The number is still a token quantity — this only records that they typed '$', so the reply can say which reading it took.",
+            },
             toSelf: {
               type: "boolean",
               description:
@@ -206,6 +226,8 @@ const INTENT_SYSTEM_PROMPT = [
   "Stock verbs: buy/purchase/acquire and sell map to transfer with a PreStocks symbol " +
     "(OPENAI, SPACEX, ANTHROPIC, ANDURIL, FIGUREAI, KALSHI, NEURALINK, POLYMARKET); " +
     "accept an optional p- prefix and any case (popenai = OPENAI).",
+  "A '$' on the amount does NOT change the unit: 'buy $40 openai' is 40 OPENAI, not $40 of it. " +
+    "Keep amountHuman as the bare number and set usdSigil=true so the reply can say so.",
   "A BUY with no recipient ('buy $40 openai') is a transfer with toSelf=true and no recipient: " +
     "it settles into the owner's own wallet. Only a buy verb may do this. A send with no " +
     "recipient is a clarify, and a bare sell is a swap idea — never set toSelf for either.",
@@ -408,7 +430,15 @@ export function parseIntentLocallyForDemo(text: string): ParsedIntent {
     }
     return {
       outcome: "actions",
-      actions: [{ kind: "transfer", asset, amountHuman, recipient: send[3].trim() }],
+      actions: [
+        {
+          kind: "transfer",
+          asset,
+          amountHuman,
+          recipient: send[3].trim(),
+          ...(hasUsdSigil(cleaned) ? { usdSigil: true as const } : {}),
+        },
+      ],
     };
   }
 
@@ -431,6 +461,7 @@ export function parseIntentLocallyForDemo(text: string): ParsedIntent {
           asset: normalizeStockAlias(bareBuy[2]),
           amountHuman: bareBuy[1],
           toSelf: true,
+          ...(hasUsdSigil(cleaned) ? { usdSigil: true as const } : {}),
         },
       ],
     };
@@ -490,6 +521,14 @@ export function parseIntentLocallyForDemo(text: string): ParsedIntent {
  * on purpose: it only fires on explicit change verbs + a policy knob, so a normal
  * transfer ("send 10 sol to alex") can never be mistaken for a limit change.
  */
+/**
+ * Did the user put a dollar sign on the amount? The amount regexes strip it,
+ * so the fact has to be read off the original line.
+ */
+function hasUsdSigil(text: string): boolean {
+  return /(?:^|\s)\$\s*[0-9]/.test(text);
+}
+
 function matchPolicyChange(text: string): Extract<ParsedAction, { kind: "policy_change" }> | null {
   const t = text.toLowerCase().trim();
 
@@ -673,17 +712,19 @@ function normalizeAction(input: unknown, index: number): ParsedAction {
       ? value.asset.trim().replace(/^\$/, "").toUpperCase()
       : "SOL";
     const amountHuman = readRequiredString(value.amountHuman, "amountHuman");
+    const usd = value.usdSigil === true ? ({ usdSigil: true } as const) : {};
     // `toSelf` has to be said, not inferred from a missing recipient: a model
     // that simply drops the field on "send 5 SOL to alex" must still land in
     // the clarify path, which is what readRequiredString does below.
     if (value.toSelf === true) {
-      return { kind: "transfer", asset, amountHuman, toSelf: true };
+      return { kind: "transfer", asset, amountHuman, toSelf: true, ...usd };
     }
     return {
       kind: "transfer",
       asset,
       amountHuman,
       recipient: readRequiredString(value.recipient, "recipient"),
+      ...usd,
     };
   }
 

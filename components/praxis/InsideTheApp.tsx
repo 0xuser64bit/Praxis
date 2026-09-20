@@ -208,7 +208,7 @@ const SCENES: Scene[] = [
     label: "Pre-IPO stocks",
     surface: "chat",
     thread: "OPENAI buy",
-    command: "buy $40 openai for maya",
+    command: "buy $40 openai",
     history: (
       <History command="what's openai doing this week" at="2:12 PM">
         <p className="[&_strong]:font-medium [&_strong]:text-[var(--text-primary)]">
@@ -227,13 +227,14 @@ const SCENES: Scene[] = [
     reply: () => (
       <>
         <Prose>
-          <strong>OPENAI</strong> · Token-2022 mint at 9 decimals, priced from the
-          live PreStocks quote. Its envelope is separate from your SOL one.
+          No recipient named, so this settles into your own wallet.{" "}
+          <strong>OPENAI</strong> is a Token-2022 mint at 9 decimals, priced from
+          the live PreStocks quote, and its envelope is separate from your SOL one.
         </Prose>
         <TxCard
           status={{ label: "Awaiting signature" }}
           from={{ label: "Send", primary: "40.00", unit: "OPENAI", sub: "≈ $8,696.00" }}
-          to={{ label: "To", primary: "Maya Chen", sub: "9bLm…K3pQ", compact: true }}
+          to={{ label: "To", primary: "Your wallet", sub: "7xK…Bgh2", compact: true }}
           meta={[
             { label: "Network fee", value: FEE },
             { label: "Simulation", value: "Will succeed", ok: true },

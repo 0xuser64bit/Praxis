@@ -3,7 +3,7 @@ import { DEFAULT_AEGIS_PROGRAM_ID_BASE58 } from "@praxis/shared";
 import { Container } from "@/components/praxis/Container";
 import { PraxisLogoMark } from "@/components/praxis/PraxisLogo";
 
-const REPO_URL = "https://github.com/user-64bit/Praxis";
+const REPO_URL = "https://github.com/0xuser64bit/Praxis";
 
 /**
  * Only links that go somewhere.

@@ -357,8 +357,36 @@ describe("one-off buy with no recipient", () => {
     expect(proposal.detail.amount).toBe(40_000_000_000n);
     expect(proposal.detail.recipientAddress).toBe(config.ownerAddress!.toBase58());
     expect(proposal.detail.recipientName).toBe("you");
+    // The card reads this to say "Your wallet" instead of "To: you".
+    expect(proposal.detail.toSelf).toBe(true);
     // Nothing is signed by getting here — it is a proposal like any other.
     expect(proposal.state).toBe("pending");
+  });
+
+  test("a schedule firing with no recipient marks the same destination", async () => {
+    // `toSelf` is derived from the address, not from the phrasing, so every
+    // path that lands on the owner's wallet carries it — not just the one
+    // that introduced the flag.
+    const { provider } = build();
+    await provider.send(null, "buy $50 openai every monday");
+    const schedule = provider.getSchedules()[0];
+    const fired = await provider.fireDueSchedules(schedule.nextFireTs + 1);
+    const proposal = provider.getProposal(fired[0].proposalId)!;
+    expect(proposal.detail.kind === "transfer" && proposal.detail.toSelf).toBe(true);
+  });
+
+  test("a transfer to someone else is not marked", async () => {
+    const { config } = build();
+    const contact = Keypair.generate().publicKey.toBase58();
+    const withBook = new PraxisServerProvider(
+      { ...config, addressBook: [{ label: "maya", name: "Maya Patel", address: contact }] },
+      new FakeAegis(policyFixture()) as unknown as AegisClient,
+    );
+    withBook.basketPriceSource = async (symbols) => new Map(symbols.map((s) => [s, 10]));
+    const { threadId } = await withBook.send(null, "buy $40 openai for maya");
+    const block = agentBlocks(withBook, threadId).find((b) => b.type === "proposal");
+    const proposal = withBook.getProposal(block && block.type === "proposal" ? block.proposalId : "")!;
+    expect(proposal.detail.kind === "transfer" && proposal.detail.toSelf).toBeUndefined();
   });
 
   test("the reply says where it is going, and does not claim an address book hit", async () => {
@@ -386,5 +414,61 @@ describe("one-off buy with no recipient", () => {
     expect(block).toBeDefined();
     const proposal = withBook.getProposal(block && block.type === "proposal" ? block.proposalId : "")!;
     expect(proposal.detail.kind === "transfer" && proposal.detail.recipientAddress).toBe(contact);
+  });
+});
+
+describe("the audit trail names the owner's own wallet", () => {
+  test("a blocked self-buy does not log as 'Unlabeled recipient'", async () => {
+    // The owner is never in their own address book, so the label resolver
+    // used to shrug at the destination a bare buy produces every time.
+    const policy = policyFixture();
+    const { provider } = (() => {
+      const config = makeConfig();
+      const fake = new FakeAegis(policy);
+      fake.simResult = {
+        check: {
+          allowed: false,
+          reason: "exceeds the per-transaction limit",
+          spentToday: 0n,
+          dailyLimit: policy.dailyLimit,
+          remaining: policy.dailyLimit,
+        },
+        simulation: "Rejected by Aegis",
+        networkFee: 5000n,
+        logs: [],
+      };
+      const p = new PraxisServerProvider(config, fake as unknown as AegisClient);
+      p.basketPriceSource = async (symbols) => new Map(symbols.map((s) => [s, 10]));
+      return { provider: p };
+    })();
+
+    await provider.send(null, "buy $40 openai");
+    const row = provider.getActivity().find((a) => a.asset === "OPENAI");
+    expect(row?.result).toBe("rejected");
+    expect(row?.label).toBe("Your wallet");
+  });
+});
+
+describe("the reply names the reading it took", () => {
+  test("a $ amount is called a quantity, with the number spelled out", async () => {
+    const { provider } = build();
+    const { threadId } = await provider.send(null, "buy $40 openai");
+    const text = agentBlocks(provider, threadId)
+      .filter((b) => b.type === "proposal")
+      .map((b) => (b.type === "proposal" ? b.text : ""))
+      .join(" ");
+    expect(text).toMatch(/as a quantity/i);
+    expect(text).toMatch(/40 OPENAI/);
+    expect(text).toMatch(/not \$40 worth/i);
+  });
+
+  test("no dollar sign, no note", async () => {
+    const { provider } = build();
+    const { threadId } = await provider.send(null, "buy 40 openai");
+    const text = agentBlocks(provider, threadId)
+      .filter((b) => b.type === "proposal")
+      .map((b) => (b.type === "proposal" ? b.text : ""))
+      .join(" ");
+    expect(text).not.toMatch(/as a quantity/i);
   });
 });

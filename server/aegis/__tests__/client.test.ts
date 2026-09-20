@@ -77,6 +77,7 @@ function makeConfig(over: Partial<PraxisServerConfig> = {}): PraxisServerConfig 
     prestocksTimeoutMs: DEFAULT_PRESTOCKS_TIMEOUT_MS,
     stockUniverse: undefined,
     stockDecimals: {},
+    stockMints: {},
     ...over,
   };
 }

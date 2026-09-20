@@ -109,11 +109,29 @@ export function normalizeStockAlias(input: string): string {
 export function buildStockTokens(
   decimals: Record<string, number> = {},
   universe: string[] | undefined = undefined,
+  mintOverrides: Record<string, string> = {},
 ): TokenInfo[] {
   return STOCK_LIST.filter((s) => !universe || universe.includes(s.symbol)).map((s) => ({
     symbol: s.symbol,
-    mint: s.mint,
+    mint: mintOverrides[s.symbol] ?? s.mint,
     decimals: decimals[s.symbol] ?? DEFAULT_STOCK_DECIMALS,
     verified: true,
   }));
+}
+
+/**
+ * Devnet mirror mints.
+ *
+ * The PreStocks mints are mainnet-only, so a devnet deployment cannot move
+ * them however good the program is. `PRAXIS_STOCK_MINTS` remaps symbol →
+ * mint so a demo can run against Token-2022 mints created on the demo
+ * cluster (`bun run praxis:setup-devnet-stocks`), while prices and research
+ * still come from the live PreStocks API keyed by symbol.
+ *
+ * A mirror is a different token from the real one, and the product says so
+ * wherever the universe is surfaced — see `isMirroredMint`.
+ */
+export function isMirroredMint(symbol: string, mint: string): boolean {
+  const canonical = STOCK_MINT_BY_SYMBOL[symbol.trim().replace(/^\$/, "").toUpperCase()];
+  return canonical !== undefined && canonical !== mint;
 }

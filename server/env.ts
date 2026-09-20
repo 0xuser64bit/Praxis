@@ -101,6 +101,12 @@ export interface PraxisServerConfig {
    * from the chain before any amount math, never guessed.
    */
   stockDecimals: Record<string, number>;
+  /**
+   * Symbol → mint overrides (`PRAXIS_STOCK_MINTS`). Lets a devnet deployment
+   * point the stock universe at mirror mints created on that cluster, since
+   * the real PreStocks mints exist only on mainnet.
+   */
+  stockMints: Record<string, string>;
 }
 
 export const DEFAULT_PRESTOCKS_API_URL = "https://prestocks.com/api/prestocks";
@@ -131,6 +137,7 @@ export function getServerConfig(): PraxisServerConfig {
   const stocksEnabled = process.env.PRAXIS_STOCKS_ENABLED?.trim() === "1";
   const stockUniverse = parseStockUniverse(process.env.PRAXIS_STOCK_UNIVERSE);
   const stockDecimals = parseStockDecimals(process.env.PRAXIS_STOCK_DECIMALS);
+  const stockMints = parseStockMints(process.env.PRAXIS_STOCK_MINTS);
 
   cachedConfig = {
     geminiApiKey: process.env.GEMINI_API_KEY,
@@ -145,13 +152,19 @@ export function getServerConfig(): PraxisServerConfig {
     ownerKeypair,
     nextAgentKeypair,
     addressBook: parseAddressBook(process.env.PRAXIS_ADDRESS_BOOK),
-    tokens: parseTokens(process.env.PRAXIS_TOKENS, { stocksEnabled, stockUniverse, stockDecimals }),
+    tokens: parseTokens(process.env.PRAXIS_TOKENS, {
+      stocksEnabled,
+      stockUniverse,
+      stockDecimals,
+      stockMints,
+    }),
     indexerUrl: process.env.PRAXIS_INDEXER_URL,
     stocksEnabled,
     prestocksApiUrl: process.env.PRAXIS_PRESTOCKS_API_URL?.trim() || DEFAULT_PRESTOCKS_API_URL,
     prestocksTimeoutMs: parsePrestocksTimeout(process.env.PRAXIS_PRESTOCKS_TIMEOUT_MS),
     stockUniverse,
     stockDecimals,
+    stockMints,
   };
 
   // An operator override is authoritative: seed the resolver cache so the
@@ -329,15 +342,46 @@ function parseTokens(
     stocksEnabled: boolean;
     stockUniverse: string[] | undefined;
     stockDecimals: Record<string, number>;
+    stockMints: Record<string, string>;
   },
 ): TokenInfo[] {
   const base = raw?.trim() ? parseBaseTokens(raw) : [...DEFAULT_TOKENS];
   if (!stock.stocksEnabled) return base;
   const seen = new Set(base.map((token) => token.mint));
-  const stocks = buildStockTokens(stock.stockDecimals, stock.stockUniverse).filter(
-    (token) => !seen.has(token.mint),
-  );
+  const stocks = buildStockTokens(
+    stock.stockDecimals,
+    stock.stockUniverse,
+    stock.stockMints,
+  ).filter((token) => !seen.has(token.mint));
   return [...base, ...stocks];
+}
+
+/**
+ * `PRAXIS_STOCK_MINTS` — a JSON map of symbol → mint for a demo cluster,
+ * e.g. `{"OPENAI":"<devnet mint>"}`. The PreStocks mints are mainnet-only,
+ * so a devnet deploy needs mirrors (`bun run praxis:setup-devnet-stocks`).
+ */
+function parseStockMints(raw: string | undefined): Record<string, string> {
+  if (!raw?.trim()) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new PraxisConfigError(`PRAXIS_STOCK_MINTS must be a valid JSON object (${String(error)})`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new PraxisConfigError("PRAXIS_STOCK_MINTS must be a JSON object of symbol → mint");
+  }
+  const known = new Set(STOCK_SYMBOLS);
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    const symbol = key.trim().replace(/^\$/, "").toUpperCase();
+    if (!known.has(symbol)) {
+      throw new PraxisConfigError(`PRAXIS_STOCK_MINTS.${key} is not a known stock symbol`);
+    }
+    out[symbol] = validatePublicKey(String(value ?? ""), `PRAXIS_STOCK_MINTS.${key}`).toBase58();
+  }
+  return out;
 }
 
 /**

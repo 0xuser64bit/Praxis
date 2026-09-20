@@ -22,6 +22,8 @@
     "praxis:stockscheck": "bun scripts/stockscheck.ts",
     "praxis:stocksgate": "bun scripts/stocksgate.ts",
     "praxis:stocks-dca": "bun scripts/stocks-dca.ts",
+    "praxis:setup-devnet-stocks": "bun scripts/setup-devnet-stocks.ts",
+    "praxis:stocksbuycheck": "bun scripts/stocksbuycheck.ts",
     "praxis:localcheck": "bun scripts/localcheck.ts",
     "praxis:reenablecheck": "bun scripts/reenable-smoke.ts",
     "praxis:reenablecycles": "bun scripts/reenable-multicycle.ts",

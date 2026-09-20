@@ -54,6 +54,7 @@ import type { StoredProviderState } from "./stateSerialization";
 import {
   advanceCadence,
   availableBaskets,
+  nextFireAt,
   describeCadence,
   resolveBasket,
   sameCadence,
@@ -1169,7 +1170,10 @@ export class PraxisServerProvider implements PraxisProvider {
       recipientAddress: target.address,
       recipientName: target.name,
       cadence: action.cadence,
-      nextFireTs: advanceCadence(action.cadence, nowMs),
+      // Anchored to the scheduler's hour, not to "now": firing is one daily
+      // tick, so an unanchored time-of-day after that tick would slip the
+      // whole schedule to the following day.
+      nextFireTs: nextFireAt(action.cadence, nowMs, this.config.scheduleHourUtc),
       createdAt: nowMs,
       threadId: threadId ?? "t-welcome",
     };

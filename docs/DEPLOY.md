@@ -245,7 +245,19 @@ authorities. The app labels a mirrored universe in the UI.
 
 ### Scheduled recurring buys
 
-`vercel.json` schedules `/api/cron/stocks` hourly. The job authenticates with
+`vercel.json` schedules `/api/cron/stocks` daily at 09:00 UTC. (Hobby plan
+allows once-per-day crons only — an hourly expression fails deployment with
+"Hobby accounts are limited to daily cron jobs." Hobby timing is ±59 min, so
+the run lands 09:00–09:59; the runner fires everything due up to now, so the
+jitter is harmless.)
+
+**`PRAXIS_SCHEDULE_HOUR_UTC` must match that cron hour** (default `9`). New
+schedules anchor their fire time to it, because firing is a single daily
+tick: a schedule whose time-of-day sits *after* the tick is never due when
+the tick runs, so it slips to the next day and "every Monday" fires on
+Tuesday. If you move the cron, move this with it.
+
+The job authenticates with
 `Authorization: Bearer $CRON_SECRET` (Vercel Cron sends this automatically from
 the project's `CRON_SECRET`) and fans out across every wallet with stored
 state, emitting one proposal per due schedule. It never signs — the owner still

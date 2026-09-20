@@ -111,6 +111,7 @@ function makeConfig(over: Partial<PraxisServerConfig> = {}): PraxisServerConfig 
     stockUniverse: undefined,
     stockDecimals: STOCK_DECIMALS,
     stockMints: {},
+    scheduleHourUtc: 9,
     ...over,
   };
 }

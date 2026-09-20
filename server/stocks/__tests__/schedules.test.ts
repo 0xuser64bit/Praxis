@@ -4,6 +4,7 @@ import {
   advanceCadence,
   availableBaskets,
   describeCadence,
+  nextFireAt,
   parseCadence,
   resolveBasket,
   sameCadence,
@@ -158,5 +159,67 @@ describe("sameCadence", () => {
     expect(sameCadence({ type: "monthly", day: 15 }, { type: "monthly", day: 15 })).toBe(true);
     expect(sameCadence({ type: "monthly", day: 15 }, { type: "monthly", day: 1 })).toBe(false);
     expect(sameCadence({ type: "daily" }, { type: "weekly", weekday: 1 })).toBe(false);
+  });
+});
+
+describe("anchoring to the scheduler's hour", () => {
+  const HOUR = 9; // matches the `0 9 * * *` cron in vercel.json
+  const utcDay = (ms: number) => new Date(ms).getUTCDay();
+  const utcHour = (ms: number) => new Date(ms).getUTCHours();
+
+  /**
+   * Firing is ONE daily cron tick. A schedule whose time-of-day sits after
+   * that tick is never due when the tick runs, so it slips to the next day —
+   * "every Monday" would fire on Tuesday. These pin the fix.
+   */
+  test("a weekly schedule fires on its weekday whatever time it was created", () => {
+    // 2026-09-20 is a Sunday. Create at every hour of the day.
+    for (let createdHour = 0; createdHour < 24; createdHour++) {
+      const created = Date.UTC(2026, 8, 20, createdHour, 30);
+      const next = nextFireAt({ type: "weekly", weekday: 1 }, created, HOUR);
+      expect(utcDay(next)).toBe(1);
+      expect(utcHour(next)).toBe(HOUR);
+      expect(next).toBeGreaterThan(created);
+    }
+  });
+
+  test("the first cron tick on or after the fire time is on the promised day", () => {
+    for (let createdHour = 0; createdHour < 24; createdHour++) {
+      const created = Date.UTC(2026, 8, 20, createdHour, 30);
+      const next = nextFireAt({ type: "weekly", weekday: 1 }, created, HOUR);
+      // The tick runs at HOUR:00–HOUR:59; a schedule at HOUR:00 is due on it.
+      const d = new Date(next);
+      const tick = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), HOUR, 0);
+      expect(tick).toBeGreaterThanOrEqual(next);
+      expect(utcDay(tick)).toBe(1);
+    }
+  });
+
+  test("today's slot is used when it has not passed, skipped when it has", () => {
+    const early = Date.UTC(2026, 8, 21, 6, 0); // Monday 06:00, before the tick
+    expect(nextFireAt({ type: "weekly", weekday: 1 }, early, HOUR)).toBe(
+      Date.UTC(2026, 8, 21, HOUR, 0),
+    );
+    const late = Date.UTC(2026, 8, 21, 15, 0); // Monday 15:00, after the tick
+    expect(nextFireAt({ type: "weekly", weekday: 1 }, late, HOUR)).toBe(
+      Date.UTC(2026, 8, 28, HOUR, 0),
+    );
+  });
+
+  test("daily and monthly anchor too", () => {
+    const at = Date.UTC(2026, 8, 20, 15, 0);
+    expect(nextFireAt({ type: "daily" }, at, HOUR)).toBe(Date.UTC(2026, 8, 21, HOUR, 0));
+    expect(nextFireAt({ type: "monthly", day: 20 }, at, HOUR)).toBe(
+      Date.UTC(2026, 9, 20, HOUR, 0),
+    );
+  });
+
+  test("subsequent fires keep the anchored hour", () => {
+    let at = nextFireAt({ type: "weekly", weekday: 4 }, Date.UTC(2026, 8, 20, 22, 0), HOUR);
+    for (let i = 0; i < 8; i++) {
+      expect(utcHour(at)).toBe(HOUR);
+      expect(utcDay(at)).toBe(4);
+      at = advanceCadence({ type: "weekly", weekday: 4 }, at);
+    }
   });
 });

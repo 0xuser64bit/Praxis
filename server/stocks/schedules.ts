@@ -125,6 +125,43 @@ export function advanceCadence(cadence: DcaCadence, fromMs: number): number {
 }
 
 /**
+ * The first fire strictly after `nowMs`, on a cadence-matching day, at
+ * `hourUtc`.
+ *
+ * Schedules must be anchored to the hour the scheduler actually runs. Firing
+ * is driven by one daily cron tick, so a schedule whose time-of-day sits
+ * after that tick is never due when the tick runs and only fires on the NEXT
+ * one — "every Monday" created at 15:00 would fire on Tuesday. Anchoring the
+ * stored `nextFireTs` to the tick's hour is what keeps the label honest.
+ *
+ * The cron has up to an hour of jitter, which is harmless in this direction:
+ * a tick at 09:00–09:59 always finds an 09:00 schedule due.
+ */
+export function nextFireAt(cadence: DcaCadence, nowMs: number, hourUtc: number): number {
+  const today = atUtcHour(nowMs, hourUtc);
+  // Today's slot counts only if it has not already passed.
+  if (today > nowMs && matchesCadence(cadence, today)) return today;
+  return advanceCadence(cadence, today);
+}
+
+/** `ms` moved to `hourUtc:00:00.000` on the same UTC day. */
+function atUtcHour(ms: number, hourUtc: number): number {
+  const d = new Date(ms);
+  const hour = Math.min(Math.max(Math.trunc(hourUtc) || 0, 0), 23);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hour, 0, 0, 0);
+}
+
+/** Whether `ms` falls on a day this cadence fires. */
+function matchesCadence(cadence: DcaCadence, ms: number): boolean {
+  if (cadence.type === "daily") return true;
+  const d = new Date(ms);
+  if (cadence.type === "weekly") return d.getUTCDay() === normalizeWeekday(cadence.weekday);
+  const wanted = Math.min(Math.max(Math.trunc(cadence.day) || 1, 1), 31);
+  const lastDay = daysInUtcMonth(d.getUTCFullYear(), d.getUTCMonth());
+  return d.getUTCDate() === Math.min(wanted, lastDay);
+}
+
+/**
  * Next occurrence of day-of-month `day`, clamped to the length of whichever
  * month it lands in — a "31st" schedule fires on the 30th in November and the
  * 28th/29th in February rather than skipping the month or spilling into the

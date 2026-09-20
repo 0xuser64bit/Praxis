@@ -107,6 +107,12 @@ export interface PraxisServerConfig {
    * the real PreStocks mints exist only on mainnet.
    */
   stockMints: Record<string, string>;
+  /**
+   * UTC hour the scheduled-buy job runs (`PRAXIS_SCHEDULE_HOUR_UTC`, default
+   * 9), which must match the cron expression in `vercel.json`. Schedules are
+   * anchored to it so a weekly buy fires on the weekday it promises.
+   */
+  scheduleHourUtc: number;
 }
 
 export const DEFAULT_PRESTOCKS_API_URL = "https://prestocks.com/api/prestocks";
@@ -138,6 +144,7 @@ export function getServerConfig(): PraxisServerConfig {
   const stockUniverse = parseStockUniverse(process.env.PRAXIS_STOCK_UNIVERSE);
   const stockDecimals = parseStockDecimals(process.env.PRAXIS_STOCK_DECIMALS);
   const stockMints = parseStockMints(process.env.PRAXIS_STOCK_MINTS);
+  const scheduleHourUtc = parseScheduleHour(process.env.PRAXIS_SCHEDULE_HOUR_UTC);
 
   cachedConfig = {
     geminiApiKey: process.env.GEMINI_API_KEY,
@@ -165,6 +172,7 @@ export function getServerConfig(): PraxisServerConfig {
     stockUniverse,
     stockDecimals,
     stockMints,
+    scheduleHourUtc,
   };
 
   // An operator override is authoritative: seed the resolver cache so the
@@ -354,6 +362,21 @@ function parseTokens(
     stock.stockMints,
   ).filter((token) => !seen.has(token.mint));
   return [...base, ...stocks];
+}
+
+/**
+ * `PRAXIS_SCHEDULE_HOUR_UTC` — the hour the scheduled-buy cron fires. Must
+ * agree with `vercel.json`; schedules anchor their fire time to it so a
+ * "every Monday" buy is actually due when Monday's tick runs.
+ */
+function parseScheduleHour(raw: string | undefined): number {
+  const DEFAULT_HOUR = 9;
+  if (!raw?.trim()) return DEFAULT_HOUR;
+  const hour = Number(raw);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+    throw new PraxisConfigError("PRAXIS_SCHEDULE_HOUR_UTC must be an integer from 0 to 23");
+  }
+  return hour;
 }
 
 /**

@@ -19,13 +19,13 @@ const STEPS: Step[] = [
     numeral: "ii.",
     label: "Verify",
     title: { lead: "Praxis proposes a\nstructured ", accent: "action." },
-    body: "Every action is simulated against live chain state before you see it. If a transaction will fail, slip, or pay fees that don't feel right, Praxis tells you — and explains why. The agent is the interpreter. The safety layer is the executor.",
+    body: "Every action is simulated against live chain state before you see it, and the proposal card shows the fee, the simulation result, and the Aegis verdict side by side. Anything the program cannot enforce — a swap, today — is previewed and blocked rather than quietly signed.",
   },
   {
     numeral: "iii.",
     label: "Sign",
     title: { lead: "You confirm.\nIt ", accent: "executes." },
-    body: "In the live demo, the scoped agent key can only sign Aegis instructions from the policy vault. Owner/admin actions are the production wallet-signed path; the agent never gets unrestricted wallet authority.",
+    body: "The scoped agent key can only sign Aegis instructions against your policy vault, and the program re-checks the whole envelope before any value moves. Owner actions — funding, caps, allow-lists, revoke — are wallet-signed by you. The agent never holds unrestricted authority over anything.",
   },
 ];
 

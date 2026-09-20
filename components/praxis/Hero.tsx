@@ -13,7 +13,7 @@ import { Container } from "@/components/praxis/Container";
 const META_ITEMS = [
   { Icon: IconShieldLock, label: "Caps enforced on-chain" },
   { Icon: IconKey, label: "Revoke in one transaction" },
-  { Icon: IconLock, label: "Can't exceed your limits" },
+  { Icon: IconLock, label: "SOL, SPL and Token-2022" },
 ] as const;
 
 export function Hero() {
@@ -37,11 +37,11 @@ export function Hero() {
 
           <div className="flex flex-wrap gap-3 [animation:fadeUp_0.8s_0.3s_ease_both]">
             <Button as="a" href="/app" variant="primary">
-              Launch demo app
+              Launch app
               <IconArrowRight size={16} />
             </Button>
-            <Button as="a" href="#product">
-              View walkthrough
+            <Button as="a" href="#inside">
+              See it work
               <IconPlayerPlay size={16} />
             </Button>
           </div>

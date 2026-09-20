@@ -1,14 +1,13 @@
 import { PublicKey } from "@solana/web3.js";
 import {
   AEGIS_IDL_JSON,
+  DEFAULT_AEGIS_PROGRAM_ID_BASE58,
   type AegisInstructionName,
   type RejectReason,
   RejectReason as AegisRejectReason,
 } from "@praxis/shared";
 
-export const DEFAULT_AEGIS_PROGRAM_ID = new PublicKey(
-  "3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd",
-);
+export const DEFAULT_AEGIS_PROGRAM_ID = new PublicKey(DEFAULT_AEGIS_PROGRAM_ID_BASE58);
 
 export const SYSTEM_PROGRAM_ID = new PublicKey("11111111111111111111111111111111");
 

@@ -6,10 +6,10 @@ import { Button } from "@/components/praxis/Button";
 import { PraxisLogoMark } from "@/components/praxis/PraxisLogo";
 
 const NAV_LINKS = [
+  { href: "#inside", label: "Inside the app" },
   { href: "#why", label: "Why Praxis" },
   { href: "#how", label: "How it works" },
   { href: "#principles", label: "Principles" },
-  { href: "#vision", label: "Vision" },
 ] as const;
 
 export function Nav() {
@@ -40,7 +40,7 @@ export function Nav() {
         <div className="flex items-center gap-3">
           <PraxisLogoMark size={28} />
           <span className="border-l-[0.5px] border-l-[var(--border)] pl-3 [font-family:var(--font-mono)] text-[10px] tracking-[0.14em] text-[var(--text-tertiary)] uppercase">
-            v0.1 · sol
+            v0.1 · devnet
           </span>
         </div>
         <div className="flex items-center gap-8">

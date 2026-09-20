@@ -9,7 +9,33 @@ type TrustItem = {
   sub: string;
 };
 
+/**
+ * Four facts that can be checked, not four adjectives.
+ *
+ * The previous strip claimed "T1-T6" (the LiteSVM gate has covered T1–T8 since
+ * Token-2022 landed), "Current scope: SOL" (the program has moved SPL and
+ * Token-2022 since f689062), and gave swaps the value "v2", which named no
+ * version of anything.
+ */
 const TRUST_ITEMS: TrustItem[] = [
+  {
+    eyebrow: "Enforcement gate",
+    value: (
+      <>
+        T1<em>–T8</em>
+      </>
+    ),
+    sub: "LiteSVM cases: caps, rollover, signer, revoke, allow-list, SPL, Token-2022",
+  },
+  {
+    eyebrow: "Assets in scope",
+    value: (
+      <>
+        SOL <em>+ SPL</em>
+      </>
+    ),
+    sub: "Native transfers and one configured token envelope, both program-checked",
+  },
   {
     eyebrow: "Scoped signer",
     value: (
@@ -17,30 +43,16 @@ const TRUST_ITEMS: TrustItem[] = [
         <em>Revocable</em>
       </>
     ),
-    sub: "Agent authority dies on-chain when revoked",
+    sub: "Agent authority is zeroed on-chain the moment you revoke",
   },
   {
-    eyebrow: "Simulated",
+    eyebrow: "Swaps",
     value: (
       <>
-        T1<em>-T6</em>
+        Not <em>yet</em>
       </>
     ),
-    sub: "LiteSVM enforcement gate covers edge cases",
-  },
-  {
-    eyebrow: "Current scope",
-    value: "SOL",
-    sub: "Native transfers enforced by Aegis",
-  },
-  {
-    eyebrow: "Swap status",
-    value: (
-      <>
-        v<em>2</em>
-      </>
-    ),
-    sub: "Jupiter execution is not implemented yet",
+    sub: "Parsed and previewed, never signed — there is no Jupiter CPI",
   },
 ];
 
@@ -55,7 +67,7 @@ export function TrustStrip() {
               <div className="mb-2 [font-family:var(--font-serif)] text-[32px] leading-none tracking-[-0.02em] [&_em]:text-[var(--accent)] [&_em]:italic">
                 {item.value}
               </div>
-              <div className="text-[13px] text-[var(--text-tertiary)]">
+              <div className="text-[13px] leading-[1.45] text-[var(--text-tertiary)]">
                 {item.sub}
               </div>
             </div>

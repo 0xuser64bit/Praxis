@@ -114,6 +114,52 @@ function build(over: Partial<PraxisServerConfig> = {}, policy = policyFixture())
   return { provider, fake };
 }
 
+describe("concurrent signers (optimistic concurrency)", () => {
+  test("two instances holding the same pending proposal execute it exactly once", async () => {
+    // One wallet, two providers built from the SAME loaded revision — the
+    // shape of two serverless instances serving a duplicated confirm tap.
+    const owner = Keypair.generate();
+    const config = makeConfig({
+      ownerAddress: owner.publicKey,
+      ownerKeypair: owner,
+      policyAddress: findPolicyPda(owner.publicKey, DEFAULT_AEGIS_PROGRAM_ID),
+    });
+    const policy = policyFixture();
+
+    const first = new PraxisServerProvider(config, new FakeAegis(policy) as unknown as AegisClient);
+    const { threadId } = await first.send(null, "send 0.5 sol to maya");
+    const thread = first.getThread(threadId)!;
+    const block = (thread.messages.at(-1) as { blocks: Array<{ type: string; proposalId?: string }> }).blocks.find(
+      (b) => b.type === "proposal",
+    )!;
+    const proposalId = block.proposalId!;
+
+    // Load twice, independently: two instances each deserialize their own copy
+    // of the document. Sharing one loaded object would make them alias the same
+    // proposal and pass this test for the wrong reason.
+    const repository = getStateRepository();
+    const loadedA = await repository.load(owner.publicKey.toBase58());
+    const loadedB = await repository.load(owner.publicKey.toBase58());
+    expect(loadedA?.rev).toBe(loadedB!.rev);
+    expect(loadedA!.state.proposals[proposalId].state).toBe("pending");
+    expect(loadedB!.state.proposals[proposalId].state).toBe("pending");
+
+    const instanceA = new PraxisServerProvider(config, new FakeAegis(policy) as unknown as AegisClient, loadedA);
+    const instanceB = new PraxisServerProvider(config, new FakeAegis(policy) as unknown as AegisClient, loadedB);
+    const aegisA = (instanceA as unknown as { aegis: FakeAegis }).aegis;
+    const aegisB = (instanceB as unknown as { aegis: FakeAegis }).aegis;
+
+    // Both see `pending`; only the one that wins the CAS claim may submit.
+    await instanceA.signProposal(proposalId);
+    await instanceB.signProposal(proposalId);
+
+    const submissions =
+      aegisA.calls.filter((c) => c === "executeAgentTransfer").length +
+      aegisB.calls.filter((c) => c === "executeAgentTransfer").length;
+    expect(submissions).toBe(1);
+  });
+});
+
 describe("send → sign flow", () => {
   test("resolves a contact, previews, and confirms a SOL send", async () => {
     const { provider, fake } = build();

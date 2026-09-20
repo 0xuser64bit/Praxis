@@ -34,13 +34,23 @@ async function postgresPart() {
     const before = await repo.load("localcheck-owner");
     assert("empty load → undefined (no crash on fresh DB)", before === undefined);
     // Save a minimal state document through the real serialization path.
-    await repo.save("localcheck-owner", { threads: [], proposals: {}, activity: [], contacts: [] });
+    const rev = await repo.save("localcheck-owner", { threads: [], proposals: {}, activity: [], contacts: [] }, 0);
     const after = await repo.load("localcheck-owner");
     assert("save → load round-trips", after !== undefined);
     assert(
       "round-tripped shape intact",
-      Array.isArray(after?.threads) && typeof after?.proposals === "object",
+      Array.isArray(after?.state.threads) && typeof after?.state.proposals === "object",
     );
+    assert("revision advances on write", after?.rev === rev, `rev=${after?.rev}`);
+    // A stale writer must lose: this is what stops two instances from both
+    // executing the same proposal.
+    let conflicted = false;
+    try {
+      await repo.save("localcheck-owner", { threads: [], proposals: {}, activity: [], contacts: [] }, 0);
+    } catch {
+      conflicted = true;
+    }
+    assert("stale-revision write is rejected (CAS)", conflicted);
     await sql`DELETE FROM praxis_provider_state WHERE owner_key = ${"localcheck-owner"}`;
     assert("cleanup delete works", (await repo.load("localcheck-owner")) === undefined);
   } finally {

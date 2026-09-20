@@ -25,6 +25,8 @@ export type PraxisErrorCode =
   | "policy_not_found"
   /** Rate limit exceeded. */
   | "rate_limited"
+  /** A concurrent writer changed this wallet's state first (optimistic-concurrency). */
+  | "conflict"
   /** Anything unclassified. */
   | "internal_error";
 
@@ -86,6 +88,21 @@ export class PraxisPolicyNotFoundError extends PraxisNotFoundError {
       "policy_not_found",
     );
     this.name = "PraxisPolicyNotFoundError";
+  }
+}
+
+/**
+ * A compare-and-swap on a wallet's stored state lost to a concurrent writer.
+ *
+ * Internal by design: callers resolve it by reloading the newest state and
+ * re-deciding, never by surfacing it to a user. If one ever escapes to the
+ * HTTP layer it answers 409 rather than a misleading 500.
+ */
+export class PraxisConflictError extends PraxisError {
+  readonly code = "conflict" as const;
+  constructor(message = "Praxis state was modified by a concurrent writer.") {
+    super(message);
+    this.name = "PraxisConflictError";
   }
 }
 

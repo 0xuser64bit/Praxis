@@ -42,9 +42,14 @@ import {
   validatePublicKey,
   type PraxisServerConfig,
 } from "../env";
-import { PraxisConfigError, PraxisInputError, PraxisNotFoundError } from "../errors";
+import {
+  PraxisConflictError,
+  PraxisConfigError,
+  PraxisInputError,
+  PraxisNotFoundError,
+} from "../errors";
 import { formatSol, formatUnits, parseHumanUnits, SOL_DECIMALS } from "../units";
-import { getStateRepository, type StateRepository } from "./stateRepository";
+import { getStateRepository, type LoadedState, type StateRepository } from "./stateRepository";
 import type { StoredProviderState } from "./stateSerialization";
 import {
   advanceCadence,
@@ -73,6 +78,9 @@ interface StoreState {
 }
 
 const THINKING_TTL_MS = 5 * 60 * 1000;
+
+/** Bounded retries when claiming a proposal against a concurrent writer. */
+const CLAIM_ATTEMPTS = 3;
 
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 
@@ -138,14 +146,14 @@ export async function getPraxisServerProvider(walletAddress?: string): Promise<P
     // in production without an explicit acknowledgement.
     assertSharedAgentKeySafe(normalized);
     const config = configForWalletOwner(new PublicKey(normalized));
-    const stored = await repository.load(ownerKeyForConfig(config));
-    return new PraxisServerProvider(config, new AegisClient(config), stored);
+    const loaded = await repository.load(ownerKeyForConfig(config));
+    return new PraxisServerProvider(config, new AegisClient(config), loaded);
   }
 
   if (!singleton) {
     const config = getServerConfig();
-    const stored = await repository.load(ownerKeyForConfig(config));
-    singleton = new PraxisServerProvider(config, new AegisClient(config), stored);
+    const loaded = await repository.load(ownerKeyForConfig(config));
+    singleton = new PraxisServerProvider(config, new AegisClient(config), loaded);
   }
   return singleton;
 }
@@ -162,15 +170,21 @@ export class PraxisServerProvider implements PraxisProvider {
   private readonly repository: StateRepository;
   private readonly listeners = new Set<() => void>();
   private state: StoreState;
+  /** Revision this provider's snapshot was loaded at; advanced by each save. */
+  private rev: number;
+  /** Tail of this provider's serialized write chain (see {@link enqueueWrite}). */
+  private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(
     config = getServerConfig(),
     aegis = new AegisClient(config),
-    initialState?: StoredProviderState,
+    loaded?: LoadedState,
   ) {
     this.config = config;
     this.aegis = aegis;
     this.repository = getStateRepository();
+    this.rev = loaded?.rev ?? 0;
+    const initialState = loaded?.state;
     const savedContacts = initialState?.contacts ?? [];
     // Tombstoned entries stay removed even when they come from the env-seeded
     // config book (which is re-merged on every fresh construction).
@@ -399,15 +413,11 @@ export class PraxisServerProvider implements PraxisProvider {
 
   signProposal = async (proposalId: string): Promise<void> => {
     return withOwnerLock(this.ownerKey, async () => {
-      const proposal = this.state.proposals[proposalId];
-      if (!proposal) throw new PraxisNotFoundError(`unknown proposal ${proposalId}`);
-      if (proposal.state !== "pending") return;
-
-      proposal.state = "signing";
-      // Persist synchronously BEFORE executing on-chain: a concurrent second
-      // POST that loads state after this point sees `signing` (not `pending`)
-      // and returns early instead of double-submitting.
-      await this.commit();
+      // Claim before executing. The claim is compare-and-swapped onto the
+      // stored document, so exactly one writer — across instances, not just
+      // within this process — proceeds to submit the transfer.
+      const proposal = await this.claimProposalForExecution(proposalId);
+      if (!proposal) return;
 
       if (proposal.detail.kind === "swap") {
         proposal.state = "blocked";
@@ -1374,8 +1384,8 @@ export class PraxisServerProvider implements PraxisProvider {
     await this.persist();
   }
 
-  private async persist(): Promise<void> {
-    const state: StoredProviderState = {
+  private snapshot(): StoredProviderState {
+    return {
       threads: this.state.threads,
       proposals: this.state.proposals,
       activity: this.state.activity,
@@ -1383,7 +1393,116 @@ export class PraxisServerProvider implements PraxisProvider {
       schedules: this.state.schedules,
       removedContacts: this.state.removedContacts,
     };
-    await this.repository.save(this.ownerKey, state);
+  }
+
+  /**
+   * Write this provider's document, compare-and-swapping on the revision it
+   * was loaded at.
+   *
+   * On a conflict another *instance* wrote first. For the conversational
+   * document the resolution is to take the newer revision and write our
+   * snapshot over it — the same last-write-wins the blind write always had,
+   * except now it is deliberate, bounded, and logged instead of invisible.
+   * The one place that must NOT resolve this way is claiming a proposal for
+   * execution, which uses {@link casSave} directly and re-reads instead.
+   */
+  private async persist(): Promise<void> {
+    return this.enqueueWrite(async () => {
+      try {
+        this.rev = await this.repository.save(this.ownerKey, this.snapshot(), this.rev);
+      } catch (error) {
+        if (!(error instanceof PraxisConflictError)) throw error;
+        logger.warn("praxis.state_conflict_overwrite", { ownerKey: this.ownerKey, rev: this.rev });
+        const latest = await this.repository.load(this.ownerKey);
+        this.rev = latest?.rev ?? 0;
+        this.rev = await this.repository.save(this.ownerKey, this.snapshot(), this.rev);
+      }
+    });
+  }
+
+  /**
+   * Write at exactly the loaded revision. Propagates {@link PraxisConflictError}
+   * so the caller can reload and re-decide rather than clobbering.
+   */
+  private async casSave(): Promise<void> {
+    return this.enqueueWrite(async () => {
+      this.rev = await this.repository.save(this.ownerKey, this.snapshot(), this.rev);
+    });
+  }
+
+  /**
+   * Serialize this provider's own writes.
+   *
+   * `newThread` persists in the background while its caller (`send`) goes on
+   * to `await commit()`. Both writes start from the same `rev`, so without a
+   * queue the provider compare-and-swaps against itself: one write wins and
+   * the other logs a spurious conflict. Chaining them means each write reads
+   * the revision the previous one produced, and a surfaced conflict then
+   * means what it should — a genuinely concurrent writer elsewhere.
+   */
+  private enqueueWrite(write: () => Promise<void>): Promise<void> {
+    const next = this.writeQueue.then(write, write);
+    // Keep the chain alive after a rejection so one failure can't wedge every
+    // later write; the rejection still propagates to this call's caller.
+    this.writeQueue = next.catch(() => undefined);
+    return next;
+  }
+
+  /**
+   * Take exclusive ownership of a pending proposal before anything is signed.
+   *
+   * `signProposal` previously flipped the proposal to `signing`, saved, and
+   * executed — which stops a duplicate POST on the *same* instance but not on
+   * another one, because that instance had already read the proposal as
+   * `pending` and would submit its own `agent_transfer`. Aegis caps bound the
+   * damage, but the user still sees two transfers leave the vault.
+   *
+   * The claim is a compare-and-swap: only the writer whose revision is still
+   * current wins. A loser reloads, finds the proposal no longer `pending`, and
+   * returns without submitting. Returns the claimed proposal, or `undefined`
+   * when someone else claimed it (or it is no longer actionable).
+   */
+  private async claimProposalForExecution(proposalId: string): Promise<ActionProposal | undefined> {
+    for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt++) {
+      const proposal = this.state.proposals[proposalId];
+      if (!proposal) {
+        if (attempt === 0) throw new PraxisNotFoundError(`unknown proposal ${proposalId}`);
+        return undefined; // Vanished under us (compaction) — nothing to sign.
+      }
+      if (proposal.state !== "pending") return undefined;
+
+      proposal.state = "signing";
+      try {
+        this.notify();
+        await this.casSave();
+        return proposal;
+      } catch (error) {
+        if (!(error instanceof PraxisConflictError)) throw error;
+        // Someone else wrote first. Adopt their state and re-read the proposal:
+        // if they claimed it we stop; if they changed something unrelated we
+        // retry the claim against the fresh revision.
+        logger.warn("praxis.proposal_claim_conflict", { proposalId, attempt });
+        await this.reload();
+      }
+    }
+    logger.warn("praxis.proposal_claim_exhausted", { proposalId });
+    return undefined;
+  }
+
+  /** Re-read this wallet's document, replacing the in-memory snapshot. */
+  private async reload(): Promise<void> {
+    const latest = await this.repository.load(this.ownerKey);
+    this.rev = latest?.rev ?? 0;
+    const next = latest?.state;
+    this.state = {
+      ...this.state,
+      threads: next?.threads.length ? next.threads : this.state.threads,
+      proposals: next?.proposals ?? {},
+      activity: next?.activity ?? [],
+      contacts: next?.contacts ?? [],
+      schedules: next?.schedules ?? [],
+      removedContacts: next?.removedContacts ?? [],
+    };
   }
 }
 

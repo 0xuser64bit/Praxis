@@ -4,32 +4,55 @@ import { PostgresStateRepository } from "./postgresStateRepository";
 import { loadProviderState, saveProviderState } from "./stateStore";
 import { compactState, type StoredProviderState } from "./stateSerialization";
 
+/** A loaded state document plus the revision it was read at. */
+export interface LoadedState {
+  state: StoredProviderState;
+  /** Monotonic revision of the stored document. `0` means "no document yet". */
+  rev: number;
+}
+
 /**
  * The single seam for durable provider state. The UI/agent layer never touches
  * a storage backend directly — it goes through {@link PraxisServerProvider},
  * which loads and persists through this repository. Swapping filesystem state
  * for a managed database is an env switch (`PRAXIS_STATE_BACKEND`), not a
  * code change in the provider.
+ *
+ * Writes are compare-and-swap. A wallet's state is one document that every
+ * request rewrites whole, so a blind write silently loses whatever another
+ * instance committed in between. `save` takes the revision the caller read and
+ * throws {@link PraxisConflictError} if the stored document has moved on — the
+ * caller reloads and re-decides. This is what makes "claim a proposal before
+ * executing it" a real mutual exclusion across serverless instances, not just
+ * within one process.
  */
 export interface StateRepository {
   /** Load a wallet's persisted state, or undefined if none exists yet. */
-  load(ownerKey: string): Promise<StoredProviderState | undefined>;
-  /** Persist a wallet's state (compacted by the repository before writing). */
-  save(ownerKey: string, state: StoredProviderState): Promise<void>;
+  load(ownerKey: string): Promise<LoadedState | undefined>;
+  /**
+   * Persist a wallet's state (compacted by the repository before writing) if
+   * and only if the stored revision is still `expectedRev`. Returns the new
+   * revision. Throws {@link PraxisConflictError} when it is not.
+   */
+  save(ownerKey: string, state: StoredProviderState, expectedRev: number): Promise<number>;
 }
 
 /**
  * Filesystem-backed repository. Durable across restarts on a single host, but
  * NOT across serverless instances — use the Postgres backend for production.
+ *
+ * The CAS here is best-effort: concurrent writers on one host are already
+ * serialized by the provider's per-owner mutex, and a single host has no
+ * second writer to race with.
  */
 export class FsStateRepository implements StateRepository {
-  async load(ownerKey: string): Promise<StoredProviderState | undefined> {
+  async load(ownerKey: string): Promise<LoadedState | undefined> {
     return loadProviderState(ownerKey);
   }
 
-  async save(ownerKey: string, state: StoredProviderState): Promise<void> {
+  async save(ownerKey: string, state: StoredProviderState, expectedRev: number): Promise<number> {
     // stateStore compacts on write; keep behavior identical for the FS path.
-    saveProviderState(ownerKey, state);
+    return saveProviderState(ownerKey, state, expectedRev);
   }
 }
 

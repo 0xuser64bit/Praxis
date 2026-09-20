@@ -68,12 +68,12 @@ describe("stateStore persistence", () => {
       proposals: { "p-keep": referenced },
       activity: [activity({ amount: 123_456_789n })],
       contacts: [],
-    });
+    }, 0);
 
     const loaded = loadProviderState(owner);
-    expect(loaded?.activity[0].amount).toBe(123_456_789n);
-    expect(typeof loaded?.activity[0].amount).toBe("bigint");
-    const detail = loaded?.proposals["p-keep"].detail;
+    expect(loaded?.state.activity[0].amount).toBe(123_456_789n);
+    expect(typeof loaded?.state.activity[0].amount).toBe("bigint");
+    const detail = loaded?.state.proposals["p-keep"].detail;
     expect(detail?.kind).toBe("transfer");
     if (detail?.kind === "transfer") expect(detail.amount).toBe(1n);
   });
@@ -88,10 +88,10 @@ describe("stateStore persistence", () => {
       },
       activity: [],
       contacts: [],
-    });
+    }, 0);
     const loaded = loadProviderState(owner);
-    expect(loaded?.proposals["p-keep"]).toBeDefined();
-    expect(loaded?.proposals["p-orphan"]).toBeUndefined();
+    expect(loaded?.state.proposals["p-keep"]).toBeDefined();
+    expect(loaded?.state.proposals["p-orphan"]).toBeUndefined();
   });
 
   test("retains actionable (pending/signing) orphans so sign never 404s", () => {
@@ -104,9 +104,9 @@ describe("stateStore persistence", () => {
       },
       activity: [],
       contacts: [],
-    });
+    }, 0);
     const loaded = loadProviderState(owner);
-    expect(loaded?.proposals["p-actionable"]).toBeDefined();
+    expect(loaded?.state.proposals["p-actionable"]).toBeDefined();
   });
 
   test("caps threads at 50 newest and activity at 250 newest", () => {
@@ -118,13 +118,13 @@ describe("stateStore persistence", () => {
       updatedAt: i,
     }));
     const acts = Array.from({ length: 400 }, (_, i) => activity({ id: `a-${i}`, ts: i }));
-    saveProviderState(owner, { threads, proposals: {}, activity: acts, contacts: [] });
+    saveProviderState(owner, { threads, proposals: {}, activity: acts, contacts: [] }, 0);
 
     const loaded = loadProviderState(owner);
-    expect(loaded?.threads).toHaveLength(50);
-    expect(loaded?.threads[0].updatedAt).toBe(59); // newest first
-    expect(loaded?.activity).toHaveLength(250);
-    expect(loaded?.activity[0].ts).toBe(399);
+    expect(loaded?.state.threads).toHaveLength(50);
+    expect(loaded?.state.threads[0].updatedAt).toBe(59); // newest first
+    expect(loaded?.state.activity).toHaveLength(250);
+    expect(loaded?.state.activity[0].ts).toBe(399);
   });
 
   test("round-trips DCA schedules alongside threads", () => {
@@ -146,11 +146,11 @@ describe("stateStore persistence", () => {
         createdAt: 1_000,
         threadId: "t-p-keep",
       }],
-    });
+    }, 0);
     const loaded = loadProviderState(owner);
-    expect(loaded?.schedules).toHaveLength(1);
-    expect(loaded!.schedules![0].amount).toBe(50_000_000n);
-    expect(loaded!.schedules![0].cadence).toEqual({ type: "weekly", weekday: 1 });
+    expect(loaded?.state.schedules).toHaveLength(1);
+    expect(loaded!.state.schedules![0].amount).toBe(50_000_000n);
+    expect(loaded!.state.schedules![0].cadence).toEqual({ type: "weekly", weekday: 1 });
   });
 
   test("returns undefined for an unknown owner", () => {
@@ -159,7 +159,7 @@ describe("stateStore persistence", () => {
 
   test("ignores a file with a mismatched version", () => {
     const owner = randomAddress();
-    saveProviderState(owner, { threads: [], proposals: {}, activity: [], contacts: [] });
+    saveProviderState(owner, { threads: [], proposals: {}, activity: [], contacts: [] }, 0);
     const file = join(dir, `${owner}.json`);
     writeFileSync(file, JSON.stringify({ version: 99, ownerKey: owner, state: {} }));
     expect(loadProviderState(owner)).toBeUndefined();
@@ -175,8 +175,8 @@ describe("stateStore persistence", () => {
   test("policy fixture stays out of persisted state (policy is chain-sourced)", () => {
     // sanity: saveProviderState only persists threads/proposals/activity.
     const owner = randomAddress();
-    saveProviderState(owner, { threads: [], proposals: {}, activity: [], contacts: [] });
-    const loaded = loadProviderState(owner) as unknown as Record<string, unknown>;
+    saveProviderState(owner, { threads: [], proposals: {}, activity: [], contacts: [] }, 0);
+    const loaded = loadProviderState(owner)?.state as unknown as Record<string, unknown>;
     expect(loaded.policy).toBeUndefined();
     expect(policyFixture().address).toBeDefined();
   });

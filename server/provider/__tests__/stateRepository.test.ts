@@ -9,6 +9,7 @@ import { FsStateRepository, getStateRepository, resetStateRepositoryForTests } f
 import { PostgresStateRepository, type SqlExecutor } from "../postgresStateRepository";
 import { compactState, STORE_VERSION, type StoredProviderState } from "../stateSerialization";
 import { randomAddress } from "../../testing/fixtures";
+import { PraxisConflictError } from "../../errors";
 
 function activity(over: Partial<ActivityEntry> = {}): ActivityEntry {
   return {
@@ -32,24 +33,39 @@ const emptyState = (over: Partial<StoredProviderState> = {}): StoredProviderStat
   ...over,
 });
 
-/** In-memory stand-in for `neon(url)` backed by a Map. */
+/**
+ * In-memory stand-in for `neon(url)` backed by a Map, faithful to the parts of
+ * the schema the repository depends on — including the conditional upsert, so
+ * compare-and-swap semantics are actually exercised rather than assumed.
+ */
 function fakeSql() {
-  const store = new Map<string, { version: number; state: unknown }>();
+  const store = new Map<string, { version: number; state: unknown; rev: number }>();
   const ddl: string[] = [];
   const sql: SqlExecutor = async (strings, ...params) => {
     const text = strings.join("?").replace(/\s+/g, " ").trim();
-    if (/CREATE TABLE/i.test(text)) {
+    if (/CREATE TABLE|ALTER TABLE/i.test(text)) {
       ddl.push(text);
       return [];
     }
     if (/^SELECT/i.test(text)) {
       const row = store.get(params[0] as string);
-      return row ? [{ state: row.state, version: row.version }] : [];
+      return row ? [{ state: row.state, version: row.version, rev: row.rev }] : [];
     }
     if (/^INSERT/i.test(text)) {
-      const [ownerKey, version, document] = params as [string, number, string];
-      store.set(ownerKey, { version, state: JSON.parse(document) });
-      return [];
+      const [ownerKey, version, document, nextRev, expectedRev] = params as [
+        string,
+        number,
+        string,
+        number,
+        number,
+      ];
+      const existing = store.get(ownerKey);
+      // INSERT … ON CONFLICT DO UPDATE … WHERE rev = expectedRev: a new row
+      // only when absent, an update only when the revision still matches.
+      if (existing && existing.rev !== expectedRev) return [];
+      if (!existing && expectedRev !== 0) return [];
+      store.set(ownerKey, { version, state: JSON.parse(document), rev: nextRev });
+      return [{ rev: nextRev }];
     }
     return [];
   };
@@ -72,13 +88,22 @@ describe("FsStateRepository", () => {
   test("round-trips state through the async interface", async () => {
     const repo = new FsStateRepository();
     const owner = randomAddress();
-    await repo.save(owner, emptyState({ activity: [activity({ amount: 7n })] }));
+    const rev = await repo.save(owner, emptyState({ activity: [activity({ amount: 7n })] }), 0);
     const loaded = await repo.load(owner);
-    expect(loaded?.activity[0].amount).toBe(7n);
+    expect(loaded?.state.activity[0].amount).toBe(7n);
+    expect(loaded?.rev).toBe(rev);
   });
 
   test("returns undefined for an unknown owner", async () => {
     expect(await new FsStateRepository().load(randomAddress())).toBeUndefined();
+  });
+
+  test("rejects a write made against a stale revision", async () => {
+    const repo = new FsStateRepository();
+    const owner = randomAddress();
+    await repo.save(owner, emptyState(), 0);
+    // A second writer still holding rev 0 must not clobber rev 1.
+    await expect(repo.save(owner, emptyState(), 0)).rejects.toThrow(PraxisConflictError);
   });
 });
 
@@ -87,17 +112,18 @@ describe("PostgresStateRepository", () => {
     const { sql, ddl } = fakeSql();
     const repo = new PostgresStateRepository(sql, compactState);
     const owner = randomAddress();
-    await repo.save(owner, emptyState());
+    await repo.save(owner, emptyState(), 0);
     await repo.load(owner);
-    await repo.save(owner, emptyState());
-    expect(ddl).toHaveLength(1);
+    await repo.save(owner, emptyState(), 1);
+    // CREATE TABLE + the additive ALTER, run once for the process, not per call.
+    expect(ddl).toHaveLength(2);
   });
 
   test("round-trips state and preserves bigint money as integer strings", async () => {
     const { sql, store } = fakeSql();
     const repo = new PostgresStateRepository(sql, compactState);
     const owner = randomAddress();
-    await repo.save(owner, emptyState({ activity: [activity({ amount: 123_456_789n })] }));
+    await repo.save(owner, emptyState({ activity: [activity({ amount: 123_456_789n })] }), 0);
 
     // Stored JSONB tags the bigint — never a float.
     const stored = JSON.stringify(store.get(owner)?.state);
@@ -105,8 +131,8 @@ describe("PostgresStateRepository", () => {
     expect(stored).toContain("123456789");
 
     const loaded = await repo.load(owner);
-    expect(loaded?.activity[0].amount).toBe(123_456_789n);
-    expect(typeof loaded?.activity[0].amount).toBe("bigint");
+    expect(loaded?.state.activity[0].amount).toBe(123_456_789n);
+    expect(typeof loaded?.state.activity[0].amount).toBe("bigint");
   });
 
   test("compacts to the newest 50 threads before persisting", async () => {
@@ -119,17 +145,17 @@ describe("PostgresStateRepository", () => {
       messages: [],
       updatedAt: i,
     }));
-    await repo.save(owner, emptyState({ threads }));
+    await repo.save(owner, emptyState({ threads }), 0);
     const loaded = await repo.load(owner);
-    expect(loaded?.threads).toHaveLength(50);
-    expect(loaded?.threads[0].updatedAt).toBe(59);
+    expect(loaded?.state.threads).toHaveLength(50);
+    expect(loaded?.state.threads[0].updatedAt).toBe(59);
   });
 
   test("ignores a row written under a different store version", async () => {
     const { sql, store } = fakeSql();
     const repo = new PostgresStateRepository(sql, compactState);
     const owner = randomAddress();
-    store.set(owner, { version: STORE_VERSION + 1, state: { threads: [], proposals: {}, activity: [] } });
+    store.set(owner, { version: STORE_VERSION + 1, state: { threads: [], proposals: {}, activity: [] }, rev: 1 });
     expect(await repo.load(owner)).toBeUndefined();
   });
 
@@ -148,6 +174,22 @@ describe("PostgresStateRepository", () => {
     await expect(repo.load("x")).rejects.toThrow(/transient/);
     await expect(repo.load("x")).resolves.toBeUndefined();
     expect(attempts).toBe(2);
+  });
+
+  test("refuses a write whose revision another writer already advanced", async () => {
+    const { sql } = fakeSql();
+    const repo = new PostgresStateRepository(sql, compactState);
+    const owner = randomAddress();
+
+    // Both readers see rev 0 (a fresh wallet on two instances).
+    const first = await repo.save(owner, emptyState(), 0);
+    expect(first).toBe(1);
+    await expect(repo.save(owner, emptyState(), 0)).rejects.toThrow(PraxisConflictError);
+
+    // The loser reloads and succeeds at the current revision.
+    const loaded = await repo.load(owner);
+    expect(loaded?.rev).toBe(1);
+    expect(await repo.save(owner, emptyState(), loaded!.rev)).toBe(2);
   });
 });
 

@@ -47,13 +47,27 @@ use managed Postgres storage.
 The provider is reconstructed per request from the repository (no cross-request
 in-memory cache), so concurrent `send` / `signProposal` / `cancelProposal`
 calls for the same wallet are serialized by a per-wallet async mutex
-(single-instance). `signProposal` persists the `signing` state synchronously
-before executing on-chain, so a duplicate POST sees a non-`pending` proposal
-and returns early instead of double-submitting. Cross-instance (multi-writer)
-races are not resolved by the mutex — production should keep single-writer
-affinity per wallet or add a CAS-gated save. Wallet challenge nonces are
-single-use per instance (in-memory); multi-instance replay resistance needs a
-shared nonce store (Redis) — tracked as a production gap below.
+(single-instance).
+
+Across instances the mutex is useless, so durable state uses **optimistic
+concurrency**: the stored document carries a monotonic `rev`, and every write
+compare-and-swaps against the revision it was read at. A wallet's own writes
+are chained inside the provider, so a surfaced conflict always means a genuinely
+concurrent writer elsewhere.
+
+`signProposal` **claims** the proposal before it signs anything: it flips
+`pending → signing` and CAS-writes at the loaded revision. Only one writer can
+win that swap; the loser reloads, sees a non-`pending` proposal, and returns
+without submitting. That makes execution exactly-once across instances, not
+just within one process — previously two instances could each read the same
+`pending` proposal and both submit an `agent_transfer` (bounded by the Aegis
+caps, but two real transfers).
+
+For the conversational document (threads, activity, contacts) a conflict
+resolves as a deliberate, logged last-write-wins: reload the newer revision and
+rewrite. Wallet challenge nonces are single-use per instance (in-memory);
+multi-instance replay resistance needs a shared nonce store (Redis) — tracked
+as a production gap below.
 
 ## Core Data Flow
 
@@ -144,8 +158,6 @@ They are not the source of truth for value movement.
   `PRAXIS_RATE_LIMITER=redis` plus platform/WAF controls.
 - Wallet challenge nonces are single-use per instance only; multi-instance
   deployments should move nonce consumption to Redis (`SET NX EX`).
-- Per-wallet mutation serialization is per instance; multi-writer Postgres
-  deployments should add optimistic-concurrency (`updated_at` CAS + retry).
 - The remote signer service has no rate limit; a leaked `SIGNER_TOKEN` allows
   unbounded signing (mitigated by the single-transfer policy gate).
 - No durable rejected-transaction indexer for failures that happen outside the

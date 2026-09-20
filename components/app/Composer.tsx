@@ -87,9 +87,15 @@ export function Composer({
         </button>
       </div>
 
-      <div className="mt-2.5 flex items-center justify-between [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
-        <span>↵ to send · every action is policy-checked before you sign</span>
-        <span>structured intent</span>
+      {/* The two labels collide below ~420px, where the left one wraps under
+          the right one. Drop the decorative label rather than let them
+          overlap. */}
+      <div className="mt-2.5 flex items-center justify-between gap-3 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
+        <span className="min-w-0">
+          ↵ to send · <span className="max-[420px]:hidden">every action is policy-checked before you sign</span>
+          <span className="hidden max-[420px]:inline">policy-checked before you sign</span>
+        </span>
+        <span className="shrink-0 max-[520px]:hidden">structured intent</span>
       </div>
     </div>
   );

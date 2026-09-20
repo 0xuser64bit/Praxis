@@ -221,3 +221,40 @@ describe("deterministic parser — stock intents (C04)", () => {
     });
   });
 });
+
+describe("recurring-buy phrasing order", () => {
+  /**
+   * The recipient reads naturally on either side of the cadence. Only one
+   * order used to parse, so half the phrasings fell through to a clarify and
+   * the feature looked broken.
+   */
+  const shapes = [
+    "buy 10 openai every monday for maya",
+    "buy 10 openai for maya every monday",
+  ];
+
+  for (const line of shapes) {
+    test(`"${line}" schedules for maya every Monday`, () => {
+      const parsed = parseIntentLocallyForDemo(line);
+      expect(parsed.outcome).toBe("actions");
+      if (parsed.outcome !== "actions") return;
+      const action = parsed.actions[0];
+      expect(action.kind).toBe("schedule_dca");
+      if (action.kind !== "schedule_dca") return;
+      expect(action.asset).toBe("OPENAI");
+      expect(action.amountHuman).toBe("10");
+      expect(action.recipient).toBe("maya");
+      expect(action.cadence).toEqual({ type: "weekly", weekday: 1 });
+    });
+  }
+
+  test("no recipient still schedules", () => {
+    const parsed = parseIntentLocallyForDemo("buy $50 spacex every monday");
+    expect(parsed.outcome).toBe("actions");
+    if (parsed.outcome !== "actions") return;
+    const action = parsed.actions[0];
+    expect(action.kind).toBe("schedule_dca");
+    if (action.kind !== "schedule_dca") return;
+    expect(action.recipient).toBeUndefined();
+  });
+});

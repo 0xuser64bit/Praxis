@@ -366,6 +366,20 @@ export class AegisClient {
     const now = await this.chainTime();
     const recipientAddress = recipient.toBase58();
     const mirrored = checkTokenTransferPolicy(policy, token, amount, recipientAddress, now);
+
+    // A missing token account surfaces from the program as "account is not a
+    // valid SPL token account for the configured mint" — technically true and
+    // completely unactionable. Name which account is missing and what fixes
+    // it, before spending a simulation round-trip on it.
+    const missing = await this.missingTokenAccounts(recipient, token);
+    if (missing) {
+      return {
+        check: { ...mirrored, allowed: false, reason: missing },
+        simulation: "Blocked before simulation: a token account is missing.",
+        networkFee: 0n,
+        logs: [],
+      };
+    }
     const ix = await this.agentTransferSplIx(signer.publicKey, recipient, token, amount);
     const { tx } = await this.buildTransaction([ix], signer.publicKey);
 
@@ -1004,6 +1018,40 @@ export class AegisClient {
       recipient,
       amount,
     );
+  }
+
+  /**
+   * Which side of an SPL transfer has no token account yet, as a sentence the
+   * owner can act on. Returns undefined when both exist.
+   */
+  private async missingTokenAccounts(
+    recipient: PublicKey,
+    token: TokenInfo,
+  ): Promise<string | undefined> {
+    const policy = requirePolicyAddress(this.config);
+    const mint = new PublicKey(token.mint);
+    const vault = findVaultPda(policy, this.config.programId);
+    const { programId } = await this.tokenProgramFor(mint);
+    const vaultAta = findAssociatedTokenAddress(vault, mint, programId);
+    const recipientAta = findAssociatedTokenAddress(recipient, mint, programId);
+
+    const [vaultInfo, recipientInfo] = await this.conn.getMultipleAccountsInfo(
+      [vaultAta, recipientAta],
+      this.config.commitment,
+    );
+    if (!vaultInfo) {
+      return (
+        `Your vault has no ${token.symbol} account yet, so there is nothing to send. ` +
+        "Open Policy → Token transfers and choose the token, or run prepare accounts."
+      );
+    }
+    if (!recipientInfo) {
+      return (
+        `The recipient has no ${token.symbol} account yet, so the transfer would fail. ` +
+        "Open Policy → Token transfers → prepare accounts to create it (you pay the rent)."
+      );
+    }
+    return undefined;
   }
 
   private async agentTransferSplIx(

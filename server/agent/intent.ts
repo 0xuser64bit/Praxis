@@ -481,19 +481,44 @@ function matchPolicyChange(text: string): Extract<ParsedAction, { kind: "policy_
 
 /** Stocklana C06: mechanical recurring buy ("buy $50 openai every monday", "dca 10 openai weekly"). */
 function matchDca(text: string): Extract<ParsedAction, { kind: "schedule_dca" }> | null {
-  const m = text.match(
-    /^(?:buy|dca)\s+\$?\s*([0-9]+(?:\.[0-9]+)?)\s*([a-z0-9$]+)?\s*(?:for\s+(.+?))?\s+(every\s+[a-z]+|daily|weekly|monthly)\s*$/i,
-  );
-  if (!m) return null;
-  const cadence = parseCadence(m[4].trim());
-  if (!cadence) return null;
-  return {
-    kind: "schedule_dca",
-    asset: normalizeStockAlias(m[2] ?? "sol"),
-    amountHuman: m[1],
-    recipient: m[3]?.trim().replace(/[.?!]+$/, "") || undefined,
-    cadence,
-  };
+  const CADENCE = "every\\s+[a-z]+|daily|weekly|monthly";
+  // People put the recipient on either side of the cadence, and both read
+  // naturally: "buy 10 openai for maya every monday" and "buy 10 openai every
+  // monday for maya". Only the first used to parse; the second fell through to
+  // a clarify, which makes the feature look broken for half the phrasings.
+  const shapes: Array<{ re: RegExp; recipient: 3 | 4; cadence: 3 | 4 }> = [
+    {
+      re: new RegExp(
+        `^(?:buy|dca)\\s+\\$?\\s*([0-9]+(?:\\.[0-9]+)?)\\s*([a-z0-9$]+)?\\s*(?:for\\s+(.+?))?\\s+(${CADENCE})\\s*$`,
+        "i",
+      ),
+      recipient: 3,
+      cadence: 4,
+    },
+    {
+      re: new RegExp(
+        `^(?:buy|dca)\\s+\\$?\\s*([0-9]+(?:\\.[0-9]+)?)\\s*([a-z0-9$]+)?\\s+(${CADENCE})\\s+for\\s+(.+?)\\s*$`,
+        "i",
+      ),
+      recipient: 4,
+      cadence: 3,
+    },
+  ];
+
+  for (const shape of shapes) {
+    const m = text.match(shape.re);
+    if (!m) continue;
+    const cadence = parseCadence(m[shape.cadence].trim());
+    if (!cadence) continue;
+    return {
+      kind: "schedule_dca",
+      asset: normalizeStockAlias(m[2] ?? "sol"),
+      amountHuman: m[1],
+      recipient: m[shape.recipient]?.trim().replace(/[.?!]+$/, "") || undefined,
+      cadence,
+    };
+  }
+  return null;
 }
 
 /**

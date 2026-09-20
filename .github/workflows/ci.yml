@@ -1,0 +1,51 @@
+# Praxis CI: the same gate `bun run check` runs locally.
+#
+# No cluster, no LLM key, no database — every step here is offline. The Anchor
+# enforcement suite (`bun run aegis:test`) needs a Rust/Solana toolchain and is
+# run deliberately, not on every push.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Deterministic, offline build: no mock fallback, no network intent parse.
+      NEXT_PUBLIC_PRAXIS_PROVIDER: api
+      PRAXIS_LOCAL_INTENT: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install SDK dependencies
+        run: cd sdk && bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck (app + SDK)
+        run: bun run typecheck
+
+      - name: Test
+        run: bun run test
+
+      - name: Build
+        run: bun run build
+
+      - name: Stocks honesty gate
+        run: bun run praxis:stocksgate

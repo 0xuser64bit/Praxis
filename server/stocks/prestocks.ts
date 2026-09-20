@@ -1,6 +1,6 @@
 import type { ResearchMetric } from "@praxis/shared";
 
-import { fetchWithTimeout } from "../api/timeout";
+import { fetchWithTimeout, type FetchLike } from "../api/timeout";
 
 /**
  * PreStocks quote fetcher (Stocklana C03).
@@ -35,7 +35,7 @@ export function __resetPrestocksCacheForTests() {
 export async function fetchPrestocksEntries(
   apiUrl: string,
   timeoutMs: number,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: FetchLike = fetch,
 ): Promise<PrestocksEntry[]> {
   const now = Date.now();
   if (cache && cache.url === apiUrl && now - cache.at < CACHE_TTL_MS) return cache.entries;

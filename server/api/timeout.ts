@@ -15,11 +15,22 @@ export async function withTimeout<T>(
   }
 }
 
+/**
+ * The structural slice of `fetch` this codebase actually calls. Narrower than
+ * `typeof fetch`, which in a DOM lib also carries non-standard members (e.g.
+ * `preconnect`) that a test double or a polyfill has no reason to implement.
+ * Injecting a plain async function is then type-safe without a cast.
+ */
+export type FetchLike = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>;
+
 export async function fetchWithTimeout(
-  input: Parameters<typeof fetch>[0],
-  init: Parameters<typeof fetch>[1] = {},
+  input: string | URL | Request,
+  init: RequestInit = {},
   opts: { ms: number; label: string },
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: FetchLike = fetch,
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.ms);

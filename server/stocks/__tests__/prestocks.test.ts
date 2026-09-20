@@ -102,7 +102,7 @@ describe("stock presentation helpers", () => {
 describe("fetchPrestocksEntries", () => {
   test("network failure degrades to [] (never throws)", async () => {
     __resetPrestocksCacheForTests();
-    const boom: typeof fetch = async () => {
+    const boom = async () => {
       throw new Error("network down");
     };
     await expect(fetchPrestocksEntries("https://stocks.invalid/api", 100, boom)).resolves.toEqual([]);
@@ -111,7 +111,7 @@ describe("fetchPrestocksEntries", () => {
   test("non-OK status degrades to []", async () => {
     __resetPrestocksCacheForTests();
     const fiveHundred = async () => new Response("err", { status: 500 });
-    await expect(fetchPrestocksEntries("https://stocks.invalid/api", 100, fiveHundred as typeof fetch)).resolves.toEqual(
+    await expect(fetchPrestocksEntries("https://stocks.invalid/api", 100, fiveHundred)).resolves.toEqual(
       [],
     );
   });
@@ -126,8 +126,8 @@ describe("fetchPrestocksEntries", () => {
         headers: { "content-type": "application/json" },
       });
     };
-    const first = await fetchPrestocksEntries("https://stocks.test/api", 1000, ok as typeof fetch);
-    const second = await fetchPrestocksEntries("https://stocks.test/api", 1000, ok as typeof fetch);
+    const first = await fetchPrestocksEntries("https://stocks.test/api", 1000, ok);
+    const second = await fetchPrestocksEntries("https://stocks.test/api", 1000, ok);
     expect(first).toHaveLength(1);
     expect(second).toHaveLength(1);
     expect(calls).toBe(1);

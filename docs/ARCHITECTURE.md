@@ -116,6 +116,16 @@ The SPL path also enforces:
 2. source and destination token accounts use the configured mint
 3. source token account is owned by the vault PDA
 
+`agent_transfer_spl` is **classic SPL Token only**: it hand-parses 165-byte
+token accounts and constructs the CPI raw against `TokenkegQ…`. A Token-2022
+mint is unreachable by it — the associated-token address is itself derived
+from the token program id, so even the vault's account would be at the wrong
+address. The PreStocks pre-IPO mints are Token-2022, which is why stock buys
+are preview-only; the provider checks the mint's owning program on the
+transfer cluster and refuses up front instead of failing deep in simulation.
+`PRAXIS_ALLOW_UNVERIFIED_MINTS=1` skips that check for offline tests and
+demos — never set it in production.
+
 Owner instructions are intentionally unconstrained by agent caps. The owner can
 fund, withdraw, update policy, configure token envelope, revoke, and rotate.
 

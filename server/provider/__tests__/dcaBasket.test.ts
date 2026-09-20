@@ -16,15 +16,23 @@ import { policyFixture } from "../../testing/fixtures";
 
 let prevDir: string | undefined;
 let prevIntent: string | undefined;
+let prevAllowMints: string | undefined;
 
 beforeAll(() => {
   prevDir = process.env.PRAXIS_STATE_DIR;
   prevIntent = process.env.PRAXIS_LOCAL_INTENT;
+  prevAllowMints = process.env.PRAXIS_ALLOW_UNVERIFIED_MINTS;
   process.env.PRAXIS_STATE_DIR = mkdtempSync(join(tmpdir(), "praxis-dca-"));
   process.env.PRAXIS_LOCAL_INTENT = "1";
+  // These tests exercise DCA/basket mechanics, not mint verification: there is
+  // no cluster here, so the movability check would refuse everything. The
+  // refusal itself is covered by its own suite below.
+  process.env.PRAXIS_ALLOW_UNVERIFIED_MINTS = "1";
 });
 
 afterAll(() => {
+  if (prevAllowMints === undefined) delete process.env.PRAXIS_ALLOW_UNVERIFIED_MINTS;
+  else process.env.PRAXIS_ALLOW_UNVERIFIED_MINTS = prevAllowMints;
   if (prevDir === undefined) delete process.env.PRAXIS_STATE_DIR;
   else process.env.PRAXIS_STATE_DIR = prevDir;
   if (prevIntent === undefined) delete process.env.PRAXIS_LOCAL_INTENT;

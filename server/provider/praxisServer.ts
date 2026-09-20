@@ -23,7 +23,7 @@ import {
   type TransferSimulation,
   type UnsignedOwnerTransaction,
 } from "../aegis/client";
-import { JUPITER_PROGRAM_ID } from "../aegis/constants";
+import { JUPITER_PROGRAM_ID, TOKEN_PROGRAM_ID } from "../aegis/constants";
 import { AddressBook } from "../agent/addressBook";
 import { checkSwapPolicy } from "../agent/policy";
 import { explainPolicy } from "../agent/policyExplainer";
@@ -34,7 +34,7 @@ import {
   type ParsedIntent,
 } from "../agent/intent";
 import { researchToken } from "../agent/research";
-import { getResearchConnection } from "../aegis/client";
+import { getConnection, getResearchConnection } from "../aegis/client";
 import {
   assertSharedAgentKeySafe,
   configForWalletOwner,
@@ -61,7 +61,7 @@ import {
   type DcaSchedule,
 } from "../stocks/schedules";
 import { fetchPrestocksEntries, findPrestocksEntry } from "../stocks/prestocks";
-import { resolveMintDecimals } from "../stocks/mintDecimals";
+import { checkMintMovable, resolveMintDecimals } from "../stocks/mintDecimals";
 import { hasProvisionalDecimals } from "../stocks/universe";
 import { errorFields, logger } from "../observability/logger";
 
@@ -938,6 +938,9 @@ export class PraxisServerProvider implements PraxisProvider {
 
     // The asset's own decimals drive amount parsing and display, so they must
     // be the real ones.
+    const refusal = await this.splTransferRefusal(known);
+    if (refusal) return { blocks: [refusal] };
+
     const token = await this.withVerifiedDecimals(known);
     if (!token) return { blocks: [this.unverifiedDecimalsBlock(known.symbol)] };
     const amount = parseHumanUnits(action.amountHuman, token.decimals);
@@ -1070,6 +1073,11 @@ export class PraxisServerProvider implements PraxisProvider {
         }],
       };
     }
+    // A schedule that can never produce a signable proposal is worse than no
+    // schedule: it would fire a blocked card at the user on every cadence.
+    const refusal = await this.splTransferRefusal(known);
+    if (refusal) return { blocks: [refusal] };
+
     // Resolve the real scale before storing an amount: a schedule persists its
     // per-fire amount in base units, so a wrong exponent is baked in forever.
     const token = await this.withVerifiedDecimals(known);
@@ -1184,8 +1192,11 @@ export class PraxisServerProvider implements PraxisProvider {
           }],
         };
       }
-      // All-or-clarify extends to scale: one unconfirmable mint voids the
-      // basket rather than splitting a total across a guessed exponent.
+      // All-or-clarify extends to both movability and scale: one unmovable or
+      // unconfirmable mint voids the basket rather than splitting a total
+      // across proposals that could never be signed.
+      const refusal = await this.splTransferRefusal(known);
+      if (refusal) return { blocks: [refusal] };
       const token = await this.withVerifiedDecimals(known);
       if (!token) return { blocks: [this.unverifiedDecimalsBlock(symbol)] };
       tokens.set(symbol, token);
@@ -1373,7 +1384,9 @@ export class PraxisServerProvider implements PraxisProvider {
    */
   private async withVerifiedDecimals(token: TokenInfo): Promise<TokenInfo | undefined> {
     if (!hasProvisionalDecimals(token.symbol, this.config.stockDecimals)) return token;
-    const decimals = await resolveMintDecimals(getResearchConnection(this.config), token.mint);
+    // The transfer cluster, not the research one: the scale that matters is
+    // the mint that will actually be debited.
+    const decimals = await resolveMintDecimals(getConnection(this.config), token.mint);
     if (decimals === undefined) return undefined;
     return decimals === token.decimals ? token : { ...token, decimals };
   }
@@ -1385,6 +1398,54 @@ export class PraxisServerProvider implements PraxisProvider {
       text:
         `I can't confirm the on-chain decimals for ${symbol} right now, and I won't guess ` +
         "the amount — getting that wrong would move the wrong quantity. Try again shortly.",
+      options: [],
+    };
+  }
+
+  /**
+   * Refuse, up front, any SPL mint Aegis cannot actually move.
+   *
+   * `agent_transfer_spl` requires the classic SPL Token program; a Token-2022
+   * mint (which the PreStocks pre-IPO tokens are) is unreachable by it, and a
+   * mint absent from the transfer cluster obviously so. Both used to surface
+   * as "the vault or recipient token account may not exist yet" after a full
+   * simulation round-trip — a setup-sounding error for a structural fact.
+   *
+   * Returns a block to emit, or undefined when the mint is fine. Native SOL
+   * never routes through the token program and is exempt.
+   */
+  private async splTransferRefusal(token: TokenInfo): Promise<AgentBlock | undefined> {
+    if (token.symbol === "SOL") return undefined;
+    if (process.env.PRAXIS_ALLOW_UNVERIFIED_MINTS === "1") return undefined;
+
+    const verdict = await checkMintMovable(
+      getConnection(this.config),
+      token.mint,
+      TOKEN_PROGRAM_ID.toBase58(),
+    );
+    if (verdict.movable) return undefined;
+
+    if (verdict.reason === "wrong-token-program") {
+      logger.warn("mint.unsupported_token_program", {
+        symbol: token.symbol,
+        mint: token.mint,
+        programId: verdict.programId,
+      });
+      return {
+        type: "prose",
+        text:
+          `${token.symbol} is a Token-2022 mint, and the Aegis program can only move classic ` +
+          "SPL Token mints — so this is something Praxis genuinely cannot do yet, not a limit " +
+          "you can raise. I won't propose a transfer I can't sign. Research and policy previews " +
+          `for ${token.symbol} still work.`,
+      };
+    }
+
+    return {
+      type: "clarify",
+      text:
+        `I can't find ${token.symbol}'s mint on the cluster Praxis transfers on, so I can't ` +
+        "propose this buy. If this is a devnet deployment, the token may only exist on mainnet.",
       options: [],
     };
   }

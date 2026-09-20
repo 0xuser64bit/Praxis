@@ -78,9 +78,22 @@ See [sdk/README.md](sdk/README.md) for the full surface.
 
 ## Stocks (PreStocks)
 
-Text to invest in pre-IPO stocks on Solana, with limits even a hacked AI can't
-break: `buy $40 openai`, `buy $50 spacex every monday`, `buy ai basket $60`.
-Same Aegis envelope — per-stock caps, allow-lists, expiry — enforced on-chain.
+Pre-IPO stock research and policy previews on Solana: `research openai`,
+`buy $40 openai`, `buy $50 spacex every monday`, `buy ai basket $60`. Intent
+parsing, PreStocks quotes, per-stock envelopes, schedules and baskets all work.
+
+**Buys are not executable yet.** The eight PreStocks mints are Token-2022
+(verified on mainnet 2026-09-20), and Aegis&rsquo;s `agent_transfer_spl` requires
+the classic SPL Token program — it hand-parses 165-byte token accounts and
+builds the CPI raw. That is structural, not a cap you can raise: even the
+vault&rsquo;s associated-token address is derived from the token program id. Praxis
+says so up front rather than proposing a transfer it cannot sign.
+
+Token-2022 support is a program change with real security surface (transfer
+hooks run arbitrary code; a transfer-fee extension means the amount received
+is not the amount capped), so it gets the same bar as swaps: enforced inside
+the instruction, or not shipped. The classic-SPL envelope (USDC, JUP, BONK)
+is unaffected and executes today.
 
 ```bash
 PRAXIS_STOCKS_ENABLED=1 bun run dev   # 8 PreStocks mints, switcher in Policy → SPL
@@ -108,6 +121,10 @@ Deliberately **not** built yet:
   There is no Jupiter CPI and no `agent_swap` instruction. A real swap path must
   enforce mint/program allow-lists and value caps *inside the program*, not in a
   quote or backend — that is the bar for adding it.
+- **Token-2022 transfers.** `agent_transfer_spl` is classic-SPL only, so the
+  PreStocks mints are research/preview only (see above). Supporting them means
+  handling transfer hooks and fee extensions *inside* the instruction, since a
+  cap that does not account for a transfer fee is not a cap.
 - Auto-signing DCA fires (the scheduler emits proposals; each fire still needs
   a signature — auto-sign stays out by design).
 - Managed vault-funding UX (token-vault funding is script-driven for now).

@@ -187,19 +187,30 @@ extended before the upgrade:
 
 ```bash
 cd aegis && NO_DNA=1 anchor build && cd ..
-ls -l aegis/target/deploy/aegis.so                       # new size
-solana program show 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd --url devnet   # deployed size
+ls -l aegis/target/deploy/aegis.so                                             # 272,408 bytes
+solana program show 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd --url devnet  # 268,288 deployed
 
-# Extend by (new − deployed) plus headroom, then upgrade in place.
+# The account is too small for the new binary, so extend it first. Skipping
+# this step fails with:
+#   Error: Max length specified not large enough to accommodate desired program
 solana program extend 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd 8192 --url devnet
+
 solana program deploy aegis/target/deploy/aegis.so \
   --program-id 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd --url devnet
 ```
 
 Budget roughly **2 SOL** in the authority wallet: the deploy buffer is about
-twice the program size and is refunded when the upgrade completes. Confirm the
-upgrade landed by running `praxis:stocksbuycheck` (below) — it fails against
-the old binary and passes against the new one.
+the size of the program (~1.9 SOL here) and is refunded when the upgrade
+completes; the 8 KiB extend costs ~0.06 SOL and is not. If `extend` reports
+`Program was extended in this block already`, wait a slot and re-run — it is a
+same-block collision, not a failure.
+
+This sequence was rehearsed end to end on a local validator against the same
+binary: the undersized deploy is rejected, `extend` then `deploy --program-id`
+upgrades in place, and `praxis:stocksbuycheck` passes against the result.
+
+Confirm the upgrade landed with `praxis:stocksbuycheck` (below) — it fails
+against the old binary and passes against the new one.
 
 The instruction's account list changed (`agent_transfer_spl` now takes the
 mint), so an old client against a new program, or the reverse, will fail.

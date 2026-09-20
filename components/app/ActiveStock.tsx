@@ -169,10 +169,14 @@ export function StockSwitcher({ label = "Active stock" }: { label?: string }) {
             aria-checked={selected}
             title={o.mint ? `Show ${o.label} only` : "Show all assets"}
             onClick={() => setActiveMint(o.mint)}
-            className={`rounded-full px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] [transition:all_0.15s] ${
+            // The border is declared on BOTH states and only its colour
+            // changes. When the selected pill dropped its border, it lost 1px
+            // of width and height, so every pill after it hopped sideways on
+            // each click — the chips have to keep their box.
+            className={`rounded-full px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] [border:0.5px_solid] [transition:background-color_0.15s,color_0.15s,border-color_0.15s] ${
               selected
-                ? "bg-[var(--text-primary)] text-[var(--bg)]"
-                : "text-[var(--text-tertiary)] [border:0.5px_solid_var(--border-strong)] hover:text-[var(--text-primary)]"
+                ? "bg-[var(--text-primary)] text-[var(--bg)] [border-color:var(--text-primary)]"
+                : "text-[var(--text-tertiary)] [border-color:var(--border-strong)] hover:text-[var(--text-primary)]"
             }`}
           >
             {o.label}

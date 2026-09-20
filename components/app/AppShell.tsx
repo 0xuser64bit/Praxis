@@ -269,10 +269,13 @@ function PolicyOnboarding({
                 type="button"
                 disabled={busy}
                 onClick={() => setSelected(index)}
-                className={`h-9 rounded-md px-2 text-[12px] font-medium [transition:background_0.15s,color_0.15s,border-color_0.15s] disabled:cursor-not-allowed ${
+                // Border on both states, colour-only change: a selected chip
+                // that drops its border also drops 1px of box and nudges its
+                // own label.
+                className={`h-9 rounded-md px-2 text-[12px] font-medium [border:0.5px_solid] [transition:background_0.15s,color_0.15s,border-color_0.15s] disabled:cursor-not-allowed ${
                   index === selected
-                    ? "bg-[var(--accent)] text-[var(--bg)]"
-                    : "bg-[var(--bg)] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)] hover:[border-color:var(--border-strong)]"
+                    ? "bg-[var(--accent)] text-[var(--bg)] [border-color:var(--accent)]"
+                    : "bg-[var(--bg)] text-[var(--text-secondary)] [border-color:var(--border)] hover:[border-color:var(--border-strong)]"
                 }`}
               >
                 {option.label}

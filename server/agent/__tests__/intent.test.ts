@@ -1,5 +1,7 @@
-import { describe, expect, test } from "bun:test";
-import { parseIntentLocallyForDemo } from "../intent";
+import { afterEach, describe, expect, test } from "bun:test";
+
+import type { PraxisServerConfig } from "../../env";
+import { parseIntentLocallyForDemo, parseIntentWithGemini } from "../intent";
 
 const ADDR = "ALUMw7kSn9xn67suHr2ti21CXBQVNMuRk7uWSM1WuXEt";
 
@@ -256,5 +258,134 @@ describe("recurring-buy phrasing order", () => {
     expect(action.kind).toBe("schedule_dca");
     if (action.kind !== "schedule_dca") return;
     expect(action.recipient).toBeUndefined();
+  });
+});
+
+/**
+ * A one-off buy with no recipient.
+ *
+ * `buy $40 openai` is the phrasing the README and the submission doc lead
+ * with, and it used to clarify — while `buy $50 spacex every monday`, the same
+ * intent on a schedule, went straight through by defaulting the recipient to
+ * the owner's own wallet. Two answers for one sentence.
+ */
+describe("bare buy — no recipient named", () => {
+  test("buy $40 openai settles into the owner's own wallet", () => {
+    const parsed = parseIntentLocallyForDemo("buy $40 openai");
+    expect(parsed.outcome).toBe("actions");
+    if (parsed.outcome !== "actions") return;
+    expect(parsed.actions[0]).toEqual({
+      kind: "transfer",
+      asset: "OPENAI",
+      amountHuman: "40",
+      toSelf: true,
+    });
+  });
+
+  test("a named recipient still wins", () => {
+    const parsed = parseIntentLocallyForDemo("buy $40 openai for maya");
+    expect(parsed.outcome).toBe("actions");
+    if (parsed.outcome !== "actions") return;
+    const action = parsed.actions[0];
+    expect(action.kind).toBe("transfer");
+    if (action.kind !== "transfer") return;
+    expect(action.recipient).toBe("maya");
+    expect(action.toSelf).toBeUndefined();
+  });
+
+  test("p-prefixed and 'of' phrasing land on the same symbol", () => {
+    for (const line of ["buy 10 popenai", "purchase $10 of openai"]) {
+      const parsed = parseIntentLocallyForDemo(line);
+      expect(parsed.outcome).toBe("actions");
+      if (parsed.outcome !== "actions") continue;
+      const action = parsed.actions[0];
+      expect(action.kind).toBe("transfer");
+      if (action.kind !== "transfer") continue;
+      expect(action.asset).toBe("OPENAI");
+      expect(action.toSelf).toBe(true);
+    }
+  });
+
+  test("a send with no recipient is still a question, never a self-send", () => {
+    // The verb is what makes the default safe. "send 0.5 sol" is a sentence
+    // with a word missing; guessing that the missing word is "me" is exactly
+    // the guess this parser refuses to make.
+    const parsed = parseIntentLocallyForDemo("send 0.5 sol");
+    const selfTransfer =
+      parsed.outcome === "actions" &&
+      parsed.actions.some((a) => a.kind === "transfer" && a.toSelf === true);
+    expect(selfTransfer).toBe(false);
+  });
+
+  test("a bare sell is not a transfer to yourself", () => {
+    // Selling means swapping for something. A self-transfer of the thing you
+    // were trying to sell is not a sale.
+    const parsed = parseIntentLocallyForDemo("sell 40 openai");
+    const selfTransfer =
+      parsed.outcome === "actions" &&
+      parsed.actions.some((a) => a.kind === "transfer" && a.toSelf === true);
+    expect(selfTransfer).toBe(false);
+  });
+
+  test("recurring and basket phrasing keep their meaning", () => {
+    const schedule = parseIntentLocallyForDemo("buy $50 spacex every monday");
+    expect(schedule.outcome === "actions" && schedule.actions[0].kind).toBe("schedule_dca");
+
+    const basket = parseIntentLocallyForDemo("buy $100 index");
+    expect(basket.outcome === "actions" && basket.actions[0].kind).toBe("basket_buy");
+  });
+});
+
+/**
+ * The model path. `toSelf` must be something the model SAYS, never something
+ * inferred from a field it forgot: a dropped recipient on "send 5 SOL to alex"
+ * has to stay a clarification, not become a transfer to yourself.
+ */
+describe("LLM path — toSelf is explicit, never inferred", () => {
+  const config = { geminiApiKey: "test-key" } as unknown as PraxisServerConfig;
+
+  function geminiReturning(args: unknown): typeof globalThis.fetch {
+    return (async () =>
+      new Response(
+        JSON.stringify({
+          candidates: [
+            { content: { parts: [{ functionCall: { name: "parse_praxis_intent", args } }] } },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )) as unknown as typeof globalThis.fetch;
+  }
+
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  test("a buy that declares toSelf parses with no recipient", async () => {
+    globalThis.fetch = geminiReturning({
+      outcome: "actions",
+      actions: [{ kind: "transfer", asset: "OPENAI", amountHuman: "40", toSelf: true }],
+    });
+    const parsed = await parseIntentWithGemini("buy $40 openai", config);
+    expect(parsed.outcome).toBe("actions");
+    if (parsed.outcome !== "actions") return;
+    expect(parsed.actions[0]).toEqual({
+      kind: "transfer",
+      asset: "OPENAI",
+      amountHuman: "40",
+      toSelf: true,
+    });
+  });
+
+  test("a transfer that merely omits the recipient is rejected", async () => {
+    globalThis.fetch = geminiReturning({
+      outcome: "actions",
+      actions: [{ kind: "transfer", asset: "SOL", amountHuman: "5" }],
+    });
+    // Rejected here means the caller surfaces an error rather than moving
+    // 5 SOL to a destination nobody named.
+    await expect(parseIntentWithGemini("send 5 sol to alex", config)).rejects.toThrow(
+      /recipient/i,
+    );
   });
 });

@@ -330,3 +330,61 @@ describe("unverified mint decimals", () => {
     expect(agentBlocks(provider, threadId).some((b) => b.type === "proposal")).toBe(true);
   });
 });
+
+/**
+ * The one-off counterpart to a schedule. `buy $40 openai` is the phrasing the
+ * README and the submission doc lead with; it used to clarify, while
+ * `buy $50 openai every monday` — the same intent, on a cadence — went
+ * straight through by defaulting to the owner's own wallet.
+ */
+describe("one-off buy with no recipient", () => {
+  test("buy $40 openai proposes a transfer into the owner's own wallet", async () => {
+    const { provider, config } = build();
+    const { threadId } = await provider.send(null, "buy $40 openai");
+
+    const blocks = agentBlocks(provider, threadId);
+    const proposalBlock = blocks.find((b) => b.type === "proposal");
+    expect(proposalBlock).toBeDefined();
+    expect(blocks.some((b) => b.type === "clarify")).toBe(false);
+
+    const proposal = provider.getProposal(
+      proposalBlock && proposalBlock.type === "proposal" ? proposalBlock.proposalId : "",
+    )!;
+    expect(proposal.detail.kind).toBe("transfer");
+    if (proposal.detail.kind !== "transfer") return;
+    expect(proposal.detail.asset.symbol).toBe("OPENAI");
+    // 40 at the mint's real 9 decimals.
+    expect(proposal.detail.amount).toBe(40_000_000_000n);
+    expect(proposal.detail.recipientAddress).toBe(config.ownerAddress!.toBase58());
+    expect(proposal.detail.recipientName).toBe("you");
+    // Nothing is signed by getting here — it is a proposal like any other.
+    expect(proposal.state).toBe("pending");
+  });
+
+  test("the reply says where it is going, and does not claim an address book hit", async () => {
+    const { provider } = build();
+    const { threadId } = await provider.send(null, "buy $40 openai");
+    const prose = agentBlocks(provider, threadId)
+      .filter((b) => b.type === "proposal")
+      .map((b) => (b.type === "proposal" ? b.text : ""))
+      .join(" ");
+    expect(prose).toMatch(/your own wallet/i);
+    expect(prose).not.toMatch(/address book/i);
+  });
+
+  test("a named recipient still resolves through the address book", async () => {
+    const { config } = build();
+    const contact = Keypair.generate().publicKey.toBase58();
+    const withBook = new PraxisServerProvider(
+      { ...config, addressBook: [{ label: "maya", name: "Maya Patel", address: contact }] },
+      new FakeAegis(policyFixture()) as unknown as AegisClient,
+    );
+    withBook.basketPriceSource = async (symbols) => new Map(symbols.map((s) => [s, 10]));
+
+    const { threadId } = await withBook.send(null, "buy $40 openai for maya");
+    const block = agentBlocks(withBook, threadId).find((b) => b.type === "proposal");
+    expect(block).toBeDefined();
+    const proposal = withBook.getProposal(block && block.type === "proposal" ? block.proposalId : "")!;
+    expect(proposal.detail.kind === "transfer" && proposal.detail.recipientAddress).toBe(contact);
+  });
+});

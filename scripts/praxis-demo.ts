@@ -186,7 +186,14 @@ async function parseTransfer(line: string, config = getServerConfig()): Promise<
   return transfer;
 }
 
-function resolve(book: AddressBook, recipient: string): PublicKey {
+function resolve(book: AddressBook, recipient: string | undefined): PublicKey {
+  // The demo's lines always name a recipient (a bare buy, which may omit one,
+  // has no place in a SOL send/over-cap demo). Say so out loud rather than
+  // asserting it away, so an overridden PRAXIS_DEMO_*_LINE fails here with a
+  // readable message instead of somewhere downstream.
+  if (!recipient) {
+    throw new Error("This demo line must name a recipient, e.g. \"send 0.5 sol to maya\".");
+  }
   const resolved = book.resolve(recipient);
   if (resolved.kind !== "exact") throw new Error(resolved.question);
   return new PublicKey(resolved.entry.address);

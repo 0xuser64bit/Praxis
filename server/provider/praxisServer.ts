@@ -911,13 +911,33 @@ export class PraxisServerProvider implements PraxisProvider {
   }
 
   private async transferBlock(action: Extract<ParsedAction, { kind: "transfer" }>): Promise<{ blocks: AgentBlock[]; title?: string }> {
-    const resolved = this.addressBook.resolve(action.recipient);
-    if (resolved.kind !== "exact") {
+    // A buy with no named recipient settles into the owner's own vault, the
+    // same way a recurring buy already does — "buy $40 openai" and
+    // "buy $50 spacex every monday" are the same intent and used to get two
+    // different answers. The parser sets `toSelf` only for buy verbs.
+    //
+    // A missing recipient WITHOUT that flag is not the same thing, and must
+    // never fall through to the same default: that is how "send 5 SOL to
+    // alex", with the recipient lost somewhere upstream, would quietly become
+    // a transfer to yourself. Both producers uphold this today (the model path
+    // rejects the shape outright); the guard is here because the type still
+    // permits it and this is the one place it would matter.
+    if (!action.toSelf && !action.recipient) {
+      return {
+        blocks: [{
+          type: "clarify",
+          text: "Who should receive this? Name a saved contact or paste an address.",
+          options: [],
+        }],
+      };
+    }
+    const resolved = this.resolveSelfOrContact(action.toSelf ? undefined : action.recipient);
+    if ("clarify" in resolved) {
       return {
         blocks: [
           {
             type: "clarify",
-            text: resolved.question,
+            text: resolved.clarify,
             options: resolved.options,
           },
         ],
@@ -950,26 +970,32 @@ export class PraxisServerProvider implements PraxisProvider {
     const token = await this.withVerifiedDecimals(known);
     if (!token) return { blocks: [this.unverifiedDecimalsBlock(known.symbol)] };
     const amount = parseHumanUnits(action.amountHuman, token.decimals);
-    const preview = await this.previewTransfer(token, amount, resolved.entry.address);
+    const preview = await this.previewTransfer(token, amount, resolved.address);
     const proposal = this.storeTransferProposal({
       token,
       amount,
-      recipientName: resolved.entry.name,
-      recipientAddress: resolved.entry.address,
-      recipientNote: resolved.entry.note,
+      recipientName: resolved.name,
+      recipientAddress: resolved.address,
+      recipientNote: resolved.note,
       usdEstimate: await this.usdEstimateFor(token, amount),
       preview,
     });
 
+    // Say which of the two happened. "Resolved you from the address book" is
+    // both untrue and the kind of small wrongness that makes people distrust
+    // the rest of the card.
+    const toSelf = action.toSelf === true;
     return {
       blocks: [
         {
           type: "proposal",
-          text: `Resolved ${resolved.entry.name} from the address book.`,
+          text: toSelf
+            ? "No recipient named, so this settles into your own wallet."
+            : `Resolved ${resolved.name} from the address book.`,
           proposalId: proposal.id,
         },
       ],
-      title: `Send to ${resolved.entry.name.split(" ")[0]}`,
+      title: toSelf ? `${token.symbol} buy` : `Send to ${resolved.name.split(" ")[0]}`,
     };
   }
 
@@ -1039,7 +1065,7 @@ export class PraxisServerProvider implements PraxisProvider {
     return proposal;
   }
 
-  /** Resolve a DCA/basket recipient: named contact, or the owner's own wallet. */
+  /** Resolve a recipient: named contact, or the owner's own wallet when none was named. */
   private resolveSelfOrContact(
     recipient: string | undefined,
   ): { address: string; name: string; note?: string } | { clarify: string; options: ClarifyOption[] } {

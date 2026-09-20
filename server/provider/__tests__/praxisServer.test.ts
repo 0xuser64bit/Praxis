@@ -140,6 +140,20 @@ describe("unknown assets", () => {
     await provider.send(null, "send 0.5 sol to maya");
     expect(fake.calls).toContain("simulateAgentTransfer");
   });
+
+  test("a send with no recipient asks, and never settles to yourself", async () => {
+    // A buy with no recipient defaults to the owner's own wallet; a send with
+    // no recipient must not inherit that. "You forgot to say who" and "you
+    // meant yourself" are different sentences, and only one is an instruction.
+    const { provider, fake } = build();
+    const { threadId } = await provider.send(null, "send 0.5 sol");
+    const blocks = (provider.getThread(threadId)!.messages.at(-1) as {
+      blocks: Array<{ type: string }>;
+    }).blocks;
+
+    expect(blocks.some((b) => b.type === "proposal")).toBe(false);
+    expect(fake.calls).not.toContain("simulateAgentTransfer");
+  });
 });
 
 describe("concurrent signers (optimistic concurrency)", () => {
@@ -379,5 +393,24 @@ describe("contacts management", () => {
     const stored2 = await getStateRepository().load(owner.publicKey.toBase58());
     const third = new PraxisServerProvider(config, asClient(), stored2);
     expect(third.getAddressBook().some((e) => e.label === "maya")).toBe(true);
+  });
+});
+
+describe("transfer with no destination at all", () => {
+  test("a transfer carrying neither a recipient nor toSelf asks, it does not self-route", async () => {
+    // Neither producer emits this shape — the model path rejects it and the
+    // deterministic parser never builds it — but the type still allows it, and
+    // the one consumer that would act on it must not read "no destination" as
+    // "your own wallet".
+    const { provider, fake } = build();
+    const blocks = await (
+      provider as unknown as {
+        transferBlock: (a: unknown) => Promise<{ blocks: Array<{ type: string }> }>;
+      }
+    ).transferBlock({ kind: "transfer", asset: "SOL", amountHuman: "0.5" });
+
+    expect(blocks.blocks.some((b) => b.type === "clarify")).toBe(true);
+    expect(blocks.blocks.some((b) => b.type === "proposal")).toBe(false);
+    expect(fake.calls).not.toContain("simulateAgentTransfer");
   });
 });

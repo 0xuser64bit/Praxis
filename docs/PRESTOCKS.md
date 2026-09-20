@@ -111,11 +111,14 @@ Rules:
 
 ## 4. Intent mapping (no new value-moving instruction)
 
-Existing `ParsedAction` union is unchanged. Stock phrasing maps onto it:
+Stock phrasing maps onto the existing `ParsedAction` union, which gained one
+field for it: `transfer.toSelf`, set when a *buy* names no recipient (see the
+first row). It is an explicit flag rather than an absent `recipient`, so a
+model that merely drops the field on a `send` still lands in the clarify path.
 
 | User says | Parsed as | Notes |
 |---|---|---|
-| `buy $40 openai` / `buy 0.1 openai for maya` | `transfer(asset=pOPENAI…)` | Amount in token base units after decimal lookup; recipient via address book |
+| `buy $40 openai` / `buy 0.1 openai for maya` | `transfer(asset=pOPENAI…)` | Amount in token base units after decimal lookup. A named recipient resolves through the address book; no recipient settles into the owner's own wallet (`toSelf`), the same default a recurring buy takes |
 | `sell $20 openai` | `transfer` to vault/treasury (direction labeled) or `swap_stub` if route exists | C01 decides; default transfer-only |
 | `buy $50 openai every monday` | `transfer` + DCA schedule metadata (off-chain) | Mechanical cron, same policy checks per fire |
 | `buy mag7 basket $100` | ordered `transfer[]` (one per constituent) | Sequential proposals, per-stock policy each |

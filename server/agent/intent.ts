@@ -20,7 +20,27 @@ export type ParsedAction =
       /** Asset symbol: "SOL" (native) or an SPL token symbol like "USDC". */
       asset: string;
       amountHuman: string;
-      recipient: string;
+      /**
+       * Saved contact label, or a pasted address. Absent only alongside
+       * `toSelf` — never on its own.
+       */
+      recipient?: string;
+      /**
+       * The owner's own wallet is the destination, and no recipient was named.
+       *
+       * An explicit flag rather than "recipient is missing", because those are
+       * different sentences: "buy $40 OPENAI" means *for me*, while "send 0.5
+       * SOL" with the recipient dropped means the parser lost something. If
+       * absence alone implied self, a model that forgot the field would turn
+       * "send 5 SOL to alex" into a self-transfer. Only buy verbs set this —
+       * a bare `sell` is a swap idea, not a transfer to yourself, and a bare
+       * `send` still clarifies.
+       *
+       * Safe as a default because the destination is the owner's own wallet:
+       * the agent is moving your money to you, still inside the Aegis
+       * envelope (and still refused if your recipient allow-list excludes it).
+       */
+      toSelf?: true;
     }
   | {
       kind: "research";
@@ -121,6 +141,11 @@ const intentTool = {
               type: "string",
               description: "Saved contact label/name or pasted address.",
             },
+            toSelf: {
+              type: "boolean",
+              description:
+                "For a transfer from a BUY verb with no recipient named ('buy $40 openai'): true, and omit recipient — it settles into the owner's own wallet. Never set this for send or sell; a send with no recipient is a clarify.",
+            },
             token: {
               type: "string",
               description: "Token symbol or mint address for read-only research.",
@@ -181,6 +206,9 @@ const INTENT_SYSTEM_PROMPT = [
   "Stock verbs: buy/purchase/acquire and sell map to transfer with a PreStocks symbol " +
     "(OPENAI, SPACEX, ANTHROPIC, ANDURIL, FIGUREAI, KALSHI, NEURALINK, POLYMARKET); " +
     "accept an optional p- prefix and any case (popenai = OPENAI).",
+  "A BUY with no recipient ('buy $40 openai') is a transfer with toSelf=true and no recipient: " +
+    "it settles into the owner's own wallet. Only a buy verb may do this. A send with no " +
+    "recipient is a clarify, and a bare sell is a swap idea — never set toSelf for either.",
   "sell AMOUNT <stock> for <asset> is a swap idea: emit swap_stub, never a transfer addressed to a ticker.",
   "Recurring-buy phrasing (buy/dca AMOUNT STOCK every <weekday>/daily/weekly/monthly, optionally " +
     "for RECIPIENT) is schedule_dca with cadence {type, weekday 0-6 Sunday-first, day 1-31}. " +
@@ -381,6 +409,30 @@ export function parseIntentLocallyForDemo(text: string): ParsedIntent {
     return {
       outcome: "actions",
       actions: [{ kind: "transfer", asset, amountHuman, recipient: send[3].trim() }],
+    };
+  }
+
+  // A buy with no recipient settles into the owner's own vault — the same
+  // default a recurring buy already takes. Runs after the basket and DCA
+  // matchers (so "buy $100 index" and "buy $50 spacex every monday" keep
+  // their meaning) and after the shape above (so a named recipient wins).
+  //
+  // Buy verbs only. A bare `sell` is a swap idea, not a transfer to yourself,
+  // and a bare `send` is a sentence with a word missing — both still clarify.
+  const bareBuy = cleaned.match(
+    /^(?:buy|purchase|acquire)\s+\$?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:of\s+|in\s+)?\$?([a-z][a-z0-9]{1,11})\s*[.!]?\s*$/i,
+  );
+  if (bareBuy) {
+    return {
+      outcome: "actions",
+      actions: [
+        {
+          kind: "transfer",
+          asset: normalizeStockAlias(bareBuy[2]),
+          amountHuman: bareBuy[1],
+          toSelf: true,
+        },
+      ],
     };
   }
 
@@ -620,10 +672,17 @@ function normalizeAction(input: unknown, index: number): ParsedAction {
     const asset = typeof value.asset === "string" && value.asset.trim()
       ? value.asset.trim().replace(/^\$/, "").toUpperCase()
       : "SOL";
+    const amountHuman = readRequiredString(value.amountHuman, "amountHuman");
+    // `toSelf` has to be said, not inferred from a missing recipient: a model
+    // that simply drops the field on "send 5 SOL to alex" must still land in
+    // the clarify path, which is what readRequiredString does below.
+    if (value.toSelf === true) {
+      return { kind: "transfer", asset, amountHuman, toSelf: true };
+    }
     return {
       kind: "transfer",
       asset,
-      amountHuman: readRequiredString(value.amountHuman, "amountHuman"),
+      amountHuman,
       recipient: readRequiredString(value.recipient, "recipient"),
     };
   }

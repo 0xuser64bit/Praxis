@@ -76,7 +76,7 @@ async function main() {
     // clarify — it can never execute into a ticker.
     const sell = parseIntentLocallyForDemo("sell 5 openai for usdc");
     const sellRecipient = sell.outcome === "actions" && sell.actions[0].kind === "transfer"
-      ? sell.actions[0].recipient
+      ? sell.actions[0].recipient ?? ""
       : "";
     assert("sell-for-ticker names no contact", new AddressBook([]).resolve(sellRecipient).kind !== "exact", sellRecipient);
   }

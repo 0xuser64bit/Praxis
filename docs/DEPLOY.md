@@ -177,6 +177,34 @@ Same project, these additions (values, not secrets — nothing sensitive here):
 
 The 8 stock symbols come from the flag — do NOT list them in `PRAXIS_TOKENS`.
 
+### Upgrade the program first (required — Token-2022 support)
+
+The Aegis program on devnet predates Token-2022 support, so **a stock buy will
+fail against it** no matter how the app is configured. The program is
+upgradeable (`3z9Gui…`, authority `3bdgsL3Cipcq98aMWCw1c1G7W5KQ1yv4NfwieK8xb6CP`)
+and the new binary is larger than the deployed one, so the account must be
+extended before the upgrade:
+
+```bash
+cd aegis && NO_DNA=1 anchor build && cd ..
+ls -l aegis/target/deploy/aegis.so                       # new size
+solana program show 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd --url devnet   # deployed size
+
+# Extend by (new − deployed) plus headroom, then upgrade in place.
+solana program extend 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd 8192 --url devnet
+solana program deploy aegis/target/deploy/aegis.so \
+  --program-id 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd --url devnet
+```
+
+Budget roughly **2 SOL** in the authority wallet: the deploy buffer is about
+twice the program size and is refunded when the upgrade completes. Confirm the
+upgrade landed by running `praxis:stocksbuycheck` (below) — it fails against
+the old binary and passes against the new one.
+
+The instruction's account list changed (`agent_transfer_spl` now takes the
+mint), so an old client against a new program, or the reverse, will fail.
+Deploy the program and the app together.
+
 ### Devnet mirror mints (required for a devnet stock demo)
 
 The real PreStocks mints exist on mainnet only. Before a devnet demo:

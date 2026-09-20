@@ -5,10 +5,12 @@ Parent: [STOCKLANA.md](./STOCKLANA.md) · Spec: [PRESTOCKS.md](./PRESTOCKS.md)
 
 How to use this doc with coding agents: each `Cxx` is one commit. Do them in order.
 Every commit lists entry criteria, files, exit criteria, and the exact verify command.
-Never skip verification. Never mix two commits in one diff. Never touch `aegis/programs/**` in C01–C10.
+Never skip verification. Never mix two commits in one diff. ~~Never touch
+`aegis/programs/**` in C01–C10~~ — superseded by C11 (the mints turned out to
+be Token-2022; see below).
 
 Global verify (every commit): `bun run lint && bun run test && bun run build`
-Program gate (must stay green, program untouched): `bun run aegis:test`
+Program gate (must stay green): `bun run aegis:test` — T1–T8.
 
 ---
 
@@ -128,10 +130,30 @@ Goal: submit before deadline with room to spare.
 Files: `README.md`, submission draft doc.
 Exit: submitted with GitHub + live demo + video links. Tag `stocklana-submit`.
 
-## C11+ — Post-hackathon only (do not start before judging)
+## C11 — Token-2022 support (done; supersedes the "no program edits" rule)
+
+Rule 3 below forbade touching `aegis/programs/**` in C01–C10. That rule was
+written on the assumption that the PreStocks mints were classic SPL. They are
+**Token-2022**, verified on-chain 2026-09-20 — so `agent_transfer_spl` could
+never move them, and the entire stock surface was unexecutable. Honouring the
+rule would have meant shipping a submission whose headline feature cannot
+produce a transaction.
+
+Done instead:
+- `agent_transfer_spl` accepts SPL Token or Token-2022, takes the mint as an
+  account, and CPIs `TransferChecked`. LiteSVM **T8** covers it; T1–T7 still green.
+- Client threads the token program through every ATA derivation (it is a seed
+  of the address, so a wrong default silently targets the wrong account).
+- Mirror mints (`praxis:setup-devnet-stocks`, `PRAXIS_STOCK_MINTS`) because the
+  real mints are mainnet-only.
+- `praxis:stocksbuycheck` asserts the whole claim against a live cluster.
+
+## C12+ — Post-hackathon only (do not start before judging)
 
 - Multi-mint envelope program upgrade (Anchor resize + LiteSVM gate + migration).
 - Real `agent_swap` with on-chain program/mint allow-lists + value caps (the README bar).
+- Transfer-hook support (decide which hook programs are trustworthy) and
+  fee-aware proposal display.
 - Managed vault-funding UX, durable rejected-tx indexer (ARCHITECTURE.md gaps).
 
 ---
@@ -140,6 +162,8 @@ Exit: submitted with GitHub + live demo + video links. Tag `stocklana-submit`.
 
 1. One commit per `Cxx`. Small diffs, passing verify each time.
 2. Feature-flag everything stock-specific until C09 (`PRAXIS_STOCKS_ENABLED`).
-3. No `aegis/programs/**` edits in C01–C10. No Gemini prompt widens advice. No fake swap signing.
+3. ~~No `aegis/programs/**` edits in C01–C10.~~ **Superseded by C11** — the rule
+   assumed classic-SPL mints; see above. Still binding: no Gemini prompt widens
+   advice, and no fake swap signing.
 4. Every research/policy number shown in UI must come from server-computed values, never LLM prose.
 5. If PreStocks API drifts, update PRESTOCKS.md §1 + SPIKE doc in the same commit as the code fix.

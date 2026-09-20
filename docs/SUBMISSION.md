@@ -54,6 +54,20 @@ Run on **devnet** 2026-09-20:
 Explorer (the buy):
 <https://explorer.solana.com/tx/5JLjHAjCy3oH1ejpdAWWoe7jxLaZjGhyLeirTDxzH6grwDRT9WsiCNFZWhte7tdRNYdHmbUUaMuC7bDyXA8rtgg7?cluster=devnet>
 
+The program logs on that transaction are the whole thesis in four lines — the
+agent's instruction enters Aegis, and Aegis is what calls the token program:
+
+```
+Program 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd invoke [1]
+Program log: Instruction: AgentTransferSpl
+Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb invoke [2]
+Program log: Instruction: TransferChecked
+```
+
+The agent key never touches the token program directly. It can only ask
+Aegis, and Aegis checks the envelope first — which is why the 500-unit
+attempt above never reaches `invoke [2]` at all.
+
 Program: `3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd` (devnet, Token-2022 build).
 
 ## Honest scope (read this before judging)

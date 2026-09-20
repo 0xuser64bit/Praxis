@@ -75,11 +75,7 @@ interface StoreState {
   /** Tombstoned contact addresses/labels (lowercased) — see StoredProviderState. */
   removedContacts: string[];
   policy?: PolicyView;
-  /** threadId -> ms timestamp when thinking started (TTL-guarded, never persisted). */
-  thinking: Record<string, number>;
 }
-
-const THINKING_TTL_MS = 5 * 60 * 1000;
 
 /** Bounded retries when claiming a proposal against a concurrent writer. */
 const CLAIM_ATTEMPTS = 3;
@@ -204,7 +200,6 @@ export class PraxisServerProvider implements PraxisProvider {
       contacts: savedContacts,
       schedules: initialState?.schedules ?? [],
       removedContacts: [...removed],
-      thinking: {},
     };
   }
 
@@ -332,14 +327,20 @@ export class PraxisServerProvider implements PraxisProvider {
   };
   getActivity = (): ActivityEntry[] => [...this.state.activity].sort((a, b) => b.ts - a.ts);
   getAddressBook = (): AddressBookEntry[] => this.addressBook.all();
-  isThinking = (threadId: string): boolean => {
-    const startedAt = this.state.thinking[threadId];
-    if (!startedAt) return false;
-    // A crash between thinking=true and thinking=false would otherwise leave a
-    // stale `true` until the next send completes; expire it after the TTL.
-    if (Date.now() - startedAt > THINKING_TTL_MS) return false;
-    return true;
-  };
+  /**
+   * Always false, and structurally so.
+   *
+   * "Thinking" is a client-side affordance. The server provider is rebuilt
+   * from the repository on every request and the flag was never persisted, so
+   * a reader asking about another request's in-flight turn always constructed
+   * a provider with an empty map. There is no window to observe anyway:
+   * `send` resolves only once the agent's reply is written, so a caller is
+   * either inside that call or the reply already exists.
+   *
+   * Kept to satisfy the shared provider interface, where the mock and remote
+   * clients implement it meaningfully against their own local state.
+   */
+  isThinking = (): boolean => false;
   getConnectionState = () => ({ mode: "api" as const, phase: "ready" as const });
   /**
    * A durable state cursor derived from persisted state (stable across
@@ -384,7 +385,6 @@ export class PraxisServerProvider implements PraxisProvider {
 
       thread.messages = [...thread.messages, { id: this.id("m"), role: "user", ts, text }];
       thread.updatedAt = ts;
-      this.state.thinking = { ...this.state.thinking, [tid]: Date.now() };
       await this.commit();
 
       let blocks: AgentBlock[];
@@ -407,7 +407,6 @@ export class PraxisServerProvider implements PraxisProvider {
       thread.messages = [...thread.messages, reply];
       if (title && (thread.title === "New session" || thread.messages.length <= 2)) thread.title = title;
       thread.updatedAt = reply.ts;
-      delete this.state.thinking[tid];
       await this.commit();
       return { threadId: tid };
     });

@@ -223,9 +223,6 @@ export class PraxisClient {
   getAddressBook(): Promise<AddressBookEntry[]> {
     return this.get<AddressBookEntry[]>("/get-address-book");
   }
-  isThinking(threadId: string): Promise<boolean> {
-    return this.get<boolean>("/is-thinking", { threadId });
-  }
   getVersion(): Promise<number> {
     return this.get<number>("/get-version");
   }

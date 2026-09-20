@@ -41,6 +41,8 @@ interface ActiveStockApi {
   activeMint: string | null;
   setActiveMint: (mint: string | null) => void;
   symbolFor: (mint: string) => string | null;
+  /** Decimals reported by the server for a universe mint, or null. */
+  decimalsFor: (mint: string) => number | null;
 }
 
 const Ctx = createContext<ActiveStockApi | null>(null);
@@ -93,6 +95,14 @@ export function ActiveStockProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const decimalsFor = useCallback(
+    (mint: string) => {
+      const entry = stocks.find((s) => s.mint === mint);
+      return typeof entry?.decimals === "number" ? entry.decimals : null;
+    },
+    [stocks],
+  );
+
   const symbolFor = useCallback(
     (mint: string) => stocks.find((s) => s.mint === mint)?.symbol ?? null,
     [stocks],
@@ -100,7 +110,7 @@ export function ActiveStockProvider({ children }: { children: ReactNode }) {
 
   return (
     <Ctx.Provider
-      value={{ stocks, stocksEnabled: stocks.length > 0, activeMint, setActiveMint, symbolFor }}
+      value={{ stocks, stocksEnabled: stocks.length > 0, activeMint, setActiveMint, symbolFor, decimalsFor }}
     >
       {children}
     </Ctx.Provider>

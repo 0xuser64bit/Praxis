@@ -39,8 +39,17 @@ export function mintLabel(address: string): string | null {
   return MINT_NAMES[address] ?? null;
 }
 
-export function mintDecimals(address: string): number {
-  return MINT_DECIMALS[address] ?? 6;
+/**
+ * Decimals for a mint this client knows statically.
+ *
+ * Returns `undefined` for anything else rather than guessing. This used to
+ * fall back to 6, which silently mis-scaled every PreStocks mint (they are
+ * 9dp) — the token-envelope cap defaults and displayed balances were off by
+ * 1000x. Callers that have a live universe entry should prefer its decimals;
+ * see `stockDecimalsFor` in the active-stock context.
+ */
+export function mintDecimals(address: string): number | undefined {
+  return MINT_DECIMALS[address];
 }
 
 export const QUICK_MINTS = [

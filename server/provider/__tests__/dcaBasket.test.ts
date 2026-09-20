@@ -79,7 +79,7 @@ class FakeAegis {
  * values, exactly as an operator would via `PRAXIS_STOCK_DECIMALS`.
  */
 const STOCK_DECIMALS: Record<string, number> = Object.fromEntries(
-  STOCK_SYMBOLS.map((symbol) => [symbol, 6]),
+  STOCK_SYMBOLS.map((symbol) => [symbol, 9]),
 );
 const STOCK_TOKENS = buildStockTokens(STOCK_DECIMALS);
 
@@ -126,7 +126,10 @@ describe("DCA schedules", () => {
     const schedules = provider.getSchedules();
     expect(schedules).toHaveLength(1);
     expect(schedules[0].asset).toBe("OPENAI");
-    expect(schedules[0].amount).toBe(50_000_000n);
+    // 50 at the mint's real 9 decimals. The old expectation of 50_000_000n
+    // encoded the 6dp guess, i.e. 0.05 OPENAI on-chain.
+    expect(schedules[0].amount).toBe(50_000_000_000n);
+    expect(schedules[0].decimals).toBe(9);
     expect(schedules[0].recipientAddress).toBe(config.ownerAddress!.toBase58());
     expect(schedules[0].recipientName).toBe("you");
     expect(schedules[0].cadence).toEqual({ type: "weekly", weekday: 1 });
@@ -153,7 +156,7 @@ describe("DCA schedules", () => {
     expect(proposal.detail.kind).toBe("transfer");
     if (proposal.detail.kind === "transfer") {
       expect(proposal.detail.asset.symbol).toBe("OPENAI");
-      expect(proposal.detail.amount).toBe(50_000_000n);
+      expect(proposal.detail.amount).toBe(50_000_000_000n);
     }
     expect(proposal.state).toBe("pending");
     // Advanced past the fire, and the creation thread carries the proposal.
@@ -227,9 +230,9 @@ describe("basket buys", () => {
         p.detail.kind === "transfer" ? p.detail.amount : 0n,
       ]),
     );
-    // $30 per share: 3 OPENAI @ $10, 1.5 ANTHROPIC @ $20 (6 decimals).
-    expect(amounts.get("OPENAI")).toBe(3_000_000n);
-    expect(amounts.get("ANTHROPIC")).toBe(1_500_000n);
+    // $30 per share: 3 OPENAI @ $10, 1.5 ANTHROPIC @ $20, at 9 decimals.
+    expect(amounts.get("OPENAI")).toBe(3_000_000_000n);
+    expect(amounts.get("ANTHROPIC")).toBe(1_500_000_000n);
   });
 
   test("a blocked constituent voids the whole basket (all-or-clarify)", async () => {

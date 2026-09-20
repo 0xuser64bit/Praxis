@@ -24,12 +24,14 @@ display both, labeled, until semantics are confirmed with PreStocks. Never prese
 
 ## Open (not asserted — needs funded-RPC spike before C04)
 
-- [x] `decimals` per mint (absent from API). **Resolved by construction:** the
-      hard-coded `6` is no longer used for amount math. Decimals are read from
-      the mint account on the research RPC (mainnet) and cached for the process,
-      or supplied by the operator via `PRAXIS_STOCK_DECIMALS`. When neither is
-      available the agent refuses the buy rather than parsing against a guess —
-      see `server/stocks/mintDecimals.ts`.
+- [x] `decimals` per mint (absent from API). **Answered 2026-09-20: all eight
+      mints are 9 decimals, not the 6 this shipped with.** Read from the mint
+      account on mainnet (byte 44). The old constant mis-scaled every stock
+      amount by 1000x — "buy 40 OPENAI" parsed at 6dp is 0.04 OPENAI on a 9dp
+      mint, and the default "200 per-tx" envelope cap was really 0.2. The
+      universe default is now 9, amount math resolves the live value through
+      `server/stocks/mintDecimals.ts`, and `PRAXIS_STOCK_DECIMALS` can pin it.
+      When the scale cannot be confirmed the agent refuses the buy.
 - [ ] DexScreener pairs / liquidity per mint.
 - [ ] Jupiter `USDC -> mint` routability at $10 (determines swap vs transfer-only).
 - [ ] Mint vs secondary-transfer mechanics (can the vault hold these SPLs directly? ATA creation OK?).

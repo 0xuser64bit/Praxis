@@ -30,23 +30,36 @@ export const STOCK_LIST: StockEntry[] = [
 ];
 
 /**
- * Display-only placeholder scale for stock tokens.
+ * Verified scale for the PreStocks mints: **9**, not the 6 this shipped with.
  *
- * The PreStocks API does not report decimals, so `TokenInfo.decimals` for these
- * mints cannot be trusted as the exponent for amount math. It is resolved from
- * the chain at use time (`resolveMintDecimals`) or supplied by an operator
- * override; this constant only keeps `TokenInfo` well-formed in between.
+ * The PreStocks API does not report decimals and the spike left it an open
+ * question, so the universe filled in 6 — and that value reached
+ * `parseHumanUnits`, the token-envelope cap defaults, and every amount the UI
+ * rendered. It was wrong by three orders of magnitude: "buy 40 OPENAI" parsed
+ * at 6dp is 40,000,000 base units, which on a 9dp mint is 0.04 OPENAI, and a
+ * "200 per-tx cap" was really 0.2.
  *
- * Nothing that converts a human amount into base units may read it — see
- * {@link hasProvisionalDecimals}.
+ * Read from mainnet on 2026-09-20 — every one of the eight mints reports
+ * `decimals = 9` at byte 44 of its mint account. Still treated as a default
+ * rather than gospel: amount math resolves the live value through
+ * `resolveMintDecimals` and refuses when it cannot confirm one, so a future
+ * mint added here with the wrong constant cannot quietly move the wrong
+ * quantity.
  */
-export const DEFAULT_STOCK_DECIMALS = 6;
+export const DEFAULT_STOCK_DECIMALS = 9;
 
 /**
- * True when this token's `decimals` is the placeholder above rather than a
- * confirmed value, i.e. any stock mint whose decimals were not overridden.
- * Callers doing amount math must resolve the real scale first and refuse the
- * action if they cannot.
+ * The SPL program that owns the PreStocks mints: **Token-2022**, not classic
+ * SPL Token. Verified on mainnet 2026-09-20 (mint accounts are 902-914 bytes,
+ * owner `TokenzQd…`). This is what makes them unmovable by the deployed Aegis
+ * program — see `assertAegisTransferableMint`.
+ */
+export const STOCK_TOKEN_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+
+/**
+ * True when this token's `decimals` came from the default above rather than a
+ * confirmed lookup or an operator override. Callers doing amount math must
+ * resolve the real scale first and refuse the action if they cannot.
  */
 export function hasProvisionalDecimals(symbol: string, overrides: Record<string, number> = {}): boolean {
   const normalized = symbol.trim().replace(/^\$/, "").toUpperCase();

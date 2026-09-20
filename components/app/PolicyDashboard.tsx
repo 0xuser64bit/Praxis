@@ -645,26 +645,39 @@ function TokenEnvelopeCard({
   onPrepareAccounts: () => void;
 }) {
   const configured = policy.tokenMint !== SYSTEM_PROGRAM;
-  const { stocks, stocksEnabled, activeMint, symbolFor } = useActiveStock();
+  const { stocks, stocksEnabled, activeMint, symbolFor, decimalsFor } = useActiveStock();
   // Envelope label prefers the stock universe (OPENAI over a bare mint), then
-  // the static catalog, then a generic fallback. Stock decimals are 6
-  // (provisional — docs/PRESTOCKS-SPIKE.md); mintDecimals falls back to 6 too.
+  // the static catalog, then a generic fallback.
   const stockSymbol = symbolFor(policy.tokenMint);
-  const decimals = mintDecimals(policy.tokenMint);
+  // Decimals must come from a source that actually knows: the server-supplied
+  // universe entry first, then the static catalog. The old fallback of 6
+  // silently mis-scaled the PreStocks mints (9dp) by 1000x in both the cap
+  // defaults and the displayed amounts.
+  const scaleFor = (mint: string): number | undefined =>
+    decimalsFor(mint) ?? mintDecimals(mint);
+  const decimals = scaleFor(policy.tokenMint);
   const symbol = stockSymbol ?? mintLabel(policy.tokenMint) ?? "TOKEN";
   const universeIndex = stocks.findIndex((s) => s.mint === policy.tokenMint);
 
-  // Default caps when (re)selecting a token: 200 per-tx / 500 daily, in its units.
-  const defaultsFor = (mint: string): TokenEnvelopeConfig => ({
-    tokenMint: mint,
-    tokenMaxPerTx: toBaseUnits("200", mintDecimals(mint)),
-    tokenDailyLimit: toBaseUnits("500", mintDecimals(mint)),
-  });
+  // Default caps when (re)selecting a token: 200 per-tx / 500 daily, in its
+  // units. Returns null when the scale is unknown — a cap written at the wrong
+  // exponent is a wrong cap, so the control is disabled instead.
+  const defaultsFor = (mint: string): TokenEnvelopeConfig | null => {
+    const scale = scaleFor(mint);
+    if (scale === undefined) return null;
+    return {
+      tokenMint: mint,
+      tokenMaxPerTx: toBaseUnits("200", scale),
+      tokenDailyLimit: toBaseUnits("500", scale),
+    };
+  };
 
   const { busy, pendingKey } = useActionState();
   const configuring = pendingKey === actionKeys.configureToken;
   const pick = (mint: string) => {
-    if (!busy) onConfigure(defaultsFor(mint));
+    if (busy) return;
+    const config = defaultsFor(mint);
+    if (config) onConfigure(config);
   };
   const activeNeedsSwitch = stocksEnabled && activeMint !== null && activeMint !== policy.tokenMint;
   const activeSymbol = activeMint ? (symbolFor(activeMint) ?? "stock") : null;
@@ -749,34 +762,47 @@ function TokenEnvelopeCard({
               {configuring ? `Switching to ${activeSymbol}…` : `Switch envelope to ${activeSymbol}`}
             </button>
           )}
-          <TokenSpend policy={policy} now={now} decimals={decimals} symbol={symbol} />
-          <div className="h-px bg-[var(--border)]" />
-          <CapRow
-            label="Per transaction"
-            value={policy.tokenMaxPerTx}
-            decimals={decimals}
-            unit={symbol}
-            onSave={(v) =>
-              onConfigure({
-                tokenMint: policy.tokenMint,
-                tokenMaxPerTx: v,
-                tokenDailyLimit: policy.tokenDailyLimit,
-              })
-            }
-          />
-          <CapRow
-            label="Daily limit"
-            value={policy.tokenDailyLimit}
-            decimals={decimals}
-            unit={symbol}
-            onSave={(v) =>
-              onConfigure({
-                tokenMint: policy.tokenMint,
-                tokenMaxPerTx: policy.tokenMaxPerTx,
-                tokenDailyLimit: v,
-              })
-            }
-          />
+          {decimals === undefined ? (
+            // Better an honest gap than a confidently wrong number: without the
+            // mint's scale, every amount and cap here would be rendered at a
+            // guessed exponent.
+            <p className="rounded-md bg-[var(--bg)] p-3 text-[12px] leading-[1.5] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)]">
+              This envelope&rsquo;s mint isn&rsquo;t one Praxis knows the decimals for, so
+              amounts and caps can&rsquo;t be shown accurately. Switch to a listed token, or
+              set its decimals server-side.
+            </p>
+          ) : (
+            <>
+              <TokenSpend policy={policy} now={now} decimals={decimals} symbol={symbol} />
+              <div className="h-px bg-[var(--border)]" />
+              <CapRow
+                label="Per transaction"
+                value={policy.tokenMaxPerTx}
+                decimals={decimals}
+                unit={symbol}
+                onSave={(v) =>
+                  onConfigure({
+                    tokenMint: policy.tokenMint,
+                    tokenMaxPerTx: v,
+                    tokenDailyLimit: policy.tokenDailyLimit,
+                  })
+                }
+              />
+              <CapRow
+                label="Daily limit"
+                value={policy.tokenDailyLimit}
+                decimals={decimals}
+                unit={symbol}
+                onSave={(v) =>
+                  onConfigure({
+                    tokenMint: policy.tokenMint,
+                    tokenMaxPerTx: policy.tokenMaxPerTx,
+                    tokenDailyLimit: v,
+                  })
+                }
+              />
+            </>
+          )}
           <div className="flex items-center gap-2">
             <span className="[font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
               switch token:

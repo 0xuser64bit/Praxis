@@ -86,6 +86,10 @@ describe("buildStockTokens", () => {
     for (const t of tokens) {
       expect(t.verified).toBe(true);
       expect(t.decimals).toBe(DEFAULT_STOCK_DECIMALS);
+      // Pinned to the value actually read from mainnet (2026-09-20), so a
+      // drift back to the old guessed 6 fails here rather than silently
+      // mis-scaling every stock amount by 1000x.
+      expect(t.decimals).toBe(9);
     }
   });
 

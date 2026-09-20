@@ -91,9 +91,12 @@ describe("stock presentation helpers", () => {
     expect(formatPrestocksSupply(entry({ supply: 0 }))).toBeUndefined();
   });
 
-  test("summary suffix attributes risk without advice verbs", () => {
+  test("summary suffix discloses issuer authority without advice verbs", () => {
     const suffix = stockSummarySuffix(entry());
     expect(suffix).toMatch(/SPV-backed pre-IPO exposure/);
+    // The issuer outranks the policy; saying so is the honest version of
+    // "limits even a hacked AI can't break".
+    expect(suffix).toMatch(/freeze, pause and permanent-delegate authority/);
     expect(suffix).toMatch(/https:\/\/www\.prestocks\.com\/openai/);
     expect(suffix).not.toMatch(/buy|sell|hold/i);
   });

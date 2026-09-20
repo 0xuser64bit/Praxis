@@ -114,11 +114,22 @@ export function formatPrestocksSupply(entry: PrestocksEntry): string | undefined
 /**
  * Attribution + risk suffix for the research summary. Keeps the existing
  * no-advice sentence; callers append this after it.
+ *
+ * The issuer-authority line is deliberate. These mints carry Token-2022
+ * `PermanentDelegate`, freeze and pause authorities (verified on mainnet
+ * 2026-09-20), which means the issuer can move or halt the token regardless
+ * of any Aegis policy. Praxis bounds what the *agent* can do with a vault; it
+ * cannot bound the issuer of a token someone chose to hold, and a product
+ * whose pitch is "limits even a hacked AI can't break" has to be precise
+ * about where those limits stop. It is a fact about the asset, not advice.
  */
 export function stockSummarySuffix(entry: PrestocksEntry): string {
   const spv = "SPV-backed pre-IPO exposure; may be illiquid.";
+  const issuer =
+    " The issuer retains freeze, pause and permanent-delegate authority on this mint," +
+    " so it can move or halt these tokens independently of your Aegis policy.";
   const link = entry.externalUrl ? ` Details: ${entry.externalUrl}.` : "";
-  return ` PreStocks data for ${entry.symbol}: ${spv}${link}`;
+  return ` PreStocks data for ${entry.symbol}: ${spv}${issuer}${link}`;
 }
 
 function formatPrestocksUsd(value: number): string {

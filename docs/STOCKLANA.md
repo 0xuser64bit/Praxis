@@ -78,10 +78,22 @@ in one vault. For the hackathon we do NOT change the program. Instead:
 
 ## Risks
 
-1. PreStocks decimals / liquidity unknown until RPC + Jupiter probe. Mitigation: Day-1 spike (ROADMAP C01), fallback to vault-prefunded transfers + quote preview.
+1. ~~PreStocks decimals / liquidity unknown until RPC + Jupiter probe.~~
+   **Resolved 2026-09-20 by reading the mints:** decimals are 9 (not the 6 the
+   universe shipped), and the mints are Token-2022 — so `agent_transfer_spl`
+   needed Token-2022 support before a buy could execute at all (ROADMAP C11).
+   The mints are also mainnet-only, hence devnet mirror mints for the demo.
 2. Swap executability gap. Mitigation: transfer-only is shippable; swaps stay `swap_stub` blocked with honest copy. Never fake-sign a swap.
 3. Single-mint wall confuses judges. Mitigation: name it in UI ("OPENAI vault · policy 3 of 3") and in video narration.
 4. Scope creep into Tessera/DBC/Clawpump. Mitigation: bounty exclusivity + this doc's non-goals are binding for the branch.
+5. **The issuer outranks the policy.** The PreStocks mints carry Token-2022
+   `PermanentDelegate`, freeze and pause authorities, so PreStocks can move or
+   halt these tokens regardless of any Aegis envelope. This does not weaken
+   the thesis — the thesis is about *agent* risk — but it does bound it, and a
+   pitch built on "limits even a hacked AI can't break" cannot afford to be
+   vague here. Mitigation: state it in the research card, the README and the
+   submission copy. A judge finding it themselves is far worse than reading it
+   from us, and having looked at all is a differentiator.
 
 ## Links
 

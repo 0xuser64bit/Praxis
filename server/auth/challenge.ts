@@ -4,6 +4,8 @@ import bs58 from "bs58";
 import { PublicKey } from "@solana/web3.js";
 
 import { PraxisAuthError, PraxisInputError } from "../errors";
+import { errorFields, logger } from "../observability/logger";
+import { getNonceStore } from "./nonceStore";
 import { normalizeWallet, signWithSessionSecret } from "./session";
 
 interface ChallengePayload {
@@ -23,16 +25,8 @@ export interface WalletChallenge {
 }
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
-const MAX_CHALLENGES = 1_000;
-const usedChallenges = new Map<string, number>();
 
 export function createWalletChallenge(address: string, request: Request): WalletChallenge {
-  pruneChallenges();
-
-  if (usedChallenges.size >= MAX_CHALLENGES) {
-    throw new PraxisAuthError("Too many recent wallet sign-in challenges. Try again shortly.");
-  }
-
   const normalized = normalizeWallet(address);
   const now = Date.now();
   const expires = now + CHALLENGE_TTL_MS;
@@ -56,25 +50,25 @@ export function createWalletChallenge(address: string, request: Request): Wallet
   };
 }
 
-export function verifyWalletChallenge(args: {
+export async function verifyWalletChallenge(args: {
   address: string;
   nonce: string;
   signature: string;
-}, request: Request): string {
-  pruneChallenges();
+}, request: Request): Promise<string> {
   const address = normalizeWallet(args.address);
   const nonce = args.nonce.trim();
   if (!nonce) throw new PraxisInputError("nonce is required");
   if (nonce.length > 512) throw new PraxisInputError("nonce is too long");
 
   const challenge = verifyChallengePayload(nonce);
-  if (!challenge || usedChallenges.has(nonce)) {
+  if (!challenge) {
     throw new PraxisAuthError("Wallet sign-in challenge is missing or already used.");
   }
   if (challenge.address !== address) {
     throw new PraxisAuthError("Wallet sign-in challenge address does not match.");
   }
-  if (challenge.expiresAt <= Math.floor(Date.now() / 1000)) {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (challenge.expiresAt <= nowSeconds) {
     throw new PraxisAuthError("Wallet sign-in challenge expired.");
   }
   if (challenge.origin !== new URL(request.url).origin) {
@@ -87,8 +81,29 @@ export function verifyWalletChallenge(args: {
     throw new PraxisAuthError("Wallet signature did not verify.");
   }
 
-  usedChallenges.set(nonce, challenge.expiresAt);
+  // Burn the nonce LAST, and only after the signature verifies, so a bad
+  // signature cannot be used to consume someone else's pending challenge.
+  // The claim is atomic in the store, so of two concurrent replays exactly
+  // one wins — the check-then-set this replaced had a race between them.
+  await consumeNonce(nonce, Math.max(1, challenge.expiresAt - nowSeconds));
   return address;
+}
+
+/** Claim a nonce, failing closed if the shared store cannot answer. */
+async function consumeNonce(nonce: string, ttlSeconds: number): Promise<void> {
+  let claimed: boolean;
+  try {
+    claimed = await getNonceStore().consume(nonce, ttlSeconds);
+  } catch (error) {
+    // A replay guard that fails open is not a replay guard. Refuse the
+    // sign-in and let the client retry rather than accept a signature we
+    // cannot prove is being redeemed for the first time.
+    logger.warn("auth.nonce_store_unavailable", errorFields(error));
+    throw new PraxisAuthError("Wallet sign-in is temporarily unavailable. Try again shortly.");
+  }
+  if (!claimed) {
+    throw new PraxisAuthError("Wallet sign-in challenge is missing or already used.");
+  }
 }
 
 function challengeMessage(args: ChallengePayload, nonce: string): string {
@@ -156,13 +171,6 @@ function verifyEd25519(publicKey: PublicKey, message: Buffer, signature: Buffer)
   ]);
   const key = createPublicKey({ key: spki, format: "der", type: "spki" });
   return verify(null, message, key, signature);
-}
-
-function pruneChallenges() {
-  const now = Math.floor(Date.now() / 1000);
-  for (const [nonce, expiresAt] of usedChallenges) {
-    if (expiresAt <= now) usedChallenges.delete(nonce);
-  }
 }
 
 function safeEqual(a: string, b: string): boolean {

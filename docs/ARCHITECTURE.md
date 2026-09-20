@@ -65,9 +65,12 @@ caps, but two real transfers).
 
 For the conversational document (threads, activity, contacts) a conflict
 resolves as a deliberate, logged last-write-wins: reload the newer revision and
-rewrite. Wallet challenge nonces are single-use per instance (in-memory);
-multi-instance replay resistance needs a shared nonce store (Redis) — tracked
-as a production gap below.
+rewrite. Wallet challenge nonces are claimed through a shared nonce store (`SET NX EX`
+on Redis when `REDIS_URL` or Upstash credentials are configured, in-memory
+otherwise), so a captured signature cannot be replayed against a second
+instance. Unlike the rate limiter, which fails OPEN, the nonce store fails
+CLOSED: if a configured store cannot answer, sign-in is refused rather than
+degraded to per-instance nonces.
 
 ## Core Data Flow
 
@@ -156,8 +159,8 @@ They are not the source of truth for value movement.
   `PRAXIS_STATE_BACKEND=postgres`.
 - The in-memory rate limiter is process-local; production should use
   `PRAXIS_RATE_LIMITER=redis` plus platform/WAF controls.
-- Wallet challenge nonces are single-use per instance only; multi-instance
-  deployments should move nonce consumption to Redis (`SET NX EX`).
+- Without Redis configured, nonce single-use is per instance only — multi-
+  instance deployments should set `REDIS_URL` (or Upstash credentials).
 - The remote signer service has no rate limit; a leaked `SIGNER_TOKEN` allows
   unbounded signing (mitigated by the single-transfer policy gate).
 - No durable rejected-transaction indexer for failures that happen outside the

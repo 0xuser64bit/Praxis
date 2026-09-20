@@ -920,10 +920,27 @@ export class PraxisServerProvider implements PraxisProvider {
     }
 
     // Native SOL routes through agent_transfer; an SPL token through the
-    // dedicated token envelope (agent_transfer_spl). The asset's own decimals
-    // drive amount parsing and display, so they must be the real ones.
-    const token = await this.withVerifiedDecimals(this.token(action.asset));
-    if (!token) return { blocks: [this.unverifiedDecimalsBlock(action.asset.toUpperCase())] };
+    // dedicated token envelope (agent_transfer_spl). An unrecognized symbol is
+    // a clarification, not a transfer: `token()` would otherwise synthesize a
+    // placeholder whose mint is the system program, and the send would fail
+    // deep in simulation as "the vault or recipient token account may not
+    // exist yet" — a misleading answer to "I don't know that asset".
+    const requested = action.asset.trim().replace(/^\$/, "").toUpperCase();
+    const known = requested === "SOL" ? this.token("SOL") : this.knownToken(requested);
+    if (!known) {
+      return {
+        blocks: [{
+          type: "clarify",
+          text: `I don't recognize "${requested}" as a token I can move. I can send: ${this.transferableSymbols().join(", ")}.`,
+          options: this.transferableSymbols().map((symbol) => ({ label: symbol, value: symbol })),
+        }],
+      };
+    }
+
+    // The asset's own decimals drive amount parsing and display, so they must
+    // be the real ones.
+    const token = await this.withVerifiedDecimals(known);
+    if (!token) return { blocks: [this.unverifiedDecimalsBlock(known.symbol)] };
     const amount = parseHumanUnits(action.amountHuman, token.decimals);
     const preview = await this.previewTransfer(token, amount, resolved.entry.address);
     const proposal = this.storeTransferProposal({
@@ -1026,6 +1043,12 @@ export class PraxisServerProvider implements PraxisProvider {
       return { clarify: resolved.question, options: resolved.options };
     }
     return { address: resolved.entry.address, name: resolved.entry.name, note: resolved.entry.note };
+  }
+
+  /** Symbols this deployment can actually transfer, for clarification copy. */
+  private transferableSymbols(): string[] {
+    const symbols = this.config.tokens.map((token) => token.symbol);
+    return symbols.includes("SOL") ? symbols : ["SOL", ...symbols];
   }
 
   /** Strict token lookup (no SYSTEM_PROGRAM fallback): DCA/baskets need a real mint. */

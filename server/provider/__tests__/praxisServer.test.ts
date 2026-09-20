@@ -71,6 +71,7 @@ class FakeAegis {
     return this.execResult;
   }
   async simulateAgentTransferSpl() {
+    this.calls.push("simulateAgentTransferSpl");
     return this.simResult;
   }
   async executeAgentTransferSpl() {
@@ -114,6 +115,30 @@ function build(over: Partial<PraxisServerConfig> = {}, policy = policyFixture())
   const provider = new PraxisServerProvider(makeConfig(over), fake as unknown as AegisClient);
   return { provider, fake };
 }
+
+describe("unknown assets", () => {
+  test("an unrecognized symbol clarifies instead of simulating a placeholder mint", async () => {
+    const { provider, fake } = build();
+    const { threadId } = await provider.send(null, "send 5 FOO to maya");
+    const blocks = (provider.getThread(threadId)!.messages.at(-1) as {
+      blocks: Array<{ type: string; text: string }>;
+    }).blocks;
+
+    expect(blocks.some((b) => b.type === "proposal")).toBe(false);
+    const clarify = blocks.find((b) => b.type === "clarify");
+    expect(clarify?.text).toMatch(/don't recognize "FOO"/);
+    // It must not have reached the chain at all: the old placeholder token
+    // (system-program mint) ran a real SPL simulation and reported a missing
+    // token account, which reads as a setup problem rather than a typo.
+    expect(fake.calls).not.toContain("simulateAgentTransferSpl");
+  });
+
+  test("SOL still routes natively", async () => {
+    const { provider, fake } = build();
+    await provider.send(null, "send 0.5 sol to maya");
+    expect(fake.calls).toContain("simulateAgentTransfer");
+  });
+});
 
 describe("concurrent signers (optimistic concurrency)", () => {
   test("two instances holding the same pending proposal execute it exactly once", async () => {

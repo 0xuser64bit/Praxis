@@ -3,11 +3,18 @@
 import { IconArrowRight } from "@tabler/icons-react";
 import { useState } from "react";
 
+/**
+ * First-run prompts. Three of these used to be swaps — which are always
+ * blocked — so a new user's most likely first three actions all dead-ended,
+ * and one named a token that does not exist in any configured universe. Lead
+ * with the flows that work end-to-end and keep exactly one blocked example,
+ * because the chain saying no is the point of the product.
+ */
 const SUGGESTIONS = [
+  "send 0.5 SOL to maya",
   "what's bonk doing this week",
-  "swap 100 usdc into JUP",
-  "swap 100 usdc into $SAFEMOON",
   "how does my policy keep me safe",
+  "swap 100 usdc into JUP",
 ];
 
 export function Composer({

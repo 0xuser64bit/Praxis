@@ -26,6 +26,7 @@ import {
   useThreads,
 } from "./ProviderContext";
 import { Dot, Pill } from "./ui";
+import { messageFromError } from "./lib/useAsyncAction";
 import { formatSol } from "./lib/units";
 
 export type View = "chat" | "policy" | "activity";
@@ -48,7 +49,7 @@ export function AppShell() {
     try {
       await provider.bootstrapPolicy(fundLamports);
     } catch (error) {
-      setBootstrapError(error instanceof Error ? error.message : "Could not set up your vault.");
+      setBootstrapError(messageFromError(error, "Could not set up your vault."));
     } finally {
       setBootstrapping(false);
     }

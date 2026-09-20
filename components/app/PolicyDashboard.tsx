@@ -28,6 +28,14 @@ import { Button } from "@/components/praxis/Button";
 
 import { StockSwitcher, useActiveStock } from "./ActiveStock";
 import { RevokeDialog } from "./RevokeDialog";
+import {
+  actionKeys,
+  AsyncActionProvider,
+  useActionCompletion,
+  useActionState,
+  useAsyncActions,
+} from "./lib/useAsyncAction";
+import { useToast } from "./Toast";
 import { useAddressBook, usePolicy, useProvider } from "./ProviderContext";
 import { Card, Dot, Label } from "./ui";
 import {
@@ -62,25 +70,30 @@ export function PolicyDashboard() {
   const provider = useProvider();
   const addressBook = useAddressBook();
   const [revokeOpen, setRevokeOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"overview" | "advanced">("overview");
   const now = useNow();
+  const { toast } = useToast();
   const agentState = agentInactiveState(policy);
   const inactive = agentState !== "live";
-  const runMutation = (action: () => Promise<void>, fallback: string) => {
-    setError(null);
-    void action().catch((err) => {
-      setError(messageFromError(err, fallback));
-    });
-  };
+  const actions = useAsyncActions(toast);
+  const { run, busy } = actions;
   const addToAllowList = (kind: AllowListKind, address: string) => {
-    runMutation(() => provider.addToAllowList(kind, address), "Allow-list update failed.");
+    run(
+      actionKeys.allowList(kind, address, "add"),
+      () => provider.addToAllowList(kind, address),
+      { label: "Updating allow-list", fallback: "Allow-list update failed.", success: "Allow-list updated." },
+    );
   };
   const removeFromAllowList = (kind: AllowListKind, address: string) => {
-    runMutation(() => provider.removeFromAllowList(kind, address), "Allow-list update failed.");
+    run(
+      actionKeys.allowList(kind, address, "remove"),
+      () => provider.removeFromAllowList(kind, address),
+      { label: "Updating allow-list", fallback: "Allow-list update failed.", success: "Allow-list updated." },
+    );
   };
 
   return (
+    <AsyncActionProvider value={actions}>
     <div className="flex-1 overflow-y-auto px-8 py-7 max-[760px]:px-5">
       <div className="mx-auto max-w-[880px]">
         {/* header */}
@@ -97,25 +110,36 @@ export function PolicyDashboard() {
             <Button
               variant="primary"
               className="shrink-0"
+              disabled={busy}
               onClick={() => {
                 if (agentState === "paused") {
-                  runMutation(
-                    () => provider.updatePolicy({ paused: false }),
-                    "Could not unpause the agent.",
-                  );
+                  run(actionKeys.pause, () => provider.updatePolicy({ paused: false }), {
+                    label: "Unpausing the agent",
+                    fallback: "Could not unpause the agent.",
+                    success: "Agent unpaused.",
+                  });
                 } else {
-                  runMutation(() => provider.rotateAgent(), "Re-enable failed.");
+                  run(actionKeys.rotate, () => provider.rotateAgent(), {
+                    label: "Rotating the session key",
+                    fallback: "Re-enable failed.",
+                    success: "Agent re-enabled with a fresh session key.",
+                  });
                 }
               }}
             >
-              <IconRefresh size={15} />
+              {actions.pendingKey === actionKeys.pause || actions.pendingKey === actionKeys.rotate ? (
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+              ) : (
+                <IconRefresh size={15} />
+              )}
               {agentState === "paused" ? "Unpause agent" : "Re-enable agent"}
             </Button>
           ) : (
             <button
               type="button"
+              disabled={busy}
               onClick={() => setRevokeOpen(true)}
-              className="inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2.5 text-[14px] font-medium text-[var(--danger)] [transition:background_0.15s] hover:bg-[rgba(199,91,91,0.1)]"
+              className="inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2.5 text-[14px] font-medium text-[var(--danger)] [transition:background_0.15s] hover:bg-[rgba(199,91,91,0.1)] disabled:cursor-not-allowed disabled:opacity-50"
               style={{ border: "0.5px solid rgba(199,91,91,0.4)" }}
             >
               <IconShieldX size={15} />
@@ -143,9 +167,31 @@ export function PolicyDashboard() {
           </div>
         )}
 
-        {error && (
-          <div className="mb-5 rounded-xl bg-[rgba(199,91,91,0.10)] px-4 py-3 text-[13px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]">
-            {error}
+        {actions.pendingLabel && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-5 flex items-center gap-2.5 rounded-xl bg-[var(--bg-card)] px-4 py-3 text-[13px] text-[var(--text-secondary)] [border:0.5px_solid_var(--border-strong)]"
+          >
+            <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-[1.5px] border-[var(--text-tertiary)] border-t-[var(--accent)]" />
+            {actions.pendingLabel} — confirm in your wallet, then Aegis settles it on-chain.
+          </div>
+        )}
+
+        {actions.error && (
+          <div
+            role="alert"
+            className="mb-5 flex items-start justify-between gap-3 rounded-xl bg-[rgba(199,91,91,0.10)] px-4 py-3 text-[13px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]"
+          >
+            <span>{actions.error}</span>
+            <button
+              type="button"
+              onClick={actions.clearError}
+              aria-label="Dismiss error"
+              className="shrink-0 text-[var(--text-tertiary)] hover:text-[var(--danger)]"
+            >
+              <IconX size={14} />
+            </button>
           </div>
         )}
 
@@ -162,8 +208,20 @@ export function PolicyDashboard() {
           <>
             <VaultCard
               policy={policy}
-              onFund={(amount) => runMutation(() => provider.fundVault(amount), "Could not add funds to the vault.")}
-              onWithdraw={(amount) => runMutation(() => provider.withdrawVault(amount), "Could not withdraw from the vault.")}
+              onFund={(amount) =>
+                run(actionKeys.fund, () => provider.fundVault(amount), {
+                  label: "Adding funds to the vault",
+                  fallback: "Could not add funds to the vault.",
+                  success: "Vault funded.",
+                })
+              }
+              onWithdraw={(amount) =>
+                run(actionKeys.withdraw, () => provider.withdrawVault(amount), {
+                  label: "Withdrawing from the vault",
+                  fallback: "Could not withdraw from the vault.",
+                  success: "Withdrawn to your wallet.",
+                })
+              }
             />
 
             <SpendCard policy={policy} now={now} />
@@ -178,7 +236,15 @@ export function PolicyDashboard() {
               <CapsCard
                 policy={policy}
                 onSave={(patch) => {
-                  runMutation(() => provider.updatePolicy(patch), "Policy update failed.");
+                  run(
+                    patch.maxPerTx !== undefined ? actionKeys.maxPerTx : actionKeys.dailyLimit,
+                    () => provider.updatePolicy(patch),
+                    {
+                      label: "Updating your caps",
+                      fallback: "Policy update failed.",
+                      success: "Caps updated on-chain.",
+                    },
+                  );
                 }}
               />
               <SessionCard
@@ -186,10 +252,18 @@ export function PolicyDashboard() {
                 agentState={agentState}
                 now={now}
                 onRotate={() => {
-                  runMutation(() => provider.rotateAgent(), "Rotate failed.");
+                  run(actionKeys.rotate, () => provider.rotateAgent(), {
+                    label: "Rotating the session key",
+                    fallback: "Rotate failed.",
+                    success: "Session key rotated.",
+                  });
                 }}
                 onUpdateExpiry={(expiryTs) => {
-                  runMutation(() => provider.updatePolicy({ expiryTs }), "Expiry update failed.");
+                  run(actionKeys.expiry, () => provider.updatePolicy({ expiryTs }), {
+                    label: "Extending the session",
+                    fallback: "Expiry update failed.",
+                    success: "Session extended.",
+                  });
                 }}
               />
             </div>
@@ -198,12 +272,21 @@ export function PolicyDashboard() {
               policy={policy}
               now={now}
               onConfigure={(config) => {
-                runMutation(() => provider.configureToken(config), "Token configuration failed.");
+                run(actionKeys.configureToken, () => provider.configureToken(config), {
+                  label: "Configuring the token envelope",
+                  fallback: "Token configuration failed.",
+                  success: "Token envelope configured.",
+                });
               }}
               onPrepareAccounts={() => {
-                runMutation(
+                run(
+                  actionKeys.prepareAccounts,
                   () => provider.prepareTokenAccounts(addressBook.map((entry) => entry.address)),
-                  "Token account setup failed.",
+                  {
+                    label: "Preparing token accounts",
+                    fallback: "Token account setup failed.",
+                    success: "Token accounts ready.",
+                  },
                 );
               }}
             />
@@ -244,16 +327,30 @@ export function PolicyDashboard() {
 
             <AddressBookCard
               onAdd={(label, address) => {
-                runMutation(() => provider.addContact(label, address), "Could not save this contact.");
+                run(actionKeys.addContact, () => provider.addContact(label, address), {
+                  label: "Saving the contact",
+                  fallback: "Could not save this contact.",
+                  success: `Saved "${label}".`,
+                });
               }}
               onRemove={(key) => {
-                runMutation(() => provider.removeContact(key), "Could not remove this contact.");
+                run(actionKeys.removeContact(key), () => provider.removeContact(key), {
+                  label: "Removing the contact",
+                  fallback: "Could not remove this contact.",
+                  success: "Contact removed.",
+                });
               }}
             />
 
             <DangerZone
               policy={policy}
-              onDelete={() => runMutation(() => provider.deleteAgent(), "Could not delete the agent.")}
+              onDelete={() =>
+                run(actionKeys.deleteAgent, () => provider.deleteAgent(), {
+                  label: "Deleting the agent and closing the vault",
+                  fallback: "Could not delete the agent.",
+                  success: "Agent deleted and vault closed.",
+                })
+              }
             />
           </>
         )}
@@ -264,6 +361,7 @@ export function PolicyDashboard() {
         <RevokeDialog onConfirm={() => provider.revokeAgent()} onClose={() => setRevokeOpen(false)} />
       )}
     </div>
+    </AsyncActionProvider>
   );
 }
 
@@ -278,9 +376,10 @@ function AddressBookCard({
   const book = useAddressBook();
   const [label, setLabel] = useState("");
   const [address, setAddress] = useState("");
+  const { busy, pendingKey } = useActionState();
 
   const add = () => {
-    if (!label.trim() || !address.trim()) return;
+    if (!label.trim() || !address.trim() || busy) return;
     onAdd(label.trim(), address.trim());
     setLabel("");
     setAddress("");
@@ -317,10 +416,15 @@ function AddressBookCard({
               <button
                 type="button"
                 aria-label={`Remove ${entry.name}`}
+                disabled={busy}
                 onClick={() => onRemove(entry.address)}
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--danger)]"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <IconX size={13} />
+                {pendingKey === actionKeys.removeContact(entry.address) ? (
+                  <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+                ) : (
+                  <IconX size={13} />
+                )}
               </button>
             </div>
           ))}
@@ -351,11 +455,15 @@ function AddressBookCard({
         <button
           type="button"
           onClick={add}
-          disabled={!label.trim() || !address.trim()}
+          disabled={!label.trim() || !address.trim() || busy}
           aria-label="Save contact"
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[var(--accent)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <IconPlus size={15} />
+          {pendingKey === actionKeys.addContact ? (
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+          ) : (
+            <IconPlus size={15} />
+          )}
         </button>
       </div>
     </Card>
@@ -371,6 +479,8 @@ function DangerZone({
   onDelete: () => void;
 }) {
   const [confirm, setConfirm] = useState("");
+  const { busy, pendingKey } = useActionState();
+  const deleting = pendingKey === actionKeys.deleteAgent;
   const tokenConfigured = policy.tokenMint !== SYSTEM_PROGRAM;
   const armed = confirm.trim().toUpperCase() === "DELETE";
 
@@ -407,15 +517,19 @@ function DangerZone({
         />
         <button
           type="button"
-          disabled={!armed}
+          disabled={!armed || busy}
           onClick={() => {
             onDelete();
             setConfirm("");
           }}
           className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md px-4 text-[13px] font-medium text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.4)] [transition:background_0.15s] hover:bg-[rgba(199,91,91,0.12)] disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <IconTrash size={15} />
-          Delete agent
+          {deleting ? (
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+          ) : (
+            <IconTrash size={15} />
+          )}
+          {deleting ? "Deleting…" : "Delete agent"}
         </button>
       </div>
     </div>
@@ -547,7 +661,11 @@ function TokenEnvelopeCard({
     tokenDailyLimit: toBaseUnits("500", mintDecimals(mint)),
   });
 
-  const pick = (mint: string) => onConfigure(defaultsFor(mint));
+  const { busy, pendingKey } = useActionState();
+  const configuring = pendingKey === actionKeys.configureToken;
+  const pick = (mint: string) => {
+    if (!busy) onConfigure(defaultsFor(mint));
+  };
   const activeNeedsSwitch = stocksEnabled && activeMint !== null && activeMint !== policy.tokenMint;
   const activeSymbol = activeMint ? (symbolFor(activeMint) ?? "stock") : null;
 
@@ -594,8 +712,9 @@ function TokenEnvelopeCard({
               <button
                 key={m.address}
                 type="button"
+                disabled={busy}
                 onClick={() => pick(m.address)}
-                className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] [transition:color_0.15s] hover:text-[var(--accent)]"
+                className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] [transition:color_0.15s] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <IconPlus size={11} />
                 {m.label}
@@ -605,8 +724,9 @@ function TokenEnvelopeCard({
               <button
                 key={s.mint}
                 type="button"
+                disabled={busy}
                 onClick={() => pick(s.mint)}
-                className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] [transition:color_0.15s] hover:text-[var(--accent)]"
+                className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] [transition:color_0.15s] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <IconPlus size={11} />
                 {s.symbol}
@@ -619,10 +739,14 @@ function TokenEnvelopeCard({
           {activeNeedsSwitch && (
             <button
               type="button"
+              disabled={busy}
               onClick={() => activeMint && pick(activeMint)}
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-[var(--accent)] [border:0.5px_solid_var(--border-strong)] [transition:background_0.15s] hover:bg-[var(--bg-elevated)]"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-[var(--accent)] [border:0.5px_solid_var(--border-strong)] [transition:background_0.15s] hover:bg-[var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Switch envelope to {activeSymbol}
+              {configuring && (
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+              )}
+              {configuring ? `Switching to ${activeSymbol}…` : `Switch envelope to ${activeSymbol}`}
             </button>
           )}
           <TokenSpend policy={policy} now={now} decimals={decimals} symbol={symbol} />
@@ -661,18 +785,24 @@ function TokenEnvelopeCard({
               <button
                 key={m.address}
                 type="button"
+                disabled={busy}
                 onClick={() => pick(m.address)}
-                className="rounded-full px-2.5 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] hover:text-[var(--accent)]"
+                className="rounded-full px-2.5 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {m.label}
               </button>
             ))}
             <button
               type="button"
+              disabled={busy}
               onClick={onPrepareAccounts}
-              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)]"
+              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <IconWallet size={11} />
+              {pendingKey === actionKeys.prepareAccounts ? (
+                <span className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+              ) : (
+                <IconWallet size={11} />
+              )}
               prepare accounts
             </button>
           </div>
@@ -737,6 +867,7 @@ function CapRow({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState(false);
+  const { busy } = useActionState();
 
   const begin = () => {
     // Editable draft must not include thousands separators — formatUnits adds them
@@ -747,6 +878,7 @@ function CapRow({
   };
 
   const commit = () => {
+    if (busy) return;
     try {
       onSave(toBaseUnits(draft, decimals));
       setEditing(false);
@@ -780,6 +912,7 @@ function CapRow({
           <button
             type="button"
             onClick={commit}
+            disabled={busy}
             aria-label="Save"
             className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--success)] hover:bg-[var(--bg-elevated)]"
           >
@@ -798,7 +931,8 @@ function CapRow({
         <button
           type="button"
           onClick={begin}
-          className="group flex items-center gap-2 [font-family:var(--font-mono)] text-[15px] text-[var(--text-primary)]"
+          disabled={busy}
+          className="group flex items-center gap-2 [font-family:var(--font-mono)] text-[15px] text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {formatUnits(value, decimals, { maxFrac: 4 })} {unit}
           <IconPencil
@@ -827,7 +961,10 @@ function SessionCard({
   onUpdateExpiry?: (expiryTs: number) => void;
   showActions?: boolean;
 }) {
-  const extendSevenDays = () => onUpdateExpiry?.(now + 7 * 86400);
+  const { busy, pendingKey } = useActionState();
+  const extendSevenDays = () => {
+    if (!busy) onUpdateExpiry?.(now + 7 * 86400);
+  };
   const inactive = agentState !== "live";
   const statusLabel =
     agentState === "revoked" ? "Revoked" : agentState === "paused" ? "Paused" : "Live";
@@ -846,10 +983,15 @@ function SessionCard({
           <button
             type="button"
             onClick={onRotate}
-            className="inline-flex items-center gap-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [transition:color_0.15s] hover:text-[var(--text-primary)]"
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [transition:color_0.15s] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <IconRefresh size={12} />
-            rotate
+            {pendingKey === actionKeys.rotate ? (
+              <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+            ) : (
+              <IconRefresh size={12} />
+            )}
+            {pendingKey === actionKeys.rotate ? "rotating…" : "rotate"}
           </button>
         )}
       </div>
@@ -879,9 +1021,10 @@ function SessionCard({
             <button
               type="button"
               onClick={extendSevenDays}
-              className="rounded-md px-2 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)]"
+              disabled={busy}
+              className="rounded-md px-2 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
             >
-              extend 7d
+              {pendingKey === actionKeys.expiry ? "extending…" : "extend 7d"}
             </button>
           )}
         </div>
@@ -902,7 +1045,14 @@ function VaultCard({
 }) {
   const [mode, setMode] = useState<"fund" | "withdraw" | null>(null);
   const [draft, setDraft] = useState("");
+  const { busy, pendingKey } = useActionState();
+  const submitting = pendingKey === actionKeys.fund || pendingKey === actionKeys.withdraw;
   const parsed = parseFundAmount(draft);
+  // Close the panel once the transfer actually lands; on failure keep it open
+  // so the amount is still in context next to the error.
+  useActionCompletion([actionKeys.fund, actionKeys.withdraw], (ok) => {
+    if (ok) setMode(null);
+  });
   const overBalance = mode === "withdraw" && parsed !== null && parsed > policy.vaultBalance;
   const valid = parsed !== null && !overBalance;
 
@@ -912,10 +1062,12 @@ function VaultCard({
   };
 
   const submit = () => {
-    if (!valid || parsed === null || mode === null) return;
+    if (!valid || parsed === null || mode === null || busy) return;
     (mode === "fund" ? onFund : onWithdraw)(parsed);
+    // Keep the form open and disabled until the action settles: closing it
+    // immediately is what made a multi-second wallet round-trip look like
+    // nothing had happened.
     setDraft("");
-    setMode(null);
   };
 
   return (
@@ -940,8 +1092,9 @@ function VaultCard({
           <div className="mt-1.5 flex justify-end gap-1.5">
             <button
               type="button"
+              disabled={busy}
               onClick={() => open("fund")}
-              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] ${
+              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40 ${
                 mode === "fund" ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]"
               }`}
             >
@@ -950,7 +1103,7 @@ function VaultCard({
             <button
               type="button"
               onClick={() => open("withdraw")}
-              disabled={policy.vaultBalance === 0n}
+              disabled={busy || policy.vaultBalance === 0n}
               className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40 ${
                 mode === "withdraw" ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]"
               }`}
@@ -969,6 +1122,7 @@ function VaultCard({
                 autoFocus
                 inputMode="decimal"
                 value={draft}
+                disabled={busy}
                 aria-label={mode === "withdraw" ? "Withdraw amount in SOL" : "Fund amount in SOL"}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => event.key === "Enter" && submit()}
@@ -988,7 +1142,10 @@ function VaultCard({
                 Max
               </button>
             )}
-            <Button onClick={submit} disabled={!valid}>
+            <Button onClick={submit} disabled={!valid || busy}>
+              {submitting && (
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+              )}
               {mode === "fund" ? "Deposit" : "Withdraw"}
             </Button>
           </div>
@@ -1040,6 +1197,7 @@ function AllowList({
 }) {
   const book = useAddressBook();
   const [draft, setDraft] = useState("");
+  const { busy, pendingKey } = useActionState();
 
   const recipientName = (a: string) =>
     book.find((e) => e.address === a)?.name ?? null;
@@ -1055,7 +1213,7 @@ function AllowList({
       : quickAdd?.filter((q) => !addresses.includes(q.address)) ?? [];
 
   const add = (address: string) => {
-    if (!address.trim()) return;
+    if (!address.trim() || busy) return;
     onAdd(kind, address.trim());
     setDraft("");
   };
@@ -1092,12 +1250,17 @@ function AllowList({
               <button
                 type="button"
                 aria-label={`Remove ${name ?? a}`}
+                disabled={busy}
                 onClick={() => {
-                  onRemove(kind, a);
+                  if (!busy) onRemove(kind, a);
                 }}
-                className="flex h-4 w-4 items-center justify-center rounded-full text-[var(--text-tertiary)] hover:bg-[var(--bg-card)] hover:text-[var(--danger)]"
+                className="flex h-4 w-4 items-center justify-center rounded-full text-[var(--text-tertiary)] hover:bg-[var(--bg-card)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <IconX size={11} />
+                {pendingKey === actionKeys.allowList(kind, a, "remove") ? (
+                  <span className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+                ) : (
+                  <IconX size={11} />
+                )}
               </button>
             </span>
           );
@@ -1110,16 +1273,22 @@ function AllowList({
           <button
             key={q.address}
             type="button"
+            disabled={busy}
             onClick={() => add(q.address)}
-            className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] [transition:color_0.15s] hover:text-[var(--accent)]"
+            className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] [transition:color_0.15s] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <IconPlus size={11} />
+            {pendingKey === actionKeys.allowList(kind, q.address, "add") ? (
+              <span className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+            ) : (
+              <IconPlus size={11} />
+            )}
             {q.label}
           </button>
         ))}
         <div className="flex items-center gap-1.5">
           <input
             value={draft}
+            disabled={busy}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") add(draft);
@@ -1131,9 +1300,10 @@ function AllowList({
           {draft.trim() && (
             <button
               type="button"
+              disabled={busy}
               onClick={() => add(draft)}
               aria-label="Add address"
-              className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--accent)] hover:bg-[var(--bg-elevated)]"
+              className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--accent)] hover:bg-[var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               <IconPlus size={14} />
             </button>
@@ -1154,6 +1324,3 @@ function formatExpiry(expiryTs: number, now: number): string {
   return `in ${hours}h ${mins}m`;
 }
 
-function messageFromError(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
-}

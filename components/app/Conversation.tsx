@@ -6,6 +6,7 @@ import { Composer } from "./Composer";
 import { MessageItem } from "./MessageItem";
 import { useProvider, useThinking, useThread } from "./ProviderContext";
 import { useToast } from "./Toast";
+import { messageFromError } from "./lib/useAsyncAction";
 
 export function Conversation({
   threadId,
@@ -99,10 +100,6 @@ export function Conversation({
       <Composer onSend={onSend} disabled={thinking} showSuggestions={messageCount <= 1} />
     </div>
   );
-}
-
-function messageFromError(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
 }
 
 function Thinking() {

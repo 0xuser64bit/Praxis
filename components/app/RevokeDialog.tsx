@@ -10,6 +10,8 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/praxis/Button";
 
+import { messageFromError } from "./lib/useAsyncAction";
+
 export function RevokeDialog({
   onConfirm,
   onClose,
@@ -85,7 +87,7 @@ export function RevokeDialog({
                 await onConfirm();
                 onClose();
               } catch (err) {
-                setError(err instanceof Error ? err.message : "Revoke failed.");
+                setError(messageFromError(err, "Revoke failed."));
               } finally {
                 setBusy(false);
               }

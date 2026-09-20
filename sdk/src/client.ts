@@ -1,6 +1,6 @@
 import bs58 from "bs58";
 
-import { PraxisApiError, PraxisConfigError } from "./errors";
+import { PraxisApiError, PraxisConfigError, type PraxisErrorCode } from "./errors";
 import type { PraxisSigner } from "./signer";
 import type {
   ActionProposal,
@@ -374,7 +374,15 @@ export class PraxisClient {
         parsed && typeof parsed === "object" && "type" in parsed && typeof parsed.type === "string"
           ? parsed.type
           : "Error";
-      throw new PraxisApiError(res.status, type, message);
+      // `code`/`details` are the stable contract; both are optional so an older
+      // backend still yields a well-formed error (code derived from status).
+      const record = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : undefined;
+      const code = typeof record?.code === "string" ? (record.code as PraxisErrorCode) : undefined;
+      const details =
+        record?.details && typeof record.details === "object" && !Array.isArray(record.details)
+          ? (record.details as Record<string, string | number | boolean>)
+          : undefined;
+      throw new PraxisApiError(res.status, type, message, { code, details });
     }
 
     return parsed as T;

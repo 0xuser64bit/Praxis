@@ -15,7 +15,7 @@ import {
   readUnsignedOwnerTransaction,
   assertSameOrigin,
 } from "../json";
-import { PraxisConfigError, PraxisInputError } from "../../errors";
+import { PraxisConfigError, PraxisInputError, PraxisPolicyNotFoundError } from "../../errors";
 import { makeRequest } from "../../testing/fixtures";
 
 const URL = "https://praxis.test/api/praxis/send";
@@ -249,5 +249,33 @@ describe("jsonError", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("amount must be a positive number");
+  });
+
+  test("tags every error with a stable machine-readable code", async () => {
+    const cases: Array<[Error, number, string]> = [
+      [new PraxisInputError("bad"), 400, "invalid_input"],
+      [new PraxisConfigError("bad"), 503, "config_error"],
+      [new Error("boom"), 500, "internal_error"],
+    ];
+    for (const [error, status, code] of cases) {
+      const res = jsonError(error);
+      expect(res.status).toBe(status);
+      expect(((await res.json()) as { code: string }).code).toBe(code);
+    }
+  });
+
+  test("policy_not_found carries the PDA in details, so clients never regex the message", async () => {
+    const pda = "8xdGRM1bAy4gFDQrdiFesF1FsuRYdecDYC3B5wofYi9t";
+    const res = jsonError(new PraxisPolicyNotFoundError(pda));
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { code: string; details?: { policyAddress?: string } };
+    expect(body.code).toBe("policy_not_found");
+    expect(body.details?.policyAddress).toBe(pda);
+  });
+
+  test("config (503) details stay server-side alongside the redacted message", async () => {
+    const res = jsonError(new PraxisConfigError("PRAXIS_AGENT_KEYPAIR missing", { envVar: "PRAXIS_AGENT_KEYPAIR" }));
+    const body = (await res.json()) as { details?: unknown };
+    expect(body.details).toBeUndefined();
   });
 });

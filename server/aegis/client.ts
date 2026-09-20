@@ -53,7 +53,11 @@ import {
   resolveNextAgentPublicKey,
   type AgentSigner,
 } from "../agent/agentSigner";
-import { PraxisConfigError, PraxisInputError, PraxisNotFoundError } from "../errors";
+import {
+  PraxisConfigError,
+  PraxisInputError,
+  PraxisPolicyNotFoundError,
+} from "../errors";
 import {
   checkFromAegisReason,
   checkTokenFromAegisReason,
@@ -236,7 +240,9 @@ export class AegisClient {
     ]);
 
     if (!policyInfo) {
-      throw new PraxisNotFoundError(`Aegis policy account not found: ${policyAddress.toBase58()}`);
+      // A first-run wallet, not a fault: the typed `policy_not_found` code is
+      // what drives vault onboarding in the client.
+      throw new PraxisPolicyNotFoundError(policyAddress.toBase58());
     }
 
     return decodePolicyAccount(policyAddress, policyInfo.data, BigInt(vaultBalance));

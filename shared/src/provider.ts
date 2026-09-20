@@ -267,9 +267,31 @@ export interface TokenEnvelopeConfig {
 
 export type AllowListKind = "programs" | "recipients" | "mints";
 
+/**
+ * Why a connection attempt failed, as a stable code rather than prose. Mirrors
+ * `PraxisErrorCode` on the server: the client branches on this, never on the
+ * wording of `message`. `policy_not_found` is the first-run state (the wallet
+ * has no Aegis policy yet) and renders vault onboarding, not an error screen.
+ */
+export type ConnectionErrorCode =
+  | "config_error"
+  | "unauthorized"
+  | "invalid_input"
+  | "not_found"
+  | "policy_not_found"
+  | "rate_limited"
+  | "internal_error";
+
 export type ProviderConnectionState =
   | { mode: "mock"; phase: "ready" }
-  | { mode: "api"; phase: "loading" | "ready" | "error"; message?: string };
+  | {
+      mode: "api";
+      phase: "loading" | "ready" | "error";
+      message?: string;
+      code?: ConnectionErrorCode;
+      /** From `policy_not_found`: the PDA this wallet's policy will live at. */
+      policyAddress?: string;
+    };
 
 // ---------------------------------------------------------------------------
 // The provider interface itself.

@@ -4,6 +4,7 @@ import type {
   ActionProposal,
   ActivityEntry,
   AddressBookEntry,
+  ConnectionErrorCode,
   AllowListKind,
   DcaScheduleView,
   PolicyUpdate,
@@ -431,12 +432,16 @@ export class RemotePraxisProvider implements PraxisProvider {
   }
 
   private setConnectionError(error: unknown) {
+    const api = error instanceof PraxisApiError ? error : undefined;
+    const policyAddress = api?.details?.policyAddress;
     this.state = {
       ...this.state,
       connection: {
         mode: "api",
         phase: "error",
         message: error instanceof Error ? error.message : "Praxis API request failed.",
+        code: api?.code ?? "internal_error",
+        policyAddress: typeof policyAddress === "string" ? policyAddress : undefined,
       },
     };
     this.notify();
@@ -448,10 +453,63 @@ export class RemotePraxisProvider implements PraxisProvider {
   }
 }
 
+/**
+ * A failed Praxis API call, carrying the server's stable `code` and `details`
+ * alongside the human message. Callers branch on `code` — never on the
+ * message text, which is prose and free to change.
+ */
+export class PraxisApiError extends Error {
+  readonly status: number;
+  readonly code: ConnectionErrorCode;
+  readonly details?: Record<string, unknown>;
+
+  constructor(
+    message: string,
+    status: number,
+    code: ConnectionErrorCode,
+    details?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = "PraxisApiError";
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+const ERROR_CODES: ConnectionErrorCode[] = [
+  "config_error",
+  "unauthorized",
+  "invalid_input",
+  "not_found",
+  "policy_not_found",
+  "rate_limited",
+  "internal_error",
+];
+
+function readErrorCode(body: unknown): ConnectionErrorCode {
+  const raw = (body as { code?: unknown } | null)?.code;
+  return typeof raw === "string" && (ERROR_CODES as string[]).includes(raw)
+    ? (raw as ConnectionErrorCode)
+    : "internal_error";
+}
+
+function readErrorDetails(body: unknown): Record<string, unknown> | undefined {
+  const raw = (body as { details?: unknown } | null)?.details;
+  return raw && typeof raw === "object" && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : undefined;
+}
+
 async function parseResponse(res: Response): Promise<unknown> {
   const body = await readResponseBody(res);
   if (!res.ok) {
-    throw new Error(errorMessage(body, res.status));
+    throw new PraxisApiError(
+      errorMessage(body, res.status),
+      res.status,
+      readErrorCode(body),
+      readErrorDetails(body),
+    );
   }
   return body;
 }

@@ -37,7 +37,10 @@ export function AppShell() {
   const connection = useConnectionState();
   const [bootstrapping, setBootstrapping] = useState(false);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
-  const needsOnboarding = connection.phase === "error" && isMissingPolicyError(connection.message);
+  // Structural, not textual: the backend tags a first-run wallet with the
+  // `policy_not_found` code and hands back the PDA in `details`. Matching on
+  // the message text (as this did) broke the moment the copy changed.
+  const needsOnboarding = connection.phase === "error" && connection.code === "policy_not_found";
 
   const createVault = async (fundLamports: bigint) => {
     setBootstrapping(true);
@@ -63,7 +66,7 @@ export function AppShell() {
   if (needsOnboarding) {
     return (
       <PolicyOnboarding
-        policyAddress={extractPolicyAddress(connection.phase === "error" ? connection.message : undefined)}
+        policyAddress={connection.phase === "error" ? connection.policyAddress : undefined}
         busy={bootstrapping}
         error={bootstrapError}
         onCreate={createVault}
@@ -184,16 +187,6 @@ function ReadyAppShell() {
 
 function shortAddress(address: string): string {
   return `${address.slice(0, 4)}...${address.slice(-4)}`;
-}
-
-function isMissingPolicyError(message?: string): boolean {
-  return Boolean(message?.includes("Aegis policy account not found"));
-}
-
-/** Pull the policy PDA out of the "...account not found: <addr>" backend message. */
-function extractPolicyAddress(message?: string): string | undefined {
-  const match = message?.match(/not found:\s*([1-9A-HJ-NP-Za-km-z]{32,44})/);
-  return match?.[1];
 }
 
 const FUNDING_PRESETS: { label: string; lamports: bigint }[] = [

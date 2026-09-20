@@ -14,6 +14,7 @@ export { keypairSigner } from "./signer";
 export type { PraxisSigner, SecretKeyInput } from "./signer";
 
 export { PraxisApiError, PraxisConfigError } from "./errors";
+export type { PraxisErrorCode } from "./errors";
 
 export {
   toBaseUnits,

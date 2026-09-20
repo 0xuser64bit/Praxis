@@ -10,9 +10,11 @@ import { requireSession, type PraxisSession } from "../auth/session";
 import {
   PraxisAuthError,
   PraxisConfigError,
+  PraxisError,
   PraxisInputError,
   PraxisNotFoundError,
   PraxisRateLimitError,
+  type PraxisErrorBody,
 } from "../errors";
 import { assertRateLimit } from "./rateLimit";
 
@@ -57,13 +59,20 @@ export function jsonError(error: unknown, init: ResponseInit = {}): Response {
         ? error.message
         : "Unexpected Praxis backend error";
 
-  return Response.json(
-    {
-      error: clientMessage,
-      type: error instanceof Error ? error.name : "Error",
-    },
-    { ...init, status, headers: withNoStore(init.headers) },
-  );
+  // The message is prose and may be reworded; `code` is the stable contract a
+  // client branches on (see PraxisErrorCode), and `details` carries the facts
+  // it would otherwise have to parse back out of the message.
+  const body: PraxisErrorBody = {
+    error: clientMessage,
+    type: error instanceof Error ? error.name : "Error",
+    code: error instanceof PraxisError ? error.code : "internal_error",
+  };
+  // Config details name internal env vars; those stay in the operator log.
+  if (error instanceof PraxisError && error.details && status !== 503) {
+    body.details = error.details;
+  }
+
+  return Response.json(body, { ...init, status, headers: withNoStore(init.headers) });
 }
 
 export async function withProvider<T>(

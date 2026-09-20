@@ -78,36 +78,52 @@ See [sdk/README.md](sdk/README.md) for the full surface.
 
 ## Stocks (PreStocks)
 
-Pre-IPO stock research and policy previews on Solana: `research openai`,
-`buy $40 openai`, `buy $50 spacex every monday`, `buy ai basket $60`. Intent
-parsing, PreStocks quotes, per-stock envelopes, schedules and baskets all work.
+Text to invest in pre-IPO stocks on Solana, with limits even a hacked AI
+can't break: `buy $40 openai`, `buy $50 spacex every monday`,
+`buy ai basket $60`. Same Aegis envelope — per-stock caps, allow-lists,
+expiry, pause — enforced on-chain by the program, not by the backend.
 
-**Buys are not executable yet.** The eight PreStocks mints are Token-2022
-(verified on mainnet 2026-09-20), and Aegis&rsquo;s `agent_transfer_spl` requires
-the classic SPL Token program — it hand-parses 165-byte token accounts and
-builds the CPI raw. That is structural, not a cap you can raise: even the
-vault&rsquo;s associated-token address is derived from the token program id. Praxis
-says so up front rather than proposing a transfer it cannot sign.
-
-Token-2022 support is a program change with real security surface (transfer
-hooks run arbitrary code; a transfer-fee extension means the amount received
-is not the amount capped), so it gets the same bar as swaps: enforced inside
-the instruction, or not shipped. The classic-SPL envelope (USDC, JUP, BONK)
-is unaffected and executes today.
+The PreStocks mints are **Token-2022**, so Aegis drives both SPL Token and
+Token-2022 (`TransferChecked`). The full path is asserted, not screenshotted:
 
 ```bash
-PRAXIS_STOCKS_ENABLED=1 bun run dev   # 8 PreStocks mints, switcher in Policy → SPL
+PRAXIS_STOCKS_ENABLED=1 bun run dev   # 8 PreStocks symbols, switcher in Policy → SPL
 bun run praxis:stocksgate             # offline honesty gate (CI-grade, no network)
-bun run praxis:demo -- --stocks       # funded-cluster demo: research, buy, block, pause, resume
+bun run aegis:test                    # LiteSVM T1–T8, incl. the Token-2022 envelope
+bun run praxis:stocksbuycheck         # live cluster: buy lands, over-cap refused on-chain
 ```
+
+`praxis:stocksbuycheck` output on a local validator:
+
+```
+✓ mint is Token-2022      TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb
+✓ buy CONFIRMED on-chain  23F5x1WuPSYoDEbvrccPG7fZRW2gQJbbpb8jC8uPRP2v…
+✓ recipient credited exactly 40, vault debited exactly 40
+✓ over-cap buy REJECTED on-chain — reason code 3 (OverPerTx)
+✓ vault untouched by the blocked buy
+```
+
+**Demo cluster uses mirror mints.** The real PreStocks mints exist on mainnet
+only, so a devnet demo cannot move them. `bun run praxis:setup-devnet-stocks`
+creates a Token-2022 stand-in per symbol on the demo cluster and prints the
+`PRAXIS_STOCK_MINTS` block. A mirror reproduces what the buy path exercises —
+symbol, 9 decimals, Token-2022 — and not the issuer's permanent-delegate,
+freeze or pause authorities. Prices and research still come from the live
+[PreStocks API](https://prestocks.com/). The app labels a mirrored universe
+wherever it is shown.
+
+**What the issuer can still do.** PreStocks holds `PermanentDelegate`, freeze
+and pause authority on the real mints. Aegis bounds what the *agent* can do
+with your vault; it cannot bound the issuer of a token you chose to hold. We
+name that rather than let "limits even a hacked AI can't break" imply more
+than it does.
 
 DCA schedules emit proposals (never auto-sign); baskets are all-or-nothing —
 any blocked or unpriceable constituent clarifies the whole basket. Firing is a
 scheduled job (`vercel.json` → `/api/cron/stocks`, authenticated with
 `CRON_SECRET`) that fans out across every wallet with a due schedule; set that
-secret or recurring buys never fire. Stock quotes
-via the [PreStocks API](https://prestocks.com/); pre-IPO mints here are
-PreStocks-only by bounty exclusivity. Submission copy: [docs/SUBMISSION.md](docs/SUBMISSION.md).
+secret or recurring buys never fire. Pre-IPO mints here are PreStocks-only by
+bounty exclusivity. Submission copy: [docs/SUBMISSION.md](docs/SUBMISSION.md).
 
 ## Future scope
 
@@ -121,10 +137,13 @@ Deliberately **not** built yet:
   There is no Jupiter CPI and no `agent_swap` instruction. A real swap path must
   enforce mint/program allow-lists and value caps *inside the program*, not in a
   quote or backend — that is the bar for adding it.
-- **Token-2022 transfers.** `agent_transfer_spl` is classic-SPL only, so the
-  PreStocks mints are research/preview only (see above). Supporting them means
-  handling transfer hooks and fee extensions *inside* the instruction, since a
-  cap that does not account for a transfer fee is not a cap.
+- **Token-2022 transfer hooks.** A mint with an active transfer hook needs
+  extra accounts `agent_transfer_spl` does not pass, so the CPI fails and the
+  transaction reverts — safe, but unsupported. Supporting hooks means deciding
+  which hook programs are trustworthy, which belongs in the allow-list.
+- **Transfer-fee accounting.** A fee mint debits the vault by the capped
+  amount and credits the recipient less. Correct for a spending policy, but
+  the proposal card should show the net the recipient receives.
 - Auto-signing DCA fires (the scheduler emits proposals; each fire still needs
   a signature — auto-sign stays out by design).
 - Managed vault-funding UX (token-vault funding is script-driven for now).

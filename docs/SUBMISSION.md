@@ -34,8 +34,35 @@ on-chain ActionLog is the audit trail judges can click.
 ## Aegis envelope (what judges can verify)
 
 - `agent_transfer` / `agent_transfer_spl`: signer, pause, expiry, per-tx cap, daily cap, allow-list, configured mint.
-- LiteSVM gate `bun run aegis:test` (T1–T7) + offline gate `bun run praxis:stocksgate` + live `bun run praxis:stockscheck`.
-- Funded-cluster demo: `bun run praxis:demo -- --stocks`.
+- Token-2022 is supported (the PreStocks mints are Token-2022): the CPI is
+  `TransferChecked`, so the token program re-verifies mint and decimals.
+- LiteSVM gate `bun run aegis:test` (T1–T8, T8 = the Token-2022 envelope) +
+  offline gate `bun run praxis:stocksgate` + live `bun run praxis:stockscheck`.
+- **`bun run praxis:stocksbuycheck`** — the whole claim in one command against
+  a live cluster: the buy lands, the over-cap buy is refused by the program:
+
+```
+✓ mint is Token-2022      TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb
+✓ buy CONFIRMED on-chain  23F5x1WuPSYoDEbvrccPG7fZRW2gQJbbpb8jC8uPRP2v…
+✓ recipient credited exactly 40, vault debited exactly 40
+✓ over-cap buy REJECTED on-chain — reason code 3 (OverPerTx)
+✓ vault untouched by the blocked buy
+```
+
+## Honest scope (read this before judging)
+
+- **Demo cluster uses mirror mints.** The real PreStocks mints are mainnet-only,
+  so the devnet demo buys Token-2022 stand-ins created by
+  `bun run praxis:setup-devnet-stocks` — same symbol, same 9 decimals, same
+  token program, so the code path is identical. Prices and research come from
+  the live PreStocks API. The app labels a mirrored universe in the UI.
+- **The issuer outranks the policy.** PreStocks holds `PermanentDelegate`,
+  freeze and pause authority on the real mints. Aegis bounds what the *agent*
+  can do with your vault; it cannot bound the issuer of a token you chose to
+  hold. Our claim is about agent risk, and we would rather say where it stops.
+- **Swaps are still blocked.** Parsed and previewed, never signed — there is no
+  Jupiter CPI. A real swap path must enforce mint/program allow-lists and value
+  caps inside the instruction.
 
 ## Links (fill at submit time)
 

@@ -175,7 +175,28 @@ Same project, these additions (values, not secrets — nothing sensitive here):
 | `GEMINI_API_KEY` | set for free-form phrasing, or `PRAXIS_LOCAL_INTENT=1` for the deterministic parser |
 | `NEXT_PUBLIC_PRAXIS_ALLOW_MOCK` | `0` (judges must hit the real API path) |
 
-The 8 stock mints come from the flag — do NOT list them in `PRAXIS_TOKENS`.
+The 8 stock symbols come from the flag — do NOT list them in `PRAXIS_TOKENS`.
+
+### Devnet mirror mints (required for a devnet stock demo)
+
+The real PreStocks mints exist on mainnet only. Before a devnet demo:
+
+```bash
+SOLANA_RPC_URL=https://api.devnet.solana.com \
+PRAXIS_OWNER_KEYPAIR_PATH=./keys/owner.json \
+  bun run praxis:setup-devnet-stocks     # creates 8 Token-2022 mints, prints the env block
+```
+
+Paste the printed `PRAXIS_STOCK_MINTS` / `PRAXIS_STOCK_DECIMALS` into the
+deployment env. Then prove the path end to end:
+
+```bash
+bun run praxis:stocksbuycheck            # buy lands; over-cap refused on-chain
+```
+
+Mirrors reproduce symbol, decimals (9) and token program (Token-2022) — the
+whole buy path — and not the issuer's permanent-delegate/freeze/pause
+authorities. The app labels a mirrored universe in the UI.
 
 ### Scheduled recurring buys
 

@@ -1,7 +1,10 @@
 import { withReadProvider } from "@/server/api/json";
 import { getServerConfig } from "@/server/env";
-import { DEFAULT_STOCK_DECIMALS, STOCK_LIST, STOCK_TOKEN_PROGRAM_ID } from "@/server/stocks/universe";
-import { TOKEN_PROGRAM_ID } from "@/server/aegis/constants";
+import {
+  DEFAULT_STOCK_DECIMALS,
+  STOCK_LIST,
+  isMirroredMint,
+} from "@/server/stocks/universe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,10 +14,10 @@ export const dynamic = "force-dynamic";
  * flag-gated — `[]` unless `PRAXIS_STOCKS_ENABLED=1`, so default behavior is
  * unchanged. No chain access; decimals come from the merged server token list.
  *
- * `transferable` tells the UI these mints cannot back a working envelope:
- * they are Token-2022 and `agent_transfer_spl` is classic-SPL only, so the
- * switcher can present them as research-only rather than offering a control
- * whose every use fails.
+ * `mirrored` tells the UI this symbol points at a stand-in mint on the demo
+ * cluster rather than the real PreStocks mint (the real ones are mainnet-only,
+ * see `PRAXIS_STOCK_MINTS`). The product labels that rather than implying a
+ * devnet demo is moving real pre-IPO tokens.
  */
 export async function GET(request: Request) {
   return withReadProvider(request, () => {
@@ -24,9 +27,14 @@ export async function GET(request: Request) {
     return STOCK_LIST.filter((s) => !universe || universe.includes(s.symbol)).map((s) => ({
       symbol: s.symbol,
       name: s.name,
-      mint: s.mint,
-      decimals: config.tokens.find((t) => t.mint === s.mint)?.decimals ?? DEFAULT_STOCK_DECIMALS,
-      transferable: STOCK_TOKEN_PROGRAM_ID === TOKEN_PROGRAM_ID.toBase58(),
+      // The configured mint, which on a demo cluster is the mirror.
+      mint: config.tokens.find((t) => t.symbol === s.symbol)?.mint ?? s.mint,
+      decimals: config.tokens.find((t) => t.symbol === s.symbol)?.decimals ?? DEFAULT_STOCK_DECIMALS,
+      transferable: true,
+      mirrored: isMirroredMint(
+        s.symbol,
+        config.tokens.find((t) => t.symbol === s.symbol)?.mint ?? s.mint,
+      ),
     }));
   });
 }

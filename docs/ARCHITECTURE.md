@@ -116,15 +116,30 @@ The SPL path also enforces:
 2. source and destination token accounts use the configured mint
 3. source token account is owned by the vault PDA
 
-`agent_transfer_spl` is **classic SPL Token only**: it hand-parses 165-byte
-token accounts and constructs the CPI raw against `TokenkegQ…`. A Token-2022
-mint is unreachable by it — the associated-token address is itself derived
-from the token program id, so even the vault's account would be at the wrong
-address. The PreStocks pre-IPO mints are Token-2022, which is why stock buys
-are preview-only; the provider checks the mint's owning program on the
-transfer cluster and refuses up front instead of failing deep in simulation.
-`PRAXIS_ALLOW_UNVERIFIED_MINTS=1` skips that check for offline tests and
-demos — never set it in production.
+`agent_transfer_spl` drives **SPL Token or Token-2022**, hand-parsing the
+token accounts and constructing the CPI raw (no `anchor-spl` dependency). The
+CPI is `TransferChecked`, so the token program re-verifies the mint and
+decimals rather than trusting a caller-supplied number; the mint is therefore
+an account of the instruction and must equal `policy.token_mint`. Token
+accounts must be `>= 165` bytes — Token-2022 appends a type byte and TLV
+extensions to the classic base — and an extended account must declare
+`AccountType::Account`, which is what stops a mint being passed where a token
+account belongs.
+
+Two deliberate limits: a mint with an active **transfer hook** needs accounts
+this instruction does not pass, so the CPI fails and the transaction reverts
+(safe — no value moves, no untrusted hook runs); and a **transfer fee** debits
+the vault by the capped amount while crediting the recipient less, which is
+correct for a spending policy but means the recipient may receive slightly
+less than the card showed.
+
+Off-chain, the provider resolves each mint's owning program on the transfer
+cluster and refuses up front — with distinct messages for "unsupported token
+program" and "not on this cluster" — instead of failing deep in simulation.
+The token program id is also a *seed* of the associated-token address, so it
+is threaded through every ATA derivation; a wrong default computes an address
+that would never hold the tokens. `PRAXIS_ALLOW_UNVERIFIED_MINTS=1` skips the
+pre-flight check for offline tests and demos — never set it in production.
 
 Owner instructions are intentionally unconstrained by agent caps. The owner can
 fund, withdraw, update policy, configure token envelope, revoke, and rotate.
@@ -185,7 +200,7 @@ They are not the source of truth for value movement.
 bun run lint          # eslint
 bun run test          # TypeScript suite: auth, validation, state, Aegis codec, routes
 bun run build         # production Next.js build
-bun run aegis:test    # rebuild the Anchor program + LiteSVM enforcement gate
+bun run aegis:test    # rebuild the Anchor program + LiteSVM enforcement gate (T1–T8)
 ```
 
 Demo / scripted checks against a funded cluster:
@@ -200,4 +215,6 @@ bun run praxis:reenablecheck         # revoke -> re-enable, signing follows the 
 bun run praxis:reenablecycles        # the same, repeated N times (CYCLES=3)
 bun run praxis:policycheck           # chat-driven policy change lands on-chain
 bun run praxis:localcheck            # docker Postgres + Redis, incl. CAS rejection
+bun run praxis:setup-devnet-stocks   # create Token-2022 mirror mints on the demo cluster
+bun run praxis:stocksbuycheck        # stock buy lands; over-cap refused on-chain
 ```

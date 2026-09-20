@@ -31,12 +31,14 @@ export interface StockUniverseEntry {
   name: string;
   mint: string;
   decimals: number;
-  /**
-   * False when Aegis cannot move this mint (Token-2022 vs the program's
-   * classic-SPL requirement). Such a stock is research-only: offering it as
-   * an envelope would be offering a control whose every use fails.
-   */
+  /** False when Aegis cannot drive this mint's token program at all. */
   transferable?: boolean;
+  /**
+   * True when this symbol points at a stand-in mint on the demo cluster
+   * rather than the real PreStocks mint. Surfaced in the UI — a devnet demo
+   * must not look like it is moving real pre-IPO tokens.
+   */
+  mirrored?: boolean;
 }
 
 interface ActiveStockApi {
@@ -49,6 +51,8 @@ interface ActiveStockApi {
   symbolFor: (mint: string) => string | null;
   /** Decimals reported by the server for a universe mint, or null. */
   decimalsFor: (mint: string) => number | null;
+  /** True when the configured universe uses demo-cluster stand-in mints. */
+  usesMirrorMints: boolean;
 }
 
 const Ctx = createContext<ActiveStockApi | null>(null);
@@ -74,8 +78,8 @@ export function ActiveStockProvider({ children }: { children: ReactNode }) {
           (s): s is StockUniverseEntry =>
             Boolean(s) && typeof s.symbol === "string" && typeof s.mint === "string",
         );
-        // An older backend omits the flag; assume not transferable rather than
-        // presenting an envelope control that cannot work.
+        // An older backend omits `transferable`; treat it as usable, which is
+        // what it meant before the flag existed.
         setStocks(list);
         try {
           const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -118,7 +122,15 @@ export function ActiveStockProvider({ children }: { children: ReactNode }) {
 
   return (
     <Ctx.Provider
-      value={{ stocks, stocksEnabled: stocks.length > 0, activeMint, setActiveMint, symbolFor, decimalsFor }}
+      value={{
+        stocks,
+        stocksEnabled: stocks.length > 0,
+        activeMint,
+        setActiveMint,
+        symbolFor,
+        decimalsFor,
+        usesMirrorMints: stocks.some((s) => s.mirrored),
+      }}
     >
       {children}
     </Ctx.Provider>

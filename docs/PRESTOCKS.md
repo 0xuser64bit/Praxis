@@ -39,11 +39,27 @@ Universe (8, all pre-IPO):
 | POLYMARKET | `Pre8AREmFPtoJFT8mQSXQLh56cwJmM7CFDRuoGBZiUP` | |
 | SPACEX | `PreANxuXjsy2pvisWWMNB6YaJNzr7681wJJr2rHsfTh` | |
 
-Open questions (resolve in ROADMAP C01 spike, do not guess):
-- `decimals` per mint (absent from API; resolve via `getTokenSupply` on mainnet).
+Resolved on-chain 2026-09-20 (read from the mint accounts, not guessed):
+
+- **`decimals` = 9** for all eight mints — not the 6 the universe originally
+  shipped, which mis-scaled every amount by 1000x.
+- **Token program = Token-2022** (`TokenzQd…`), not classic SPL. This is why
+  `agent_transfer_spl` gained Token-2022 support; without it no stock buy
+  could execute at all.
+- **Extensions present:** `PermanentDelegate`, `DefaultAccountState`,
+  `TransferFeeConfig`, `TransferHook`, `PausableConfig`,
+  `ConfidentialTransfer*`, `MetadataPointer`, `TokenMetadata`.
+  Values that matter: default account state = **Initialized** (new ATAs are
+  not frozen), transfer fee = **0 bps**, transfer hook program = **unset**.
+  So today they move like plain tokens — which is what makes the integration
+  tractable. `PermanentDelegate` / freeze / pause all sit with the issuer
+  (`WV9PJN7XTmTLVwbutCLFxp8TyePee6Xq5mRq6Fti5Wc`); disclosed in SUBMISSION.md.
+- **Mints are mainnet-only** — absent from devnet, hence the mirror-mint
+  workflow (`PRAXIS_STOCK_MINTS`, `bun run praxis:setup-devnet-stocks`).
+
+Still open:
 - Mainnet liquidity / Jupiter routability per mint (DexScreener + Jupiter quote probe).
 - `tokenPrice` vs `markPrice` semantics for display (show both, label honestly until confirmed).
-- PreStocks mint/redeem flow vs secondary swap (determines whether buys are transfers or swaps).
 
 ## 2. Token registry design
 
@@ -109,9 +125,16 @@ Deterministic fallback `parseIntentLocallyForDemo` learns: `buy/sell`, `p`-prefi
 `dca/every monday`, `basket <name>`. Gemini system prompt gains the same synonyms + stock alias list.
 `policy_question` / `policy_change` / `save_contact` work unchanged for stocks.
 
-## 5. Policy + enforcement (unchanged program)
+## 5. Policy + enforcement
 
-No Anchor change in the hackathon branch. All stock buys flow through:
+**Superseded:** the branch originally forbade Anchor changes, on the assumption
+that the stock mints were classic SPL. They are Token-2022, so
+`agent_transfer_spl` was extended (accept both token programs, `>= 165`-byte
+accounts with an `AccountType::Account` guard, `TransferChecked` with the mint
+as an account). LiteSVM T8 covers it. Without that change the entire stock
+surface is unexecutable, which is not a constraint worth honouring.
+
+All stock buys flow through:
 `checkTokenTransferPolicy` (paused -> expiry -> token configured -> mint == token_mint ->
 recipient allow-list -> per-tx -> daily) and `agent_transfer_spl` on-chain.
 

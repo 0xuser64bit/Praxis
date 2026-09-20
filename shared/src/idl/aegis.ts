@@ -214,6 +214,14 @@ export type Aegis = {
           "writable": true
         },
         {
+          "name": "mint",
+          "docs": [
+            "owned by the same token program as the accounts, and be an initialized",
+            "mint. Required because the CPI is `TransferChecked`, which verifies the",
+            "mint and decimals on the token program's side."
+          ]
+        },
+        {
           "name": "actionLog",
           "writable": true,
           "pda": {

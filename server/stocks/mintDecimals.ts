@@ -65,26 +65,39 @@ export async function resolveMintDecimals(
 ): Promise<number | undefined> {
   const override = decimalsOverrides.get(mint);
   if (override !== undefined) return override;
-  return (await resolveMintInfo(connection, mint))?.decimals;
+  const lookup = await lookupMint(connection, mint);
+  return lookup.status === "ok" ? lookup.info.decimals : undefined;
 }
 
-/**
- * Read a mint account, or `undefined` when the chain cannot answer — because
- * it is unreachable, or because the mint does not exist on *this* cluster.
- * Both are reasons to refuse, never to assume.
- */
+/** Convenience wrapper: the mint's facts, or undefined if we can't read them. */
 export async function resolveMintInfo(
   connection: Connection,
   mint: string,
 ): Promise<MintInfo | undefined> {
+  const lookup = await lookupMint(connection, mint);
+  return lookup.status === "ok" ? lookup.info : undefined;
+}
+
+/**
+ * The outcome of reading a mint account. `unsupported-program` is kept
+ * distinct from `unavailable` so callers can tell "this token is issued by
+ * something we can't drive" from "we couldn't reach the chain" — very
+ * different things to tell a user.
+ */
+export type MintLookup =
+  | { status: "ok"; info: MintInfo }
+  | { status: "unsupported-program"; programId: string }
+  | { status: "unavailable" };
+
+async function lookupMint(connection: Connection, mint: string): Promise<MintLookup> {
   const cached = cache.get(mint);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) return { status: "ok", info: cached };
 
   let address: PublicKey;
   try {
     address = new PublicKey(mint);
   } catch {
-    return undefined;
+    return { status: "unavailable" };
   }
 
   try {
@@ -95,50 +108,49 @@ export async function resolveMintInfo(
     );
     if (!info) {
       logger.warn("mint.decimals_missing_account", { mint });
-      return undefined;
+      return { status: "unavailable" };
     }
-    const ownedByTokenProgram =
+
+    const owner = info.owner.toBase58();
+    const knownTokenProgram =
       info.owner.equals(TOKEN_PROGRAM_ID) || info.owner.equals(TOKEN_2022_PROGRAM_ID);
-    if (!ownedByTokenProgram || info.data.length < MINT_BASE_SIZE) {
-      // Not a mint (or a layout we do not understand) — refuse rather than
-      // read a byte out of an arbitrary account and call it a scale.
-      logger.warn("mint.decimals_unexpected_account", {
-        mint,
-        owner: info.owner.toBase58(),
-        size: info.data.length,
-      });
-      return undefined;
+    if (!knownTokenProgram) {
+      // Never read byte 44 of an arbitrary account and call it a scale.
+      logger.warn("mint.unsupported_owner", { mint, owner });
+      return { status: "unsupported-program", programId: owner };
+    }
+    if (info.data.length < MINT_BASE_SIZE) {
+      logger.warn("mint.decimals_unexpected_account", { mint, owner, size: info.data.length });
+      return { status: "unavailable" };
     }
 
     const decimals = info.data[DECIMALS_OFFSET];
     if (!Number.isInteger(decimals) || decimals < 0 || decimals > MAX_DECIMALS) {
       logger.warn("mint.decimals_out_of_range", { mint, decimals });
-      return undefined;
+      return { status: "unavailable" };
     }
 
-    const resolved: MintInfo = { decimals, programId: info.owner.toBase58() };
+    const resolved: MintInfo = { decimals, programId: owner };
     cache.set(mint, resolved);
-    return resolved;
+    return { status: "ok", info: resolved };
   } catch (error) {
     logger.warn("mint.decimals_lookup_failed", { mint, ...errorFields(error) });
-    return undefined;
+    return { status: "unavailable" };
   }
 }
 
 /**
  * Whether Aegis can actually move this mint, and why not when it cannot.
  *
- * The deployed `agent_transfer_spl` hard-requires the classic SPL Token
- * program and 165-byte token accounts (it hand-parses them and builds the
- * CPI raw, with no anchor-spl dependency). A Token-2022 mint therefore cannot
- * be moved by it at all — not with different caps, not with a prepared ATA:
- * the associated-token address itself is derived from the token program id,
- * so even the vault's account would be at the wrong address.
+ * `agent_transfer_spl` drives the token program by CPI, so the mint must be
+ * owned by one Aegis knows how to invoke: classic SPL Token or Token-2022.
+ * Anything else (or a mint absent from the transfer cluster) is refused up
+ * front, because the alternative is an opaque "the vault or recipient token
+ * account may not exist yet" after a full simulation round-trip — a
+ * setup-sounding error for a structural fact.
  *
- * The PreStocks pre-IPO mints are Token-2022 (verified on mainnet
- * 2026-09-20), which is why stock buys are preview-only today. Surfacing that
- * here turns an opaque "the vault or recipient token account may not exist
- * yet" deep in simulation into an accurate answer before anything is built.
+ * Token-2022 matters specifically because the PreStocks pre-IPO mints are
+ * issued under it (verified on mainnet 2026-09-20).
  */
 export type MintMovability =
   | { movable: true; info: MintInfo }
@@ -148,12 +160,20 @@ export type MintMovability =
 export async function checkMintMovable(
   connection: Connection,
   mint: string,
-  classicTokenProgramId: string,
+  supportedTokenProgramIds: string[],
 ): Promise<MintMovability> {
-  const info = await resolveMintInfo(connection, mint);
-  if (!info) return { movable: false, reason: "unresolved" };
-  if (info.programId !== classicTokenProgramId) {
-    return { movable: false, reason: "wrong-token-program", programId: info.programId };
+  const lookup = await lookupMint(connection, mint);
+  if (lookup.status === "unavailable") return { movable: false, reason: "unresolved" };
+  if (lookup.status === "unsupported-program") {
+    return { movable: false, reason: "wrong-token-program", programId: lookup.programId };
   }
-  return { movable: true, info };
+  if (!supportedTokenProgramIds.includes(lookup.info.programId)) {
+    return { movable: false, reason: "wrong-token-program", programId: lookup.info.programId };
+  }
+  return { movable: true, info: lookup.info };
+}
+
+/** The token programs `agent_transfer_spl` can drive. */
+export function supportedTokenPrograms(classic: string, token2022: string): string[] {
+  return [classic, token2022];
 }

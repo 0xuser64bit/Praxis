@@ -23,7 +23,7 @@ import {
   type TransferSimulation,
   type UnsignedOwnerTransaction,
 } from "../aegis/client";
-import { JUPITER_PROGRAM_ID, TOKEN_PROGRAM_ID } from "../aegis/constants";
+import { JUPITER_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "../aegis/constants";
 import { AddressBook } from "../agent/addressBook";
 import { checkSwapPolicy } from "../agent/policy";
 import { explainPolicy } from "../agent/policyExplainer";
@@ -61,7 +61,11 @@ import {
   type DcaSchedule,
 } from "../stocks/schedules";
 import { fetchPrestocksEntries, findPrestocksEntry } from "../stocks/prestocks";
-import { checkMintMovable, resolveMintDecimals } from "../stocks/mintDecimals";
+import {
+  checkMintMovable,
+  resolveMintDecimals,
+  supportedTokenPrograms,
+} from "../stocks/mintDecimals";
 import { hasProvisionalDecimals } from "../stocks/universe";
 import { errorFields, logger } from "../observability/logger";
 
@@ -1405,10 +1409,9 @@ export class PraxisServerProvider implements PraxisProvider {
   /**
    * Refuse, up front, any SPL mint Aegis cannot actually move.
    *
-   * `agent_transfer_spl` requires the classic SPL Token program; a Token-2022
-   * mint (which the PreStocks pre-IPO tokens are) is unreachable by it, and a
-   * mint absent from the transfer cluster obviously so. Both used to surface
-   * as "the vault or recipient token account may not exist yet" after a full
+   * `agent_transfer_spl` drives SPL Token or Token-2022 by CPI. A mint under
+   * any other program, or absent from the transfer cluster, used to surface as
+   * "the vault or recipient token account may not exist yet" after a full
    * simulation round-trip — a setup-sounding error for a structural fact.
    *
    * Returns a block to emit, or undefined when the mint is fine. Native SOL
@@ -1421,7 +1424,7 @@ export class PraxisServerProvider implements PraxisProvider {
     const verdict = await checkMintMovable(
       getConnection(this.config),
       token.mint,
-      TOKEN_PROGRAM_ID.toBase58(),
+      supportedTokenPrograms(TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()),
     );
     if (verdict.movable) return undefined;
 
@@ -1434,10 +1437,9 @@ export class PraxisServerProvider implements PraxisProvider {
       return {
         type: "prose",
         text:
-          `${token.symbol} is a Token-2022 mint, and the Aegis program can only move classic ` +
-          "SPL Token mints — so this is something Praxis genuinely cannot do yet, not a limit " +
-          "you can raise. I won't propose a transfer I can't sign. Research and policy previews " +
-          `for ${token.symbol} still work.`,
+          `${token.symbol} is issued by a token program Aegis can't drive (neither SPL Token ` +
+          "nor Token-2022), so I won't propose a transfer I can't sign. Research and policy " +
+          `previews for ${token.symbol} still work.`,
       };
     }
 
@@ -1445,7 +1447,7 @@ export class PraxisServerProvider implements PraxisProvider {
       type: "clarify",
       text:
         `I can't find ${token.symbol}'s mint on the cluster Praxis transfers on, so I can't ` +
-        "propose this buy. If this is a devnet deployment, the token may only exist on mainnet.",
+        "propose this buy. The deployment may be pointed at a different cluster than the token.",
       options: [],
     };
   }

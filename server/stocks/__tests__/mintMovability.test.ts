@@ -7,12 +7,14 @@ import {
   primeMintDecimals,
   resolveMintDecimals,
   resolveMintInfo,
+  supportedTokenPrograms,
 } from "../mintDecimals";
 import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "../../aegis/constants";
 import { STOCK_TOKEN_PROGRAM_ID } from "../universe";
 
 const MINT = "PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF";
 const CLASSIC = TOKEN_PROGRAM_ID.toBase58();
+const SUPPORTED = supportedTokenPrograms(CLASSIC, TOKEN_2022_PROGRAM_ID.toBase58());
 
 /** A minimal mint account: decimals live at byte 44 of the 82-byte base. */
 function mintAccount(decimals: number, owner: PublicKey, size = 82) {
@@ -32,32 +34,38 @@ afterEach(() => {
 describe("mint movability", () => {
   test("a classic SPL mint is movable and reports its decimals", async () => {
     const conn = connectionReturning(mintAccount(9, TOKEN_PROGRAM_ID));
-    const verdict = await checkMintMovable(conn, MINT, CLASSIC);
+    const verdict = await checkMintMovable(conn, MINT, SUPPORTED);
     expect(verdict.movable).toBe(true);
     if (verdict.movable) expect(verdict.info.decimals).toBe(9);
   });
 
-  test("a Token-2022 mint is refused — Aegis cannot move it at all", async () => {
-    // The deployed agent_transfer_spl hard-requires the classic token program
-    // and 165-byte accounts, so this is structural, not a cap to raise.
+  test("a Token-2022 mint is movable — this is what makes stock buys executable", async () => {
     const conn = connectionReturning(mintAccount(9, TOKEN_2022_PROGRAM_ID, 902));
-    const verdict = await checkMintMovable(conn, MINT, CLASSIC);
+    const verdict = await checkMintMovable(conn, MINT, SUPPORTED);
+    expect(verdict.movable).toBe(true);
+    if (verdict.movable) expect(verdict.info.decimals).toBe(9);
+  });
+
+  test("the PreStocks mints are Token-2022, so they need that support", () => {
+    // Recorded from mainnet 2026-09-20.
+    expect(STOCK_TOKEN_PROGRAM_ID).toBe(TOKEN_2022_PROGRAM_ID.toBase58());
+    expect(SUPPORTED).toContain(STOCK_TOKEN_PROGRAM_ID);
+  });
+
+  test("a mint under any other token program is still refused", async () => {
+    const alien = new PublicKey("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
+    const conn = connectionReturning(mintAccount(9, alien));
+    const verdict = await checkMintMovable(conn, MINT, SUPPORTED);
     expect(verdict.movable).toBe(false);
     if (!verdict.movable && verdict.reason === "wrong-token-program") {
-      expect(verdict.programId).toBe(TOKEN_2022_PROGRAM_ID.toBase58());
+      expect(verdict.programId).toBe(alien.toBase58());
     } else {
       throw new Error(`expected wrong-token-program, got ${JSON.stringify(verdict)}`);
     }
   });
 
-  test("the PreStocks mints are exactly that case", () => {
-    // Recorded from mainnet 2026-09-20; this is why stock buys are preview-only.
-    expect(STOCK_TOKEN_PROGRAM_ID).toBe(TOKEN_2022_PROGRAM_ID.toBase58());
-    expect(STOCK_TOKEN_PROGRAM_ID).not.toBe(CLASSIC);
-  });
-
   test("a mint missing from this cluster is refused, not assumed", async () => {
-    const verdict = await checkMintMovable(connectionReturning(null), MINT, CLASSIC);
+    const verdict = await checkMintMovable(connectionReturning(null), MINT, SUPPORTED);
     expect(verdict.movable).toBe(false);
     if (!verdict.movable) expect(verdict.reason).toBe("unresolved");
   });
@@ -80,12 +88,13 @@ describe("mint movability", () => {
 
   test("an operator decimals override does not imply movability", async () => {
     primeMintDecimals(MINT, 9);
-    const conn = connectionReturning(mintAccount(9, TOKEN_2022_PROGRAM_ID, 902));
+    const alien = new PublicKey("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
+    const conn = connectionReturning(mintAccount(9, alien));
     // The override answers "what scale"; only the chain answers "can Aegis
     // move this". Conflating them would let a pinned value wave through a
     // mint the program cannot touch.
     expect(await resolveMintDecimals(conn, MINT)).toBe(9);
-    expect((await checkMintMovable(conn, MINT, CLASSIC)).movable).toBe(false);
+    expect((await checkMintMovable(conn, MINT, SUPPORTED)).movable).toBe(false);
   });
 
   test("results are cached — decimals are immutable", async () => {

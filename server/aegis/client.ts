@@ -21,10 +21,11 @@ import {
   JUPITER_PROGRAM_ID,
   reasonFromAegisErrorCode,
   SYSTEM_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
 } from "./constants";
 import { decodeActionLog, decodePolicyAccount } from "./codec";
-import { checkMintMovable } from "../stocks/mintDecimals";
+import { checkMintMovable, resolveMintInfo, supportedTokenPrograms } from "../stocks/mintDecimals";
 import {
   buildAgentTransferIx,
   buildAgentTransferSplIx,
@@ -478,12 +479,15 @@ export class AegisClient {
   ): Promise<TokenAccountSetupResult> {
     const owner = requireOwnerKeypair(this.config);
     const mint = new PublicKey(tokenMint);
+    const { programId } = await this.tokenProgramFor(mint);
     const policy = this.policyForOwner(owner.publicKey);
     const vault = findVaultPda(policy, this.config.programId);
-    const vaultTokenAccount = findAssociatedTokenAddress(vault, mint);
+    const vaultTokenAccount = findAssociatedTokenAddress(vault, mint, programId);
 
     const uniqueRecipientOwners = uniquePublicKeys(recipientOwners);
-    const recipientTokenAccounts = uniqueRecipientOwners.map((recipient) => findAssociatedTokenAddress(recipient, mint));
+    const recipientTokenAccounts = uniqueRecipientOwners.map((recipient) =>
+      findAssociatedTokenAddress(recipient, mint, programId),
+    );
     const accountTargets = [
       { owner: vault, ata: vaultTokenAccount },
       ...uniqueRecipientOwners.map((recipient, index) => ({
@@ -508,6 +512,7 @@ export class AegisClient {
         owner: target.owner,
         mint,
         ata: target.ata,
+        tokenProgramId: programId,
       }));
       sig = await this.sendOwnerTransaction(ixs, owner);
     }
@@ -533,10 +538,14 @@ export class AegisClient {
   async fundTokenVault(tokenMint: string, amount: bigint): Promise<string> {
     const owner = requireOwnerKeypair(this.config);
     const mint = new PublicKey(tokenMint);
+    const { programId, decimals } = await this.tokenProgramFor(mint);
+    if (decimals === undefined) {
+      throw new PraxisInputError(`Could not read mint ${tokenMint} on this cluster.`);
+    }
     const policy = this.policyForOwner(owner.publicKey);
     const vault = findVaultPda(policy, this.config.programId);
-    const ownerTokenAccount = findAssociatedTokenAddress(owner.publicKey, mint);
-    const vaultTokenAccount = findAssociatedTokenAddress(vault, mint);
+    const ownerTokenAccount = findAssociatedTokenAddress(owner.publicKey, mint, programId);
+    const vaultTokenAccount = findAssociatedTokenAddress(vault, mint, programId);
 
     await this.ensureSplTokenAccounts(tokenMint);
     const createOwnerAta = buildCreateAssociatedTokenAccountIdempotentIx({
@@ -544,12 +553,16 @@ export class AegisClient {
       owner: owner.publicKey,
       mint,
       ata: ownerTokenAccount,
+      tokenProgramId: programId,
     });
     const transfer = buildTokenTransferIx({
       source: ownerTokenAccount,
       destination: vaultTokenAccount,
       authority: owner.publicKey,
+      mint,
+      decimals,
       amount,
+      tokenProgramId: programId,
     });
     return this.sendOwnerTransaction([createOwnerAta, transfer], owner);
   }
@@ -605,7 +618,9 @@ export class AegisClient {
     const policy = await this.getPolicy();
     if (policy.tokenMint === PublicKey.default.toBase58()) return;
     const vault = findVaultPda(new PublicKey(policy.address), this.config.programId);
-    const vaultTokenAccount = findAssociatedTokenAddress(vault, new PublicKey(policy.tokenMint));
+    const mint = new PublicKey(policy.tokenMint);
+    const { programId } = await this.tokenProgramFor(mint);
+    const vaultTokenAccount = findAssociatedTokenAddress(vault, mint, programId);
     const info = await this.conn.getAccountInfo(vaultTokenAccount, this.config.commitment);
     if (!info) return;
     // SPL token account layout: amount is a u64 LE at byte offset 64 (165-byte
@@ -825,20 +840,23 @@ export class AegisClient {
   /**
    * Refuse an envelope for a mint `agent_transfer_spl` could never move.
    *
-   * The instruction requires the classic SPL Token program, and the ATA
-   * derivation here bakes that program id into the address — so configuring a
-   * Token-2022 mint produces a policy whose agent transfers can only ever
-   * fail, plus an ATA create that reverts. Catch it while it is still a
-   * readable error instead of an on-chain rejection the owner paid fees for.
+   * The instruction can drive SPL Token or Token-2022; anything else produces
+   * a policy whose agent transfers can only ever fail, plus an ATA create that
+   * reverts. Catch it while it is still a readable error instead of an
+   * on-chain rejection the owner paid fees for.
    */
   private async assertMintMovable(mint: PublicKey): Promise<void> {
     if (process.env.PRAXIS_ALLOW_UNVERIFIED_MINTS === "1") return;
-    const verdict = await checkMintMovable(this.conn, mint.toBase58(), TOKEN_PROGRAM_ID.toBase58());
+    const verdict = await checkMintMovable(
+      this.conn,
+      mint.toBase58(),
+      supportedTokenPrograms(TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()),
+    );
     if (verdict.movable) return;
     if (verdict.reason === "wrong-token-program") {
       throw new PraxisInputError(
-        `This mint is owned by ${verdict.programId}, but Aegis can only move classic SPL Token ` +
-          "mints. Configuring it would create an envelope the agent could never use.",
+        `This mint is owned by ${verdict.programId}, which is neither SPL Token nor Token-2022. ` +
+          "Configuring it would create an envelope the agent could never use.",
       );
     }
     throw new PraxisInputError(
@@ -855,9 +873,10 @@ export class AegisClient {
     mint: PublicKey,
     accountOwners: PublicKey[],
   ): Promise<TransactionInstruction[]> {
+    const { programId } = await this.tokenProgramFor(mint);
     const targets = uniquePublicKeys(accountOwners).map((owner) => ({
       owner,
-      ata: findAssociatedTokenAddress(owner, mint),
+      ata: findAssociatedTokenAddress(owner, mint, programId),
     }));
     if (targets.length === 0) return [];
 
@@ -873,6 +892,7 @@ export class AegisClient {
           owner: target.owner,
           mint,
           ata: target.ata,
+          tokenProgramId: programId,
         }),
       );
   }
@@ -995,14 +1015,36 @@ export class AegisClient {
     const policy = requirePolicyAddress(this.config);
     const mint = new PublicKey(token.mint);
     const vault = findVaultPda(policy, this.config.programId);
+    const { programId } = await this.tokenProgramFor(mint);
     return buildAgentTransferSplIx(
       { ...this.addresses({ policy }), agentAuthority },
       {
-        vaultTokenAccount: findAssociatedTokenAddress(vault, mint),
-        recipientTokenAccount: findAssociatedTokenAddress(recipient, mint),
+        vaultTokenAccount: findAssociatedTokenAddress(vault, mint, programId),
+        recipientTokenAccount: findAssociatedTokenAddress(recipient, mint, programId),
+        mint,
+        tokenProgramId: programId,
       },
       amount,
     );
+  }
+
+  /**
+   * The token program that owns `mint`, and its decimals.
+   *
+   * Everything downstream depends on getting this right: the ATA address is
+   * derived from the program id, and the on-chain handler requires the
+   * accounts, the mint and the invoked program to agree. Defaults to classic
+   * SPL only when the mint cannot be read, which keeps behaviour unchanged for
+   * the classic path and surfaces Token-2022 problems as an explicit failure
+   * rather than a silently wrong address.
+   */
+  private async tokenProgramFor(mint: PublicKey): Promise<{ programId: PublicKey; decimals?: number }> {
+    const info = await resolveMintInfo(this.conn, mint.toBase58());
+    if (!info) return { programId: TOKEN_PROGRAM_ID };
+    const programId = info.programId === TOKEN_2022_PROGRAM_ID.toBase58()
+      ? TOKEN_2022_PROGRAM_ID
+      : new PublicKey(info.programId);
+    return { programId, decimals: info.decimals };
   }
 
   private policyForOwner(owner: PublicKey): PublicKey {

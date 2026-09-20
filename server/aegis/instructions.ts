@@ -58,9 +58,25 @@ export function buildConfigureTokenIx(
   });
 }
 
+/**
+ * `agent_transfer_spl`. The account order mirrors the Anchor struct exactly:
+ * agent, policy, vault, vault ATA, recipient ATA, **mint**, action log, token
+ * program. The mint is required because the on-chain CPI is `TransferChecked`
+ * — the token program re-verifies mint and decimals rather than trusting a
+ * caller-supplied number.
+ *
+ * `tokenProgramId` must be the program that actually owns the mint (classic
+ * SPL or Token-2022); the on-chain handler requires both token accounts and
+ * the mint to belong to it.
+ */
 export function buildAgentTransferSplIx(
   addresses: AegisAddresses & { agentAuthority: PublicKey },
-  tokenAccounts: { vaultTokenAccount: PublicKey; recipientTokenAccount: PublicKey },
+  tokenAccounts: {
+    vaultTokenAccount: PublicKey;
+    recipientTokenAccount: PublicKey;
+    mint: PublicKey;
+    tokenProgramId?: PublicKey;
+  },
   amount: bigint,
 ): TransactionInstruction {
   return new TransactionInstruction({
@@ -71,18 +87,29 @@ export function buildAgentTransferSplIx(
       { pubkey: addresses.vault, isSigner: false, isWritable: false },
       { pubkey: tokenAccounts.vaultTokenAccount, isSigner: false, isWritable: true },
       { pubkey: tokenAccounts.recipientTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: tokenAccounts.mint, isSigner: false, isWritable: false },
       { pubkey: addresses.actionLog, isSigner: false, isWritable: true },
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      {
+        pubkey: tokenAccounts.tokenProgramId ?? TOKEN_PROGRAM_ID,
+        isSigner: false,
+        isWritable: false,
+      },
     ],
     data: Buffer.concat([INSTRUCTION_DISCRIMINATOR.agentTransferSpl, writeU64(amount)]),
   });
 }
 
+/**
+ * ATA CreateIdempotent. `tokenProgramId` must own the mint — it is both an
+ * account of this instruction and a seed of the derived address, so a classic
+ * default against a Token-2022 mint creates nothing usable.
+ */
 export function buildCreateAssociatedTokenAccountIdempotentIx(args: {
   payer: PublicKey;
   owner: PublicKey;
   mint: PublicKey;
   ata: PublicKey;
+  tokenProgramId?: PublicKey;
 }): TransactionInstruction {
   return new TransactionInstruction({
     programId: ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -92,27 +119,37 @@ export function buildCreateAssociatedTokenAccountIdempotentIx(args: {
       { pubkey: args.owner, isSigner: false, isWritable: false },
       { pubkey: args.mint, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: args.tokenProgramId ?? TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ],
     // Associated Token Account program: CreateIdempotent.
     data: Buffer.from([1]),
   });
 }
 
+/**
+ * Owner-signed token transfer (vault funding), as `TransferChecked` so the
+ * token program verifies the mint and decimals. Token-2022 deprecates the
+ * unchecked variant, so passing the mint is required for either program.
+ */
 export function buildTokenTransferIx(args: {
   source: PublicKey;
   destination: PublicKey;
   authority: PublicKey;
+  mint: PublicKey;
+  decimals: number;
   amount: bigint;
+  tokenProgramId?: PublicKey;
 }): TransactionInstruction {
   return new TransactionInstruction({
-    programId: TOKEN_PROGRAM_ID,
+    programId: args.tokenProgramId ?? TOKEN_PROGRAM_ID,
     keys: [
       { pubkey: args.source, isSigner: false, isWritable: true },
+      { pubkey: args.mint, isSigner: false, isWritable: false },
       { pubkey: args.destination, isSigner: false, isWritable: true },
       { pubkey: args.authority, isSigner: true, isWritable: false },
     ],
-    data: Buffer.concat([Buffer.from([3]), writeU64(args.amount)]),
+    // TransferChecked: tag 12, amount (u64 LE), decimals (u8).
+    data: Buffer.concat([Buffer.from([12]), writeU64(args.amount), Buffer.from([args.decimals])]),
   });
 }
 

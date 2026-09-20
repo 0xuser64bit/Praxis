@@ -39,9 +39,36 @@ fn spl_token_id() -> Pubkey {
         .unwrap()
 }
 
+/// SPL Token-2022, loaded by LiteSVM's default programs. Tokenized-stock
+/// mints (PreStocks) are issued under it.
+fn spl_token_2022_id() -> Pubkey {
+    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        .parse()
+        .unwrap()
+}
+
 /// Demo token base units (6 decimals, USDC-style): `tok(1)` == 1_000_000.
+const TOKEN_DECIMALS: u8 = 6;
 fn tok(n: u64) -> u64 {
     n * 1_000_000
+}
+
+/// An initialized SPL mint (82-byte base, no authorities). Shared by both
+/// token programs — Token-2022's mint base layout is identical.
+fn mint_data(decimals: u8) -> Vec<u8> {
+    let mut d = vec![0u8; 82];
+    d[44] = decimals; // decimals
+    d[45] = 1; // is_initialized
+    d
+}
+
+/// A Token-2022 token account carrying the extension tail: the 165-byte base,
+/// then `AccountType::Account` at byte 165. Exercises the `len > 165` branch
+/// that classic accounts never reach.
+fn token_account_data_2022_extended(mint: &Pubkey, owner: &Pubkey, amount: u64) -> Vec<u8> {
+    let mut d = token_account_data(mint, owner, amount);
+    d.push(2); // AccountType::Account
+    d
 }
 
 /// Build a classic 165-byte SPL token account's data (mint, owner, amount,
@@ -313,10 +340,41 @@ impl Ctx {
     /// Place a ready-made SPL token account (owned by the SPL Token program)
     /// directly into the SVM, so the agent_transfer_spl CPI has real accounts.
     fn set_token_account(&mut self, addr: Pubkey, mint: &Pubkey, owner: &Pubkey, amount: u64) {
+        self.set_token_account_for(addr, mint, owner, amount, spl_token_id(), false);
+    }
+
+    /// Token-program-aware variant. `extended` appends the Token-2022
+    /// `AccountType` byte so the extension tail is exercised too.
+    fn set_token_account_for(
+        &mut self,
+        addr: Pubkey,
+        mint: &Pubkey,
+        owner: &Pubkey,
+        amount: u64,
+        token_program: Pubkey,
+        extended: bool,
+    ) {
+        let data = if extended {
+            token_account_data_2022_extended(mint, owner, amount)
+        } else {
+            token_account_data(mint, owner, amount)
+        };
         let acct = SolanaAccount {
-            lamports: sol(1) / 100, // comfortably rent-exempt for 165 bytes
-            data: token_account_data(mint, owner, amount),
-            owner: spl_token_id(),
+            lamports: sol(1) / 100, // comfortably rent-exempt
+            data,
+            owner: token_program,
+            executable: false,
+            rent_epoch: 0,
+        };
+        self.svm.set_account(addr, acct).unwrap();
+    }
+
+    /// Place an initialized mint account owned by `token_program`.
+    fn set_mint(&mut self, addr: Pubkey, decimals: u8, token_program: Pubkey) {
+        let acct = SolanaAccount {
+            lamports: sol(1) / 100,
+            data: mint_data(decimals),
+            owner: token_program,
             executable: false,
             rent_epoch: 0,
         };
@@ -354,6 +412,35 @@ impl Ctx {
         recipient_token_account: Pubkey,
         signer: &Keypair,
     ) -> TransactionResult {
+        // Classic-SPL convenience wrapper: the mint is whatever the vault
+        // token account claims, which is what every existing T7 case wants.
+        let mint = self.mint_of(vault_token_account);
+        self.agent_transfer_spl_with(
+            amount,
+            vault_token_account,
+            recipient_token_account,
+            mint,
+            spl_token_id(),
+            signer,
+        )
+    }
+
+    /// Read the mint a placed token account points at (first 32 bytes).
+    fn mint_of(&self, token_account: Pubkey) -> Pubkey {
+        let acct = self.svm.get_account(&token_account).unwrap();
+        Pubkey::try_from(&acct.data[0..32]).unwrap()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn agent_transfer_spl_with(
+        &mut self,
+        amount: u64,
+        vault_token_account: Pubkey,
+        recipient_token_account: Pubkey,
+        mint: Pubkey,
+        token_program: Pubkey,
+        signer: &Keypair,
+    ) -> TransactionResult {
         let ix = Instruction::new_with_bytes(
             aegis::ID,
             &aegis::instruction::AgentTransferSpl { amount }.data(),
@@ -363,8 +450,9 @@ impl Ctx {
                 vault: self.vault,
                 vault_token_account,
                 recipient_token_account,
+                mint,
                 action_log: self.action_log,
-                token_program: spl_token_id(),
+                token_program,
             }
             .to_account_metas(None),
         );
@@ -680,6 +768,10 @@ fn t7_spl_token() -> Result<String, String> {
     let vault_pda = c.vault;
     c.svm.airdrop(&vault_pda, sol(1)).unwrap();
 
+    // TransferChecked needs the mint account itself.
+    c.set_mint(mint, TOKEN_DECIMALS, spl_token_id());
+    c.set_mint(other_mint, TOKEN_DECIMALS, spl_token_id());
+
     // Vault holds 1000 tokens; recipient starts at 0.
     c.set_token_account(vault_ta, &mint, &vault_pda, tok(1000));
     c.set_token_account(recipient_ta, &mint, &recipient, 0);
@@ -720,6 +812,7 @@ fn t7_spl_token() -> Result<String, String> {
     let r_vault_ta = Pubkey::new_unique();
     let allowed_recipient_ta = Pubkey::new_unique();
     let blocked_recipient_ta = Pubkey::new_unique();
+    r.set_mint(mint, TOKEN_DECIMALS, spl_token_id());
     r.set_token_account(r_vault_ta, &mint, &r_vault, tok(1000));
     r.set_token_account(allowed_recipient_ta, &mint, &allowed_recipient, 0);
     r.set_token_account(blocked_recipient_ta, &mint, &blocked_recipient, 0);
@@ -810,6 +903,116 @@ fn t7_spl_token() -> Result<String, String> {
 // --------------------------------------------------------------------------
 // THE GATE
 // --------------------------------------------------------------------------
+// --------------------------------------------------------------------------
+// T8 — Token-2022 envelope: the same policy gates apply to a Token-2022 mint,
+//      the extension tail parses, and the mint account is bound to the policy.
+//
+//      Tokenized stocks (PreStocks) are Token-2022, so without this the whole
+//      stock path is unexecutable — `agent_transfer_spl` previously hardcoded
+//      the classic program and a fixed 165-byte account length.
+// --------------------------------------------------------------------------
+fn t8_token_2022() -> Result<String, String> {
+    let far = 10_000_000_000i64;
+    let mut c = Ctx::setup(sol(2), sol(5), vec![], far, 1_000, sol(10));
+    let agent = c.agent.insecure_clone();
+    let t22 = spl_token_2022_id();
+
+    let mint = Pubkey::new_unique();
+    let recipient = Pubkey::new_unique();
+    let vault_ta = Pubkey::new_unique();
+    let recipient_ta = Pubkey::new_unique();
+    let vault_pda = c.vault;
+    c.svm.airdrop(&vault_pda, sol(1)).unwrap();
+
+    c.set_mint(mint, TOKEN_DECIMALS, t22);
+    // Extended accounts (len > 165 with the AccountType tail) — the shape a
+    // real Token-2022 account has, and the branch classic accounts never hit.
+    c.set_token_account_for(vault_ta, &mint, &vault_pda, tok(1000), t22, true);
+    c.set_token_account_for(recipient_ta, &mint, &recipient, 0, t22, true);
+
+    expect_ok(
+        &c.configure_token(mint, tok(100), tok(250)),
+        "T8 configure_token",
+    )?;
+
+    // (a) HAPPY PATH: a Token-2022 transfer settles through TransferChecked.
+    expect_ok(
+        &c.agent_transfer_spl_with(tok(10), vault_ta, recipient_ta, mint, t22, &agent),
+        "T8 token-2022 transfer",
+    )?;
+    if c.policy_state().token_spent_today != tok(10) {
+        return Err("T8 token_spent_today did not advance".into());
+    }
+
+    // (b) The caps are the SAME caps — per-tx still bites on Token-2022.
+    expect_reject(
+        &c.agent_transfer_spl_with(tok(101), vault_ta, recipient_ta, mint, t22, &agent),
+        ecode(AegisError::ExceedsPerTxLimit),
+        "ExceedsPerTxLimit",
+        "T8 token-2022 over per-tx",
+    )?;
+
+    // (c) The MINT ACCOUNT is bound to the policy: passing a different mint
+    //     (whose decimals could differ) is rejected before any CPI.
+    let other_mint = Pubkey::new_unique();
+    c.set_mint(other_mint, 9, t22);
+    expect_reject(
+        &c.agent_transfer_spl_with(tok(1), vault_ta, recipient_ta, other_mint, t22, &agent),
+        ecode(AegisError::MintNotAllowed),
+        "MintNotAllowed",
+        "T8 mismatched mint account",
+    )?;
+
+    // (d) PROGRAM CONFUSION: Token-2022 accounts may not be driven through the
+    //     classic program, nor classic accounts through Token-2022.
+    expect_reject(
+        &c.agent_transfer_spl_with(tok(1), vault_ta, recipient_ta, mint, spl_token_id(), &agent),
+        ecode(AegisError::InvalidTokenAccount),
+        "InvalidTokenAccount",
+        "T8 token-2022 accounts via classic program",
+    )?;
+
+    // (e) A MINT passed where a token account belongs is rejected. The mint's
+    //     byte 108 sits in Token-2022's padding (zero), so the initialized-state
+    //     check catches it — this is the guard that keeps `len >= 165` safe.
+    let mint_as_account = Pubkey::new_unique();
+    let mut padded = mint_data(TOKEN_DECIMALS);
+    padded.resize(165, 0);
+    padded.push(1); // AccountType::Mint
+    c.svm
+        .set_account(
+            mint_as_account,
+            SolanaAccount {
+                lamports: sol(1) / 100,
+                data: padded,
+                owner: t22,
+                executable: false,
+                rent_epoch: 0,
+            },
+        )
+        .unwrap();
+    expect_reject(
+        &c.agent_transfer_spl_with(tok(1), mint_as_account, recipient_ta, mint, t22, &agent),
+        ecode(AegisError::InvalidTokenAccount),
+        "InvalidTokenAccount",
+        "T8 mint passed as token account",
+    )?;
+
+    // (f) An unsupported token program is refused outright.
+    expect_reject(
+        &c.agent_transfer_spl_with(tok(1), vault_ta, recipient_ta, mint, Pubkey::new_unique(), &agent),
+        ecode(AegisError::InvalidTokenAccount),
+        "InvalidTokenAccount",
+        "T8 unsupported token program",
+    )?;
+
+    Ok(format!(
+        "token-2022 transfer settles; per-tx cap holds; mismatched mint→Custom({}); program confusion + mint-as-account + unknown program→Custom({})",
+        ecode(AegisError::MintNotAllowed),
+        ecode(AegisError::InvalidTokenAccount),
+    ))
+}
+
 #[test]
 fn aegis_enforcement_gate() {
     let cases: Vec<(&str, &str, fn() -> Result<String, String>)> = vec![
@@ -820,6 +1023,7 @@ fn aegis_enforcement_gate() {
         ("T5", "Allow-list", t5_allow_list),
         ("T6", "Admin invariants", t6_admin_invariants),
         ("T7", "SPL token envelope", t7_spl_token),
+        ("T8", "Token-2022 envelope", t8_token_2022),
     ];
 
     let mut results: Vec<(&str, &str, bool, String)> = Vec::new();

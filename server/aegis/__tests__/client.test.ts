@@ -8,7 +8,7 @@ import {
   TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
 } from "../constants";
-import { findPolicyPda, findVaultPda } from "../pdas";
+import { findAssociatedTokenAddress, findPolicyPda, findVaultPda } from "../pdas";
 import { PraxisConfigError, PraxisInputError } from "../../errors";
 import { DEFAULT_PRESTOCKS_API_URL, DEFAULT_PRESTOCKS_TIMEOUT_MS, DEFAULT_TOKENS, type PraxisServerConfig } from "../../env";
 import type { AgentSigner } from "../../agent/agentSigner";
@@ -481,20 +481,55 @@ describe("submitSignedTransaction", () => {
     ).rejects.toThrow(/blocked program 11111111111111111111111111111111/);
   });
 
-  test("refuses to configure an envelope for a Token-2022 mint", async () => {
-    // agent_transfer_spl is classic-SPL only, so this envelope could never be
-    // used — catching it here beats an on-chain revert the owner paid for.
+  test("configures an envelope for a Token-2022 mint, with a Token-2022 ATA", async () => {
+    // Tokenized stocks are Token-2022; this is the path that makes a stock
+    // envelope usable at all. The ATA seeds include the token program id, so
+    // the create must reference Token-2022 or it lands at an address that
+    // will never hold the tokens.
     const config = makeConfig();
     const mint = Keypair.generate().publicKey;
     const policyData = encodePolicyAccount(policyFixture({ address: config.policyAddress!.toBase58() }));
-    const token2022 = Buffer.alloc(902);
-    token2022[44] = 9;
+    const token2022Mint = Buffer.alloc(902);
+    token2022Mint[44] = 9;
+    token2022Mint[45] = 1;
     const client = new AegisClient(
       config,
       fakeConnection({
         getAccountInfo: async (address: PublicKey) =>
           address.equals(mint)
-            ? { data: token2022, owner: TOKEN_2022_PROGRAM_ID, lamports: 1, executable: false }
+            ? { data: token2022Mint, owner: TOKEN_2022_PROGRAM_ID, lamports: 1, executable: false }
+            : { data: policyData, owner: DEFAULT_AEGIS_PROGRAM_ID, lamports: 1, executable: false },
+        getBalance: async () => 0,
+        getMultipleAccountsInfo: async () => [null],
+      }),
+    );
+    const draft = await client.buildUnsignedOwnerTransaction(config.ownerAddress!, {
+      kind: "configureToken",
+      tokenMint: mint.toBase58(),
+      tokenMaxPerTx: 10n,
+      tokenDailyLimit: 100n,
+    });
+    const tx = Transaction.from(Uint8Array.from(Buffer.from(draft.transaction, "base64")));
+    const ata = tx.instructions.find((ix) => ix.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID));
+    expect(ata).toBeDefined();
+    expect(ata!.keys.some((k) => k.pubkey.equals(TOKEN_2022_PROGRAM_ID))).toBe(true);
+
+    const vault = findVaultPda(config.policyAddress!, DEFAULT_AEGIS_PROGRAM_ID);
+    const expected = findAssociatedTokenAddress(vault, mint, TOKEN_2022_PROGRAM_ID);
+    expect(ata!.keys.some((k) => k.pubkey.equals(expected))).toBe(true);
+  });
+
+  test("refuses an envelope for a mint under an unknown token program", async () => {
+    const config = makeConfig();
+    const mint = Keypair.generate().publicKey;
+    const policyData = encodePolicyAccount(policyFixture({ address: config.policyAddress!.toBase58() }));
+    const alien = new PublicKey("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
+    const client = new AegisClient(
+      config,
+      fakeConnection({
+        getAccountInfo: async (address: PublicKey) =>
+          address.equals(mint)
+            ? { data: Buffer.alloc(82), owner: alien, lamports: 1, executable: false }
             : { data: policyData, owner: DEFAULT_AEGIS_PROGRAM_ID, lamports: 1, executable: false },
         getBalance: async () => 0,
         getMultipleAccountsInfo: async () => [null],
@@ -507,7 +542,7 @@ describe("submitSignedTransaction", () => {
         tokenMaxPerTx: 10n,
         tokenDailyLimit: 100n,
       }),
-    ).rejects.toThrow(/classic SPL Token/);
+    ).rejects.toThrow(/neither SPL Token nor Token-2022/);
   });
 
   test("accepts a builder-produced configureToken draft that includes an ATA create", async () => {

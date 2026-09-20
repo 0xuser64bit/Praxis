@@ -7,14 +7,33 @@ use anchor_lang::{
     },
 };
 
-/// The SPL Token program (classic). The token CPI is built and invoked RAW
-/// (no `anchor-spl` dependency) so the program has zero extra deps; the handler
-/// hand-parses the token accounts and constructs the `Transfer` instruction.
+/// The two token programs this instruction can drive. The CPI is built and
+/// invoked RAW (no `anchor-spl` dependency) so the program keeps zero extra
+/// deps; the handler hand-parses the token accounts and constructs the
+/// `TransferChecked` instruction itself.
 const SPL_TOKEN_PROGRAM_ID: Pubkey = pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+/// SPL Token-2022. Tokenized-stock mints (PreStocks) are issued under it, so
+/// supporting it is what makes a stock buy executable at all. Its `Account`
+/// and `Mint` share the classic base layout, then append a type byte and TLV
+/// extensions — every offset below is inside that common base.
+const SPL_TOKEN_2022_PROGRAM_ID: Pubkey = pubkey!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 
-/// Classic SPL token account byte layout offsets (165-byte `Account`).
+/// Classic SPL token account byte layout offsets (165-byte `Account` base).
 const TOKEN_ACCOUNT_LEN: usize = 165;
 const STATE_INITIALIZED: u8 = 1;
+/// Token-2022 writes an account-type discriminator at byte 165 on extended
+/// accounts. `2` = `Account`; `1` = `Mint`.
+const ACCOUNT_TYPE_OFFSET: usize = 165;
+const ACCOUNT_TYPE_ACCOUNT: u8 = 2;
+/// Mint layout: `decimals` is a u8 at byte 44 of the 82-byte base.
+const MINT_BASE_LEN: usize = 82;
+const MINT_DECIMALS_OFFSET: usize = 44;
+const MINT_IS_INITIALIZED_OFFSET: usize = 45;
+
+/// True for either supported token program.
+fn is_supported_token_program(program_id: &Pubkey) -> bool {
+    *program_id == SPL_TOKEN_PROGRAM_ID || *program_id == SPL_TOKEN_2022_PROGRAM_ID
+}
 
 /// Agent-initiated SPL-token transfer from the vault's token account, gated by
 /// the policy's DEDICATED token envelope (separate from the SOL envelope).
@@ -53,6 +72,12 @@ pub struct AgentTransferSpl<'info> {
     #[account(mut)]
     pub recipient_token_account: UncheckedAccount<'info>,
 
+    /// CHECK: hand-validated in the handler — must BE `policy.token_mint`, be
+    /// owned by the same token program as the accounts, and be an initialized
+    /// mint. Required because the CPI is `TransferChecked`, which verifies the
+    /// mint and decimals on the token program's side.
+    pub mint: UncheckedAccount<'info>,
+
     #[account(
         mut,
         seeds = [SEED_ACTION_LOG, policy.key().as_ref()],
@@ -82,18 +107,20 @@ struct TokenAccountView {
     amount: u64,
 }
 
-/// Hand-parse + validate a classic 165-byte SPL token account. Returns its
-/// mint/owner/amount. Errors (InvalidTokenAccount) if it isn't an initialized
-/// token account owned by the SPL Token program.
-fn read_token_account(acct: &AccountInfo) -> Result<TokenAccountView> {
-    require_keys_eq!(
-        *acct.owner,
-        SPL_TOKEN_PROGRAM_ID,
-        AegisError::InvalidTokenAccount
-    );
+/// Hand-parse + validate an SPL token account under `token_program`. Returns
+/// its mint/owner/amount. Errors (InvalidTokenAccount) if it isn't an
+/// initialized token account owned by that program.
+///
+/// Token-2022 accounts share the classic 165-byte base and may append a type
+/// byte plus TLV extensions, so the length check is `>=` rather than `==`.
+/// Extended accounts additionally carry `AccountType` at byte 165, which we
+/// require to be `Account` — that is what stops a *mint* being passed where a
+/// token account belongs.
+fn read_token_account(acct: &AccountInfo, token_program: &Pubkey) -> Result<TokenAccountView> {
+    require_keys_eq!(*acct.owner, *token_program, AegisError::InvalidTokenAccount);
     let data = acct.try_borrow_data()?;
     require!(
-        data.len() == TOKEN_ACCOUNT_LEN,
+        data.len() >= TOKEN_ACCOUNT_LEN,
         AegisError::InvalidTokenAccount
     );
     // state byte at offset 108 (mint 32 + owner 32 + amount 8 + delegate 36).
@@ -101,6 +128,13 @@ fn read_token_account(acct: &AccountInfo) -> Result<TokenAccountView> {
         data[108] == STATE_INITIALIZED,
         AegisError::InvalidTokenAccount
     );
+    // An extended account must declare itself an Account, never a Mint.
+    if data.len() > TOKEN_ACCOUNT_LEN {
+        require!(
+            data[ACCOUNT_TYPE_OFFSET] == ACCOUNT_TYPE_ACCOUNT,
+            AegisError::InvalidTokenAccount
+        );
+    }
 
     let mint =
         Pubkey::try_from(&data[0..32]).map_err(|_| error!(AegisError::InvalidTokenAccount))?;
@@ -116,6 +150,21 @@ fn read_token_account(acct: &AccountInfo) -> Result<TokenAccountView> {
         owner,
         amount,
     })
+}
+
+/// Hand-parse + validate the mint account, returning its `decimals`.
+/// `TransferChecked` takes the decimals as an argument and the token program
+/// verifies them against the mint, so reading them here is what lets the CPI
+/// self-check rather than trusting a caller-supplied number.
+fn read_mint_decimals(acct: &AccountInfo, token_program: &Pubkey) -> Result<u8> {
+    require_keys_eq!(*acct.owner, *token_program, AegisError::InvalidTokenAccount);
+    let data = acct.try_borrow_data()?;
+    require!(data.len() >= MINT_BASE_LEN, AegisError::InvalidTokenAccount);
+    require!(
+        data[MINT_IS_INITIALIZED_OFFSET] == STATE_INITIALIZED,
+        AegisError::InvalidTokenAccount
+    );
+    Ok(data[MINT_DECIMALS_OFFSET])
 }
 
 pub fn handler(ctx: Context<AgentTransferSpl>, amount: u64) -> Result<()> {
@@ -160,14 +209,31 @@ pub fn handler(ctx: Context<AgentTransferSpl>, amount: u64) -> Result<()> {
     let token_mint = ctx.accounts.policy.token_mint;
     require_keys_neq!(token_mint, Pubkey::default(), AegisError::SplNotConfigured);
 
-    // 4. token program sanity + parse/validate both token accounts.
-    require_keys_eq!(
-        ctx.accounts.token_program.key(),
-        SPL_TOKEN_PROGRAM_ID,
+    // 4. token program sanity + parse/validate both token accounts and the mint.
+    //    Both accounts and the mint must belong to the SAME program that is
+    //    being invoked — mixing classic and Token-2022 accounts in one transfer
+    //    is never legitimate.
+    let token_program = ctx.accounts.token_program.key();
+    require!(
+        is_supported_token_program(&token_program),
         AegisError::InvalidTokenAccount
     );
-    let source = read_token_account(&ctx.accounts.vault_token_account.to_account_info())?;
-    let dest = read_token_account(&ctx.accounts.recipient_token_account.to_account_info())?;
+    // The mint passed for TransferChecked must be the configured one; without
+    // this, a caller could present a different mint's decimals.
+    require_keys_eq!(
+        ctx.accounts.mint.key(),
+        token_mint,
+        AegisError::MintNotAllowed
+    );
+    let decimals = read_mint_decimals(&ctx.accounts.mint.to_account_info(), &token_program)?;
+    let source = read_token_account(
+        &ctx.accounts.vault_token_account.to_account_info(),
+        &token_program,
+    )?;
+    let dest = read_token_account(
+        &ctx.accounts.recipient_token_account.to_account_info(),
+        &token_program,
+    )?;
     let target = dest.owner;
 
     // 5. ON-CHAIN MINT ALLOW-LIST: both accounts must be the configured mint.
@@ -241,15 +307,32 @@ pub fn handler(ctx: Context<AgentTransferSpl>, amount: u64) -> Result<()> {
     // ---- Passed: commit spend, CPI the token transfer, audit ----
     ctx.accounts.policy.token_spent_today = new_spent;
 
-    // spl_token `Transfer`: instruction tag 3, then amount (u64 LE).
-    // Accounts: [source (w), destination (w), authority (signer)].
-    let mut data = Vec::with_capacity(9);
-    data.push(3u8);
+    // `TransferChecked`: instruction tag 12, then amount (u64 LE) + decimals.
+    // Accounts: [source (w), mint, destination (w), authority (signer)].
+    //
+    // Checked rather than the bare `Transfer` (tag 3): the token program
+    // re-verifies the mint and decimals on its side, so a mismatch fails in
+    // the token program instead of moving a wrongly-scaled amount. Token-2022
+    // also deprecates the unchecked variant.
+    //
+    // A mint with a non-zero transfer fee debits the vault by `amount` and
+    // credits the recipient less. That is the correct behaviour for a spending
+    // policy — the cap governs what leaves the vault — but it does mean the
+    // recipient may receive slightly less than the proposal showed.
+    //
+    // A mint with an active transfer hook needs extra accounts this
+    // instruction does not pass, so the CPI fails and the whole transaction
+    // reverts. That is a safe failure: no value moves, and no untrusted hook
+    // program is invoked. The off-chain layer detects and explains it.
+    let mut data = Vec::with_capacity(10);
+    data.push(12u8);
     data.extend_from_slice(&amount.to_le_bytes());
+    data.push(decimals);
     let ix = Instruction {
-        program_id: SPL_TOKEN_PROGRAM_ID,
+        program_id: token_program,
         accounts: vec![
             AccountMeta::new(ctx.accounts.vault_token_account.key(), false),
+            AccountMeta::new_readonly(ctx.accounts.mint.key(), false),
             AccountMeta::new(ctx.accounts.recipient_token_account.key(), false),
             AccountMeta::new_readonly(ctx.accounts.vault.key(), true),
         ],
@@ -261,6 +344,7 @@ pub fn handler(ctx: Context<AgentTransferSpl>, amount: u64) -> Result<()> {
         &ix,
         &[
             ctx.accounts.vault_token_account.to_account_info(),
+            ctx.accounts.mint.to_account_info(),
             ctx.accounts.recipient_token_account.to_account_info(),
             ctx.accounts.vault.to_account_info(),
             ctx.accounts.token_program.to_account_info(),

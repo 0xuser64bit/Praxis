@@ -33,7 +33,11 @@ describe("isAegisAgentTransferMessage", () => {
   test("accepts a single agent_transfer_spl", () => {
     const ix = buildAgentTransferSplIx(
       { ...addresses(), agentAuthority: agent },
-      { vaultTokenAccount: Keypair.generate().publicKey, recipientTokenAccount: Keypair.generate().publicKey },
+      {
+        vaultTokenAccount: Keypair.generate().publicKey,
+        recipientTokenAccount: Keypair.generate().publicKey,
+        mint: Keypair.generate().publicKey,
+      },
       5n,
     );
     expect(isAegisAgentTransferMessage(messageOf(ix), DEFAULT_AEGIS_PROGRAM_ID)).toBe(true);

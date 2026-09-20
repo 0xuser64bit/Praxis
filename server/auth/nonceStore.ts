@@ -65,12 +65,15 @@ export class RedisNonceStore implements NonceStore {
   ) {}
 
   async consume(nonce: string, ttlSeconds: number): Promise<boolean> {
+    // Single-command `/set` paths reject SET-with-options on some Upstash
+    // REST endpoints (`ERR syntax error` → HTTP 400), while `/pipeline`
+    // accepts the same command — so go through the pipeline (one command).
     const res = await fetchWithTimeout(
-      `${this.url}/set/${encodeURIComponent(KEY_PREFIX + nonce)}/1`,
+      `${this.url}/pipeline`,
       {
         method: "POST",
         headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
-        body: JSON.stringify(["NX", "EX", String(ttlSeconds)]),
+        body: JSON.stringify([["SET", KEY_PREFIX + nonce, "1", "NX", "EX", String(ttlSeconds)]]),
       },
       { ms: 2_000, label: "nonce store" },
       this.fetchImpl,
@@ -79,8 +82,8 @@ export class RedisNonceStore implements NonceStore {
       throw new Error(`nonce store responded ${res.status}`);
     }
     // SET NX returns "OK" when it created the key, null when it already existed.
-    const body = (await res.json()) as { result?: unknown };
-    return body?.result === "OK";
+    const body = (await res.json()) as Array<{ result?: unknown }>;
+    return body?.[0]?.result === "OK";
   }
 }
 

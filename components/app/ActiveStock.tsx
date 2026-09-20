@@ -24,6 +24,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { isApiMode } from "./providerMode";
+
 export interface StockUniverseEntry {
   symbol: string;
   name: string;
@@ -49,9 +51,13 @@ export function ActiveStockProvider({ children }: { children: ReactNode }) {
   const [activeMint, setActiveMintState] = useState<string | null>(null);
 
   useEffect(() => {
+    // Mock mode is meant to run with no backend at all; calling a
+    // session-gated endpoint there only produced a guaranteed 401 in the
+    // console. The switcher is a server-flagged feature, so no universe.
+    if (!isApiMode()) return;
     let cancelled = false;
-    // Session-gated endpoint: 401 pre-sign-in (or mock mode) resolves to an
-    // empty universe and the switcher stays hidden — never an error state.
+    // Session-gated endpoint: a 401 pre-sign-in resolves to an empty universe
+    // and the switcher stays hidden — never an error state.
     fetch("/api/praxis/get-stock-universe", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : []))
       .then((body) => {

@@ -76,34 +76,67 @@ export class RemotePraxisProvider implements PraxisProvider {
   // (optimistic) copy of that thread on every refresh, so a background refresh
   // racing the send can't wipe the message the user just typed.
   private pendingSends = new Set<string>();
-
-  constructor() {
-    void this.refreshAll();
-    this.startBackgroundRefresh();
-  }
+  private started = false;
+  private refreshTimer: ReturnType<typeof setInterval> | undefined;
+  private onVisibility: (() => void) | undefined;
 
   /**
-   * Keep the app live without a websocket: while the tab is visible, re-pull
-   * policy + activity on an interval so a confirmation that lands after the
-   * optimistic refresh (or any out-of-band change) actually surfaces. Refresh is
-   * six flat parallel reads, so this is cheap and well under the read limit.
-   * Background ticks fail silently — a transient blip must not tear the app down
-   * to an error screen mid-flow.
+   * Begin loading and polling. Returns a disposer.
+   *
+   * Deliberately NOT done in the constructor. This provider used to start an
+   * interval and a `visibilitychange` listener the moment it was constructed,
+   * with nothing to stop them: signing out unmounts the provider but the
+   * interval kept polling `/api/praxis/*` every 12 seconds forever — now
+   * 401ing — and signing back in stacked another one on top. React also
+   * discards a second instance from a double-invoked state initializer, which
+   * would leak one more.
    */
-  private startBackgroundRefresh() {
-    if (typeof document === "undefined") return;
+  start(): () => void {
+    if (this.started) return this.stop;
+    this.started = true;
+    void this.refreshAll();
+
+    if (typeof document === "undefined") return this.stop;
+
+    // Keep the app live without a websocket: while the tab is visible, re-pull
+    // policy + activity on an interval so a confirmation that lands after the
+    // optimistic refresh (or any out-of-band change) actually surfaces.
+    // Refresh is six flat parallel reads, so this is cheap and well under the
+    // read limit. Background ticks fail silently — a transient blip must not
+    // tear the app down to an error screen mid-flow.
     const REFRESH_MS = 12_000;
-    setInterval(() => {
+    this.refreshTimer = setInterval(() => {
       if (document.visibilityState !== "visible") return;
       if (this.pendingSends.size > 0) return; // never race an in-flight send
       void this.refreshAll({ background: true });
     }, REFRESH_MS);
-    document.addEventListener("visibilitychange", () => {
+
+    this.onVisibility = () => {
       if (document.visibilityState === "visible" && this.pendingSends.size === 0) {
         void this.refreshAll({ background: true });
       }
-    });
+    };
+    document.addEventListener("visibilitychange", this.onVisibility);
+    return this.stop;
   }
+
+  /** Stop polling and drop listeners. Idempotent. */
+  stop = (): void => {
+    this.started = false;
+    if (this.refreshTimer !== undefined) {
+      clearInterval(this.refreshTimer);
+      this.refreshTimer = undefined;
+    }
+    if (this.onVisibility && typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", this.onVisibility);
+      this.onVisibility = undefined;
+    }
+    // Any refresh still in flight must not commit a stale snapshot after we
+    // stopped. Subscribers are NOT dropped here: they unsubscribe themselves
+    // on unmount, and React re-runs this effect (cleanup then setup) on a
+    // StrictMode remount while children stay mounted and subscribed.
+    this.refreshToken++;
+  };
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);

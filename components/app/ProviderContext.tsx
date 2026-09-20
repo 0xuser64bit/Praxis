@@ -19,6 +19,7 @@ import type {
 import {
   createContext,
   useContext,
+  useEffect,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -35,6 +36,15 @@ export function ProviderProvider({ children }: { children: ReactNode }) {
     const mode = resolveProviderMode();
     return mode === "api" ? new RemotePraxisProvider() : new MockPraxisProvider();
   });
+
+  // The remote provider polls; tie that to the component's lifetime so signing
+  // out actually stops it. Without this the interval outlived every unmount
+  // and kept hitting the API with a dead session.
+  useEffect(() => {
+    if (!(provider instanceof RemotePraxisProvider)) return;
+    return provider.start();
+  }, [provider]);
+
   return <Ctx.Provider value={provider}>{children}</Ctx.Provider>;
 }
 

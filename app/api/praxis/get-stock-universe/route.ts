@@ -1,5 +1,8 @@
 import { withReadProvider } from "@/server/api/json";
+import { getConnection } from "@/server/aegis/client";
+import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@/server/aegis/constants";
 import { getServerConfig } from "@/server/env";
+import { checkMintsMovable, supportedTokenPrograms } from "@/server/stocks/mintDecimals";
 import {
   DEFAULT_STOCK_DECIMALS,
   STOCK_LIST,
@@ -12,7 +15,13 @@ export const dynamic = "force-dynamic";
 /**
  * The PreStocks universe for the active-stock switcher. Read-only and
  * flag-gated — `[]` unless `PRAXIS_STOCKS_ENABLED=1`, so default behavior is
- * unchanged. No chain access; decimals come from the merged server token list.
+ * unchanged.
+ *
+ * `transferable` used to be hard-coded `true`, which made it a claim rather
+ * than a check: a deployment whose `PRAXIS_STOCK_MINTS` were not created on
+ * its own cluster still advertised every symbol as a pickable envelope, and
+ * the owner found out only after signing. It is now the cluster's verdict —
+ * one batched account read for the whole universe.
  *
  * `mirrored` tells the UI this symbol points at a stand-in mint on the demo
  * cluster rather than the real PreStocks mint (the real ones are mainnet-only,
@@ -20,21 +29,42 @@ export const dynamic = "force-dynamic";
  * devnet demo is moving real pre-IPO tokens.
  */
 export async function GET(request: Request) {
-  return withReadProvider(request, () => {
+  return withReadProvider(request, async () => {
     const config = getServerConfig();
     if (!config.stocksEnabled) return [];
     const universe = config.stockUniverse;
-    return STOCK_LIST.filter((s) => !universe || universe.includes(s.symbol)).map((s) => ({
-      symbol: s.symbol,
-      name: s.name,
+
+    const entries = STOCK_LIST.filter((s) => !universe || universe.includes(s.symbol)).map((s) => {
+      const configured = config.tokens.find((t) => t.symbol === s.symbol);
       // The configured mint, which on a demo cluster is the mirror.
-      mint: config.tokens.find((t) => t.symbol === s.symbol)?.mint ?? s.mint,
-      decimals: config.tokens.find((t) => t.symbol === s.symbol)?.decimals ?? DEFAULT_STOCK_DECIMALS,
-      transferable: true,
-      mirrored: isMirroredMint(
-        s.symbol,
-        config.tokens.find((t) => t.symbol === s.symbol)?.mint ?? s.mint,
-      ),
-    }));
+      const mint = configured?.mint ?? s.mint;
+      return {
+        symbol: s.symbol,
+        name: s.name,
+        mint,
+        decimals: configured?.decimals ?? DEFAULT_STOCK_DECIMALS,
+        mirrored: isMirroredMint(s.symbol, mint),
+      };
+    });
+
+    if (process.env.PRAXIS_ALLOW_UNVERIFIED_MINTS === "1") {
+      return entries.map((entry) => ({ ...entry, transferable: true }));
+    }
+
+    const verdicts = await checkMintsMovable(
+      getConnection(config),
+      entries.map((entry) => entry.mint),
+      supportedTokenPrograms(TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()),
+    );
+
+    return entries.map((entry) => {
+      const verdict = verdicts.get(entry.mint);
+      return {
+        ...entry,
+        // The chain's scale beats the configured one wherever it is known.
+        decimals: verdict?.movable ? verdict.info.decimals : entry.decimals,
+        transferable: verdict?.movable === true,
+      };
+    });
   });
 }

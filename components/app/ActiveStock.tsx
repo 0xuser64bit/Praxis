@@ -151,9 +151,17 @@ export function StockSwitcher({ label = "Active stock" }: { label?: string }) {
   const { stocks, activeMint, setActiveMint } = useActiveStock();
   if (stocks.length === 0) return null;
 
-  const options: Array<{ mint: string | null; label: string }> = [
-    { mint: null, label: "All" },
-    ...stocks.map((s) => ({ mint: s.mint as string | null, label: s.symbol })),
+  const options: Array<{ mint: string | null; label: string; usable: boolean }> = [
+    { mint: null, label: "All", usable: true },
+    ...stocks.map((s) => ({
+      mint: s.mint as string | null,
+      label: s.symbol,
+      // The server checks each mint against the transfer cluster. A symbol it
+      // cannot drive stays visible (research and previews still work for it)
+      // but is not selectable — picking it could only lead to an envelope the
+      // program would refuse.
+      usable: s.transferable !== false,
+    })),
   ];
 
   return (
@@ -167,7 +175,14 @@ export function StockSwitcher({ label = "Active stock" }: { label?: string }) {
             type="button"
             role="radio"
             aria-checked={selected}
-            title={o.mint ? `Show ${o.label} only` : "Show all assets"}
+            disabled={!o.usable}
+            title={
+              !o.usable
+                ? `${o.label} isn't movable on the cluster Praxis transfers on`
+                : o.mint
+                  ? `Show ${o.label} only`
+                  : "Show all assets"
+            }
             onClick={() => setActiveMint(o.mint)}
             // The border is declared on BOTH states and only its colour
             // changes. When the selected pill dropped its border, it lost 1px
@@ -177,7 +192,7 @@ export function StockSwitcher({ label = "Active stock" }: { label?: string }) {
               selected
                 ? "bg-[var(--text-primary)] text-[var(--bg)] [border-color:var(--text-primary)]"
                 : "text-[var(--text-tertiary)] [border-color:var(--border-strong)] hover:text-[var(--text-primary)]"
-            }`}
+            } disabled:opacity-40 disabled:hover:text-[var(--text-tertiary)]`}
           >
             {o.label}
           </button>

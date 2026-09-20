@@ -52,6 +52,16 @@ export function mintDecimals(address: string): number | undefined {
   return MINT_DECIMALS[address];
 }
 
+/**
+ * Mock-mode fallbacks only. These are MAINNET addresses.
+ *
+ * They used to drive the live pickers, which is how a devnet deployment came
+ * to offer USDC / JUP / BONK and answer "this mint is owned by 1111…1111"
+ * after a wallet signature. Which mints exist is a fact about a cluster, so in
+ * API mode both lists come from `/api/praxis/get-token-catalog`; see
+ * `components/app/TokenCatalog.tsx`. Mock mode has no cluster — its provider
+ * is the chain — so it still uses these.
+ */
 export const QUICK_MINTS = [
   { label: "USDC", address: KNOWN_MINTS.usdc },
   { label: "JUP", address: KNOWN_MINTS.jup },

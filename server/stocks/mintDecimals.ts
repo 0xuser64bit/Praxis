@@ -89,6 +89,45 @@ export type MintLookup =
   | { status: "unsupported-program"; programId: string }
   | { status: "unavailable" };
 
+/** The shape of an account as both RPC read paths return it. */
+type FetchedAccount = { owner: PublicKey; data: Buffer | Uint8Array } | null;
+
+/**
+ * Turn a fetched account into a verdict, caching the ones that are mints.
+ *
+ * Shared by the single and batched read paths so a mint cannot be judged by
+ * two different rules depending on how it was fetched.
+ */
+function decodeMintAccount(mint: string, info: FetchedAccount): MintLookup {
+  if (!info) {
+    logger.warn("mint.decimals_missing_account", { mint });
+    return { status: "unavailable" };
+  }
+
+  const owner = info.owner.toBase58();
+  const knownTokenProgram =
+    info.owner.equals(TOKEN_PROGRAM_ID) || info.owner.equals(TOKEN_2022_PROGRAM_ID);
+  if (!knownTokenProgram) {
+    // Never read byte 44 of an arbitrary account and call it a scale.
+    logger.warn("mint.unsupported_owner", { mint, owner });
+    return { status: "unsupported-program", programId: owner };
+  }
+  if (info.data.length < MINT_BASE_SIZE) {
+    logger.warn("mint.decimals_unexpected_account", { mint, owner, size: info.data.length });
+    return { status: "unavailable" };
+  }
+
+  const decimals = info.data[DECIMALS_OFFSET];
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > MAX_DECIMALS) {
+    logger.warn("mint.decimals_out_of_range", { mint, decimals });
+    return { status: "unavailable" };
+  }
+
+  const resolved: MintInfo = { decimals, programId: owner };
+  cache.set(mint, resolved);
+  return { status: "ok", info: resolved };
+}
+
 async function lookupMint(connection: Connection, mint: string): Promise<MintLookup> {
   const cached = cache.get(mint);
   if (cached !== undefined) return { status: "ok", info: cached };
@@ -106,37 +145,72 @@ async function lookupMint(connection: Connection, mint: string): Promise<MintLoo
       envTimeout("PRAXIS_RPC_READ_TIMEOUT_MS", 8_000),
       `mint decimals ${mint}`,
     );
-    if (!info) {
-      logger.warn("mint.decimals_missing_account", { mint });
-      return { status: "unavailable" };
-    }
-
-    const owner = info.owner.toBase58();
-    const knownTokenProgram =
-      info.owner.equals(TOKEN_PROGRAM_ID) || info.owner.equals(TOKEN_2022_PROGRAM_ID);
-    if (!knownTokenProgram) {
-      // Never read byte 44 of an arbitrary account and call it a scale.
-      logger.warn("mint.unsupported_owner", { mint, owner });
-      return { status: "unsupported-program", programId: owner };
-    }
-    if (info.data.length < MINT_BASE_SIZE) {
-      logger.warn("mint.decimals_unexpected_account", { mint, owner, size: info.data.length });
-      return { status: "unavailable" };
-    }
-
-    const decimals = info.data[DECIMALS_OFFSET];
-    if (!Number.isInteger(decimals) || decimals < 0 || decimals > MAX_DECIMALS) {
-      logger.warn("mint.decimals_out_of_range", { mint, decimals });
-      return { status: "unavailable" };
-    }
-
-    const resolved: MintInfo = { decimals, programId: owner };
-    cache.set(mint, resolved);
-    return { status: "ok", info: resolved };
+    return decodeMintAccount(mint, info);
   } catch (error) {
     logger.warn("mint.decimals_lookup_failed", { mint, ...errorFields(error) });
     return { status: "unavailable" };
   }
+}
+
+/** `getMultipleAccountsInfo` caps out at 100 addresses per request. */
+const MAX_ACCOUNTS_PER_REQUEST = 100;
+
+/**
+ * Look several mints up in as few round trips as possible.
+ *
+ * A catalog screen asks about every configured mint at once; doing that one
+ * `getAccountInfo` at a time turns one page load into N serial RPC calls. A
+ * single mint still takes the single-account path — it is one request either
+ * way, and it keeps this function honest against callers that only implement
+ * `getAccountInfo`.
+ */
+export async function lookupMints(
+  connection: Connection,
+  mints: string[],
+): Promise<Map<string, MintLookup>> {
+  const out = new Map<string, MintLookup>();
+  const pending: { mint: string; address: PublicKey }[] = [];
+
+  for (const mint of new Set(mints)) {
+    const cached = cache.get(mint);
+    if (cached !== undefined) {
+      out.set(mint, { status: "ok", info: cached });
+      continue;
+    }
+    try {
+      pending.push({ mint, address: new PublicKey(mint) });
+    } catch {
+      out.set(mint, { status: "unavailable" });
+    }
+  }
+
+  if (pending.length === 1) {
+    out.set(pending[0].mint, await lookupMint(connection, pending[0].mint));
+    return out;
+  }
+
+  for (let i = 0; i < pending.length; i += MAX_ACCOUNTS_PER_REQUEST) {
+    const chunk = pending.slice(i, i + MAX_ACCOUNTS_PER_REQUEST);
+    try {
+      const infos = await withTimeout(
+        connection.getMultipleAccountsInfo(chunk.map((entry) => entry.address), "confirmed"),
+        envTimeout("PRAXIS_RPC_READ_TIMEOUT_MS", 8_000),
+        `mint decimals x${chunk.length}`,
+      );
+      chunk.forEach((entry, index) => {
+        out.set(entry.mint, decodeMintAccount(entry.mint, infos[index] ?? null));
+      });
+    } catch (error) {
+      logger.warn("mint.decimals_batch_lookup_failed", {
+        mints: chunk.length,
+        ...errorFields(error),
+      });
+      // A failed batch is "we could not read", never "these do not exist".
+      for (const entry of chunk) out.set(entry.mint, { status: "unavailable" });
+    }
+  }
+
+  return out;
 }
 
 /**
@@ -162,7 +236,24 @@ export async function checkMintMovable(
   mint: string,
   supportedTokenProgramIds: string[],
 ): Promise<MintMovability> {
-  const lookup = await lookupMint(connection, mint);
+  return verdictFor(await lookupMint(connection, mint), supportedTokenProgramIds);
+}
+
+/** {@link checkMintMovable} for many mints, in as few RPC calls as possible. */
+export async function checkMintsMovable(
+  connection: Connection,
+  mints: string[],
+  supportedTokenProgramIds: string[],
+): Promise<Map<string, MintMovability>> {
+  const lookups = await lookupMints(connection, mints);
+  const out = new Map<string, MintMovability>();
+  for (const [mint, lookup] of lookups) {
+    out.set(mint, verdictFor(lookup, supportedTokenProgramIds));
+  }
+  return out;
+}
+
+function verdictFor(lookup: MintLookup, supportedTokenProgramIds: string[]): MintMovability {
   if (lookup.status === "unavailable") return { movable: false, reason: "unresolved" };
   if (lookup.status === "unsupported-program") {
     return { movable: false, reason: "wrong-token-program", programId: lookup.programId };

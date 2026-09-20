@@ -4,6 +4,7 @@ import { PublicKey, type Connection } from "@solana/web3.js";
 import {
   __resetMintDecimalsCacheForTests,
   checkMintMovable,
+  checkMintsMovable,
   primeMintDecimals,
   resolveMintDecimals,
   resolveMintInfo,
@@ -108,5 +109,50 @@ describe("mint movability", () => {
     await resolveMintInfo(conn, MINT);
     await resolveMintInfo(conn, MINT);
     expect(calls).toBe(1);
+  });
+
+  test("many mints resolve in one batched read, with per-mint verdicts", async () => {
+    // A catalog asks about every configured mint at once; N serial
+    // getAccountInfo calls would turn one page load into N round trips.
+    const good = "PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF";
+    const alien = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
+    const absent = "So11111111111111111111111111111111111111112";
+    let batches = 0;
+    const conn = {
+      getMultipleAccountsInfo: async (addresses: PublicKey[]) => {
+        batches += 1;
+        return addresses.map((address) =>
+          address.toBase58() === good
+            ? mintAccount(9, TOKEN_2022_PROGRAM_ID, 902)
+            : address.toBase58() === alien
+              ? mintAccount(9, new PublicKey(alien))
+              : null,
+        );
+      },
+    } as unknown as Connection;
+
+    const verdicts = await checkMintsMovable(conn, [good, alien, absent], SUPPORTED);
+    expect(batches).toBe(1);
+    expect(verdicts.get(good)?.movable).toBe(true);
+    const alienVerdict = verdicts.get(alien);
+    expect(alienVerdict?.movable).toBe(false);
+    if (alienVerdict && !alienVerdict.movable) {
+      expect(alienVerdict.reason).toBe("wrong-token-program");
+    }
+    const absentVerdict = verdicts.get(absent);
+    if (absentVerdict && !absentVerdict.movable) {
+      expect(absentVerdict.reason).toBe("unresolved");
+    }
+  });
+
+  test("a mint already cached is not re-fetched by the batched path", async () => {
+    const mint = "PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF";
+    await resolveMintInfo(connectionReturning(mintAccount(9, TOKEN_PROGRAM_ID)), mint);
+    const conn = {
+      getMultipleAccountsInfo: async () => {
+        throw new Error("should not be called");
+      },
+    } as unknown as Connection;
+    expect((await checkMintsMovable(conn, [mint], SUPPORTED)).get(mint)?.movable).toBe(true);
   });
 });

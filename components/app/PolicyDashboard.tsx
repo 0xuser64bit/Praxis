@@ -48,13 +48,8 @@ import {
 } from "./lib/units";
 import { useNow } from "./lib/useNow";
 import { effectiveSpentToday, effectiveTokenSpentToday } from "./lib/policyMath";
-import {
-  QUICK_MINTS,
-  TOKEN_ENVELOPE_MINTS,
-  mintDecimals,
-  mintLabel,
-  programLabel,
-} from "./lib/tokenCatalog";
+import { mintDecimals, mintLabel, programLabel } from "./lib/tokenCatalog";
+import { useTokenCatalog } from "./TokenCatalog";
 
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 
@@ -69,6 +64,7 @@ export function PolicyDashboard() {
   const policy = usePolicy();
   const provider = useProvider();
   const addressBook = useAddressBook();
+  const { allowListCandidates } = useTokenCatalog();
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [tab, setTab] = useState<"overview" | "advanced">("overview");
   const now = useNow();
@@ -91,6 +87,13 @@ export function PolicyDashboard() {
       { label: "Updating allow-list", fallback: "Allow-list update failed.", success: "Allow-list updated." },
     );
   };
+  // Quick-adds come from the cluster-verified catalog rather than a static
+  // mainnet list: an allow-list entry for a mint that does not exist here is
+  // a policy write that can never match anything.
+  const mintQuickAdd = allowListCandidates.map((entry) => ({
+    label: entry.symbol,
+    address: entry.mint,
+  }));
 
   return (
     <AsyncActionProvider value={actions}>
@@ -308,7 +311,7 @@ export function PolicyDashboard() {
                   hint="The agent may only route into these mints"
                   addresses={policy.allowedMints}
                   labeler={mintLabel}
-                  quickAdd={QUICK_MINTS}
+                  quickAdd={mintQuickAdd}
                   onAdd={addToAllowList}
                   onRemove={removeFromAllowList}
                 />
@@ -644,18 +647,33 @@ function TokenEnvelopeCard({
   const configured = policy.tokenMint !== SYSTEM_PROGRAM;
   const { stocks, stocksEnabled, activeMint, symbolFor, decimalsFor, usesMirrorMints } =
     useActiveStock();
+  const {
+    envelopeCandidates,
+    unusable,
+    loaded: catalogLoaded,
+    decimalsFor: catalogDecimalsFor,
+  } = useTokenCatalog();
   // Envelope label prefers the stock universe (OPENAI over a bare mint), then
   // the static catalog, then a generic fallback.
   const stockSymbol = symbolFor(policy.tokenMint);
   // Decimals must come from a source that actually knows: the server-supplied
-  // universe entry first, then the static catalog. The old fallback of 6
-  // silently mis-scaled the PreStocks mints (9dp) by 1000x in both the cap
-  // defaults and the displayed amounts.
+  // universe entry, then the server token catalog (chain-confirmed), then the
+  // static catalog. The old fallback of 6 silently mis-scaled the PreStocks
+  // mints (9dp) by 1000x in both the cap defaults and the displayed amounts.
   const scaleFor = (mint: string): number | undefined =>
-    decimalsFor(mint) ?? mintDecimals(mint);
+    decimalsFor(mint) ?? catalogDecimalsFor(mint) ?? mintDecimals(mint);
   const decimals = scaleFor(policy.tokenMint);
   const symbol = stockSymbol ?? mintLabel(policy.tokenMint) ?? "TOKEN";
   const universeIndex = stocks.findIndex((s) => s.mint === policy.tokenMint);
+  // Everything an envelope could actually be pointed at on this cluster: the
+  // verified token catalog plus whichever stock mints the server confirmed are
+  // movable here. A symbol that fails either check is never offered.
+  const pickable = [
+    ...envelopeCandidates,
+    ...stocks
+      .filter((stock) => stock.transferable !== false)
+      .map((stock) => ({ symbol: stock.symbol, mint: stock.mint })),
+  ];
 
   // Default caps when (re)selecting a token: 200 per-tx / 500 daily, in its
   // units. Returns null when the scale is unknown — a cap written at the wrong
@@ -714,36 +732,68 @@ function TokenEnvelopeCard({
 
       {!configured ? (
         <div>
-          <p className="mb-3 text-[13px] text-[var(--text-secondary)]">
-            No SPL token configured. Pick one to let the agent move it within its own
-            on-chain caps (separate from the SOL envelope).
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {TOKEN_ENVELOPE_MINTS.map((m) => (
-              <button
-                key={m.address}
-                type="button"
-                disabled={busy}
-                onClick={() => pick(m.address)}
-                className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] [transition:color_0.15s] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <IconPlus size={11} />
-                {m.label}
-              </button>
-            ))}
-            {stocks.filter((s) => s.transferable !== false).map((s) => (
-              <button
-                key={s.mint}
-                type="button"
-                disabled={busy}
-                onClick={() => pick(s.mint)}
-                className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] [transition:color_0.15s] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <IconPlus size={11} />
-                {s.symbol}
-              </button>
-            ))}
-          </div>
+          {pickable.length > 0 ? (
+            <>
+              <p className="mb-3 text-[13px] text-[var(--text-secondary)]">
+                No SPL token configured. Pick one to let the agent move it within its own
+                on-chain caps (separate from the SOL envelope).
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {pickable.map((m) => (
+                  <button
+                    key={m.mint}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => pick(m.mint)}
+                    title={`Configure an envelope for ${m.symbol}`}
+                    className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] [transition:color_0.15s] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <IconPlus size={11} />
+                    {m.symbol}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : !catalogLoaded ? (
+            <p className="text-[13px] text-[var(--text-tertiary)]">
+              Checking which mints this cluster can move…
+            </p>
+          ) : (
+            // Offering a mint the program can never drive is worse than
+            // offering none: it costs a wallet signature to find out.
+            <p className="text-[13px] leading-[1.5] text-[var(--text-secondary)]">
+              No SPL token is configured, and none of this deployment&rsquo;s mints
+              resolve on the cluster Praxis transfers on — so there is nothing
+              here an envelope could actually move. Point{" "}
+              <span className="[font-family:var(--font-mono)] text-[var(--text-primary)]">
+                PRAXIS_TOKENS
+              </span>{" "}
+              at mints that exist on this cluster.
+            </p>
+          )}
+          {unusable.length > 0 && (
+            // Named rather than silently dropped: an operator who pointed
+            // PRAXIS_TOKENS at the wrong cluster should be able to see that
+            // from the product. The per-symbol reason is on hover, because
+            // the reasons differ per mint.
+            <p className="mt-3 text-[12px] leading-[1.5] text-[var(--text-tertiary)]">
+              Not offered here:{" "}
+              {unusable.map((entry, i) => (
+                <span key={entry.mint}>
+                  {i > 0 && ", "}
+                  <span
+                    title={entry.reason}
+                    className="[font-family:var(--font-mono)] underline decoration-dotted underline-offset-2"
+                  >
+                    {entry.symbol}
+                  </span>
+                </span>
+              ))}
+              . These configured mints don&rsquo;t resolve as SPL Token or Token-2022
+              on the cluster Praxis transfers on, so Aegis could never move them.
+              Hover a symbol for its specific reason.
+            </p>
+          )}
           {usesMirrorMints && (
             <p className="mt-3 text-[12px] leading-[1.5] text-[var(--text-tertiary)]">
               Pre-IPO stocks here are demo-cluster stand-ins that mirror the PreStocks
@@ -812,17 +862,19 @@ function TokenEnvelopeCard({
             <span className="[font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
               switch token:
             </span>
-            {TOKEN_ENVELOPE_MINTS.filter((m) => m.address !== policy.tokenMint).map((m) => (
-              <button
-                key={m.address}
-                type="button"
-                disabled={busy}
-                onClick={() => pick(m.address)}
-                className="rounded-full px-2.5 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {m.label}
-              </button>
-            ))}
+            {envelopeCandidates
+              .filter((m) => m.mint !== policy.tokenMint)
+              .map((m) => (
+                <button
+                  key={m.mint}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => pick(m.mint)}
+                  className="rounded-full px-2.5 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {m.symbol}
+                </button>
+              ))}
             <button
               type="button"
               disabled={busy}

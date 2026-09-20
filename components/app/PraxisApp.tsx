@@ -4,6 +4,7 @@ import { ActiveStockProvider } from "./ActiveStock";
 import { AppShell } from "./AppShell";
 import { ApiAuthGate } from "./AuthGate";
 import { ProviderProvider } from "./ProviderContext";
+import { TokenCatalogProvider } from "./TokenCatalog";
 import { useIsClient } from "./lib/useNow";
 import { resolveProviderMode } from "./providerMode";
 import { PraxisLogoMark } from "@/components/praxis/PraxisLogo";
@@ -51,7 +52,9 @@ export function PraxisApp() {
   const app = (
     <ProviderProvider>
       <ActiveStockProvider>
-        <AppShell />
+        <TokenCatalogProvider>
+          <AppShell />
+        </TokenCatalogProvider>
       </ActiveStockProvider>
     </ProviderProvider>
   );

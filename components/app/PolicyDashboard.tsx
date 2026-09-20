@@ -27,6 +27,7 @@ import { useState, type ReactNode } from "react";
 import { Button } from "@/components/praxis/Button";
 
 import { StockSwitcher, useActiveStock } from "./ActiveStock";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { RevokeDialog } from "./RevokeDialog";
 import {
   actionKeys,
@@ -479,10 +480,24 @@ function DangerZone({
   onDelete: () => void;
 }) {
   const [confirm, setConfirm] = useState("");
-  const { busy, pendingKey } = useActionState();
+  const [confirming, setConfirming] = useState(false);
+  const { busy, pendingKey, error } = useActionState();
   const deleting = pendingKey === actionKeys.deleteAgent;
   const tokenConfigured = policy.tokenMint !== SYSTEM_PROGRAM;
   const armed = confirm.trim().toUpperCase() === "DELETE";
+
+  // Typing DELETE arms the control; it does not fire it. The second step is a
+  // modal, because the first one can be completed by muscle memory — the word
+  // is printed in the placeholder directly above the field — and this is the
+  // one action in the product that closes the account. The dialog stays open
+  // for the whole wallet round-trip and closes only when the delete lands, so
+  // a failure is read next to the button that caused it rather than in a
+  // banner at the top of a scrolled page.
+  useActionCompletion([actionKeys.deleteAgent], (ok) => {
+    if (!ok) return;
+    setConfirming(false);
+    setConfirm("");
+  });
 
   return (
     <div className="mt-4 rounded-xl bg-[rgba(199,91,91,0.05)] p-5 [border:0.5px_solid_rgba(199,91,91,0.4)]">
@@ -518,10 +533,7 @@ function DangerZone({
         <button
           type="button"
           disabled={!armed || busy}
-          onClick={() => {
-            onDelete();
-            setConfirm("");
-          }}
+          onClick={() => setConfirming(true)}
           className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md px-4 text-[13px] font-medium text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.4)] [transition:background_0.15s] hover:bg-[rgba(199,91,91,0.12)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           {deleting ? (
@@ -532,6 +544,38 @@ function DangerZone({
           {deleting ? "Deleting…" : "Delete agent"}
         </button>
       </div>
+
+      {confirming && (
+        <ConfirmDialog
+          title="Delete this agent and close the vault?"
+          confirmLabel="Delete agent"
+          busyLabel="Deleting…"
+          cancelLabel="Keep agent"
+          busy={deleting}
+          error={deleting ? null : error}
+          onClose={() => setConfirming(false)}
+          onConfirm={onDelete}
+        >
+          <p>
+            This wipes your policy on-chain and closes the vault. It{" "}
+            <span className="font-medium text-[var(--text-primary)]">cannot be undone</span> —
+            revoking the agent is the reversible version of this.
+          </p>
+          <p className="mt-3">
+            Returning to your wallet:{" "}
+            <span className="[font-family:var(--font-mono)] text-[var(--text-primary)]">
+              {formatSol(policy.vaultBalance)} SOL
+            </span>{" "}
+            from the vault plus about 0.022 SOL of account rent.
+          </p>
+          {tokenConfigured && (
+            <p className="mt-3 rounded-md bg-[rgba(199,91,91,0.10)] p-3 text-[12.5px] leading-[1.5] text-[var(--danger)]">
+              An SPL token envelope is configured. If the vault still holds tokens the
+              program will refuse this — move them out first.
+            </p>
+          )}
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

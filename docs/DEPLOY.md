@@ -179,42 +179,48 @@ The 8 stock symbols come from the flag — do NOT list them in `PRAXIS_TOKENS`.
 
 ### Upgrade the program first (required — Token-2022 support)
 
-The Aegis program on devnet predates Token-2022 support, so **a stock buy will
-fail against it** no matter how the app is configured. The program is
-upgradeable (`3z9Gui…`, authority `3bdgsL3Cipcq98aMWCw1c1G7W5KQ1yv4NfwieK8xb6CP`)
-and the new binary is larger than the deployed one, so the account must be
-extended before the upgrade:
+The Aegis program deployed before Token-2022 support cannot move a stock mint,
+and the instruction's account list changed (`agent_transfer_spl` now takes the
+mint), so an old program with a new client fails too. **Deploy the program and
+the app together.**
+
+Done on devnet 2026-09-20 — this is the sequence that actually worked, including
+the three ways it fails first:
 
 ```bash
 cd aegis && NO_DNA=1 anchor build && cd ..
 ls -l aegis/target/deploy/aegis.so                                             # 272,408 bytes
 solana program show 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd --url devnet  # 268,288 deployed
 
-# The account is too small for the new binary, so extend it first. Skipping
-# this step fails with:
-#   Error: Max length specified not large enough to accommodate desired program
-solana program extend 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd 8192 --url devnet
+# 1. The account is too small. Extending is mandatory, and the loader enforces
+#    a MINIMUM of 10,240 additional bytes — asking for less fails with
+#    "ExtendProgram requires a minimum of 10240 additional bytes".
+solana program extend 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd 16384 --url devnet
 
+# 2. A plain deploy times out under devnet congestion ("Max retries exceeded")
+#    and strands a part-written buffer. A priority fee gets it through.
 solana program deploy aegis/target/deploy/aegis.so \
-  --program-id 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd --url devnet
+  --program-id 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd --url devnet \
+  --with-compute-unit-price 50000 --max-sign-attempts 60
 ```
 
-Budget roughly **2 SOL** in the authority wallet: the deploy buffer is about
-the size of the program (~1.9 SOL here) and is refunded when the upgrade
-completes; the 8 KiB extend costs ~0.06 SOL and is not. If `extend` reports
-`Program was extended in this block already`, wait a slot and re-run — it is a
-same-block collision, not a failure.
+**3. Reclaim stranded buffers.** Every failed deploy leaves a buffer holding
+~1.4 SOL. Check before topping the wallet up — ours held 6.5 SOL across four
+abandoned attempts:
 
-This sequence was rehearsed end to end on a local validator against the same
-binary: the undersized deploy is rejected, `extend` then `deploy --program-id`
-upgrades in place, and `praxis:stocksbuycheck` passes against the result.
+```bash
+solana program show --buffers --url devnet
+solana program close <BUFFER_ADDRESS> --url devnet --bypass-warning
+```
+
+Budget ~2 SOL of working room: the deploy buffer is about the size of the
+program and is refunded on success; the 16 KiB extend costs ~0.11 SOL and is
+not. Do **not** resume from a part-written buffer with `solana program
+upgrade` — if the writes failed, the buffer is incomplete and you would
+deploy a corrupt program. Close it and redeploy.
 
 Confirm the upgrade landed with `praxis:stocksbuycheck` (below) — it fails
 against the old binary and passes against the new one.
-
-The instruction's account list changed (`agent_transfer_spl` now takes the
-mint), so an old client against a new program, or the reverse, will fail.
-Deploy the program and the app together.
 
 ### Devnet mirror mints (required for a devnet stock demo)
 

@@ -119,6 +119,11 @@ function build(policy = policyFixture()) {
   const config = makeConfig();
   const fake = new FakeAegis(policy);
   const provider = new PraxisServerProvider(config, fake as unknown as AegisClient);
+  // No test may reach the PreStocks API. Proposals consult the price source
+  // for their display-only USD estimate, so stub it everywhere, not just in
+  // the basket suite — otherwise a buy waits out the live fetch timeout.
+  provider.basketPriceSource = async (symbols) =>
+    new Map(symbols.map((s) => [s, s === "ANTHROPIC" ? 20 : 10]));
   return { provider, fake, config };
 }
 
@@ -220,6 +225,7 @@ describe("DCA schedules", () => {
 });
 
 describe("basket buys", () => {
+  /** Re-stub for a test that needs a different price shape. */
   function stubPrices(provider: PraxisServerProvider) {
     provider.basketPriceSource = async () => new Map([["OPENAI", 10], ["ANTHROPIC", 20]]);
   }

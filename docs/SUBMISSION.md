@@ -41,13 +41,20 @@ on-chain ActionLog is the audit trail judges can click.
 - **`bun run praxis:stocksbuycheck`** — the whole claim in one command against
   a live cluster: the buy lands, the over-cap buy is refused by the program:
 
+Run on **devnet** 2026-09-20:
+
 ```
 ✓ mint is Token-2022      TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb
-✓ buy CONFIRMED on-chain  23F5x1WuPSYoDEbvrccPG7fZRW2gQJbbpb8jC8uPRP2v…
+✓ buy CONFIRMED on-chain  5JLjHAjCy3oH1ejpdAWWoe7jxLaZjGhyLeirTDxzH6gr…
 ✓ recipient credited exactly 40, vault debited exactly 40
 ✓ over-cap buy REJECTED on-chain — reason code 3 (OverPerTx)
 ✓ vault untouched by the blocked buy
 ```
+
+Explorer (the buy):
+<https://explorer.solana.com/tx/5JLjHAjCy3oH1ejpdAWWoe7jxLaZjGhyLeirTDxzH6grwDRT9WsiCNFZWhte7tdRNYdHmbUUaMuC7bDyXA8rtgg7?cluster=devnet>
+
+Program: `3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd` (devnet, Token-2022 build).
 
 ## Honest scope (read this before judging)
 
@@ -56,6 +63,7 @@ on-chain ActionLog is the audit trail judges can click.
   `bun run praxis:setup-devnet-stocks` — same symbol, same 9 decimals, same
   token program, so the code path is identical. Prices and research come from
   the live PreStocks API. The app labels a mirrored universe in the UI.
+  Devnet OPENAI mirror: `JDQzde3RyKMaJTVNxwR2ocFLrqvcjR2Rq5BZiy6QX3tx`.
 - **The issuer outranks the policy.** PreStocks holds `PermanentDelegate`,
   freeze and pause authority on the real mints. Aegis bounds what the *agent*
   can do with your vault; it cannot bound the issuer of a token you chose to

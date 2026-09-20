@@ -1068,6 +1068,10 @@ export class PraxisServerProvider implements PraxisProvider {
    * 60s). Everything else returns undefined, and the card shows no dollar
    * figure — better than the client's hardcoded rate table inventing "$0.00"
    * for any symbol it has never heard of.
+   *
+   * Worst case this adds one PreStocks round-trip (bounded by
+   * `prestocksTimeoutMs`) to the first stock proposal per minute; any failure
+   * degrades to no figure rather than blocking the proposal.
    */
   private async usdEstimateFor(token: TokenInfo, amount: bigint): Promise<string | undefined> {
     if (!this.config.stocksEnabled || !isStockSymbol(token.symbol)) return undefined;

@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
 
-import { AppPreview } from "@/components/praxis/AppPreview";
 import { Capabilities } from "@/components/praxis/Capabilities";
-import { CommandDemo } from "@/components/praxis/CommandDemo";
 import { FinalCTA } from "@/components/praxis/FinalCTA";
 import { Footer } from "@/components/praxis/Footer";
 import { Hero } from "@/components/praxis/Hero";
 import { HowItWorks } from "@/components/praxis/HowItWorks";
+import { InsideTheApp } from "@/components/praxis/InsideTheApp";
 import { Nav } from "@/components/praxis/Nav";
 import { Principles } from "@/components/praxis/Principles";
 import { TrustStrip } from "@/components/praxis/TrustStrip";
@@ -25,10 +24,10 @@ export default function Home() {
     <>
       <Nav />
       <Hero />
-      <CommandDemo />
+      {/* Show the thing, then argue for it. */}
+      <InsideTheApp />
       <WhyPraxis />
       <UseCases />
-      <AppPreview />
       <HowItWorks />
       <Capabilities />
       <Principles />

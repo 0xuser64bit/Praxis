@@ -24,8 +24,21 @@ export type TxMetaRow = {
 
 export type TxStatus = {
   label: string;
-  /** CSS color value for the leading dot. Defaults to var(--accent). */
-  dotColor?: string;
+  /**
+   * The tone of the whole pill, not just its dot. A blocked card that keeps
+   * the accent tint reads as "awaiting signature" at a glance — which is the
+   * opposite of what happened.
+   */
+  tone?: "accent" | "success" | "danger";
+};
+
+const STATUS_TONE: Record<
+  NonNullable<TxStatus["tone"]>,
+  { color: string; tint: string }
+> = {
+  accent: { color: "var(--accent)", tint: "var(--accent-dim)" },
+  success: { color: "var(--success)", tint: "rgba(127,176,105,0.14)" },
+  danger: { color: "var(--danger)", tint: "rgba(199,91,91,0.16)" },
 };
 
 export type TxAction = {
@@ -49,7 +62,19 @@ type TxCardProps = {
   from: TxFlow;
   to: TxFlow;
   meta?: TxMetaRow[];
+  /**
+   * The Aegis verdict, rendered between the simulation meta and the actions —
+   * the same slot `PolicyCheckBanner` occupies in the real proposal card. A
+   * transaction preview without it shows the product's least interesting half.
+   */
+  verdict?: ReactNode;
   actions?: TxAction[];
+  /**
+   * Replaces the action row once there is nothing left to decide — the real
+   * proposal card swaps its buttons for the settled signature rather than
+   * stacking a receipt underneath them.
+   */
+  footer?: ReactNode;
   className?: string;
 };
 
@@ -58,29 +83,35 @@ export function TxCard({
   from,
   to,
   meta = [],
+  verdict,
   actions = DEFAULT_ACTIONS,
+  footer,
   className,
 }: TxCardProps) {
   const base =
-    "mt-2 rounded-xl bg-[var(--bg)] px-6 py-[22px] [border:0.5px_solid_var(--border-strong)]";
+    "mt-2 rounded-xl bg-[var(--bg)] px-5 py-[18px] [border:0.5px_solid_var(--border-strong)]";
+  const tone = STATUS_TONE[status?.tone ?? "accent"];
 
   return (
     <div className={className ? `${base} ${className}` : base}>
       {status && (
-        <div className="mb-[22px] flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between gap-3">
           <Eyebrow>Transaction preview</Eyebrow>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent-dim)] px-2.5 py-1 [font-family:var(--font-mono)] text-[10px] tracking-[0.08em] text-[var(--accent)] uppercase">
+          <span
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 [font-family:var(--font-mono)] text-[10px] tracking-[0.08em] uppercase"
+            style={{ background: tone.tint, color: tone.color }}
+          >
             <span
               aria-hidden
               className="h-[5px] w-[5px] rounded-full"
-              style={{ background: status.dotColor ?? "var(--accent)" }}
+              style={{ background: tone.color }}
             />
             {status.label}
           </span>
         </div>
       )}
 
-      <div className="mb-[18px] grid grid-cols-[1fr_auto_1fr] items-center gap-5 pb-[22px] [border-bottom:0.5px_solid_var(--border)] max-[960px]:grid-cols-1 max-[960px]:justify-items-start max-[960px]:gap-[14px]">
+      <div className="mb-4 grid grid-cols-[1fr_auto_1fr] items-center gap-5 pb-4 [border-bottom:0.5px_solid_var(--border)] max-[960px]:grid-cols-1 max-[960px]:justify-items-start max-[960px]:gap-[14px]">
         <TxFlowCol flow={from} />
         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)] max-[960px]:rotate-90">
           <IconArrowRight size={16} />
@@ -89,7 +120,7 @@ export function TxCard({
       </div>
 
       {meta.length > 0 && (
-        <dl className="mb-[22px] grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-[13px]">
+        <dl className="mb-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-[13px]">
           {meta.map((row) => (
             <Fragment key={row.label}>
               <dt className="[font-family:var(--font-mono)] text-[12px] text-[var(--text-tertiary)]">
@@ -119,13 +150,17 @@ export function TxCard({
         </dl>
       )}
 
-      {actions.length > 0 && (
+      {verdict && <div className="mb-4">{verdict}</div>}
+
+      {footer}
+
+      {!footer && actions.length > 0 && (
         <div className="flex gap-2.5">
           {actions.map((action) => (
             <Button
               key={action.label}
               variant={action.variant}
-              className="flex-1 justify-center px-3.5 py-[11px]"
+              className="flex-1 justify-center px-3.5 py-[9px]"
             >
               {action.label}
               {action.icon}
@@ -138,7 +173,7 @@ export function TxCard({
 }
 
 function TxFlowCol({ flow }: { flow: TxFlow }) {
-  const sizeClass = flow.compact ? "text-[28px]" : "text-[36px]";
+  const sizeClass = flow.compact ? "text-[24px]" : "text-[30px]";
   return (
     <div>
       <div className="mb-1.5 [font-family:var(--font-mono)] text-[10px] tracking-[0.12em] text-[var(--text-tertiary)] uppercase">
@@ -151,7 +186,7 @@ function TxFlowCol({ flow }: { flow: TxFlow }) {
         {flow.unit && (
           <>
             {" "}
-            <span className="text-[22px] text-[var(--text-tertiary)]">
+            <span className="text-[19px] text-[var(--text-tertiary)]">
               {flow.unit}
             </span>
           </>

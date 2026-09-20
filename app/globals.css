@@ -156,6 +156,21 @@ body::after {
   }
 }
 
+/* Entrance for the looping walkthrough's scenes.
+   Transform only, deliberately: the surfaces it animates ARE the content, and
+   a fade from opacity 0 with `fill: both` leaves them invisible for as long as
+   the compositor takes to start the animation — which on a throttled or
+   backgrounded tab is "a while". A frozen transform is an 8px offset; a frozen
+   fade is a blank panel. */
+@keyframes sceneIn {
+  from {
+    transform: translateY(10px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
 /* Typing/working indicator — staggered bounce + fade so it reads as "busy"
    (the legacy `pulse` keyframe only animates a green box-shadow ring). */
 @keyframes thinkingDot {

@@ -23,7 +23,7 @@ import { useState } from "react";
 
 import { StockSwitcher, useActiveStock } from "./ActiveStock";
 import { useActivity, useProvider, useSchedules } from "./ProviderContext";
-import { Label } from "./ui";
+import { Label, Surface } from "./ui";
 import { explorerTxUrl } from "./lib/explorer";
 import { formatUnits, shortenAddress } from "./lib/units";
 import { useNow } from "./lib/useNow";
@@ -48,48 +48,61 @@ export function ActivityLog() {
   );
 
   return (
-    <div className="flex-1 overflow-y-auto px-8 py-7 max-[760px]:px-5">
-      <div className="mx-auto max-w-[760px]">
-        <div className="mb-6 flex items-end justify-between gap-4">
-          <div>
-            <h1 className="[font-family:var(--font-serif)] text-[34px] leading-none tracking-[-0.02em]">
-              Activity
-            </h1>
-            <p className="mt-2.5 text-[14px] text-[var(--text-secondary)]">
-              Every agent action and its on-chain Aegis verdict. Allowed actions are
-              recorded on-chain; rejections are shown for this session.{" "}
-              {activity.length} actions · {rejected} rejected
-              {activeSymbol ? ` · ${activeSymbol} only` : ""}.
-            </p>
-            {stocksEnabled && (
-              <div className="mt-3">
-                <StockSwitcher label="Filter activity by stock" />
-              </div>
-            )}
-          </div>
-          <div className="flex shrink-0 gap-1 rounded-lg bg-[var(--bg-elevated)] p-1 [border:0.5px_solid_var(--border)]">
-            {(["all", "allowed", "rejected"] as const).map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setFilter(f)}
-                className={`rounded-md px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] capitalize [transition:background_0.15s,color_0.15s] ${
-                  filter === f
-                    ? "bg-[var(--bg-card)] text-[var(--text-primary)]"
-                    : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
-                }`}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
+    <Surface>
+      {/* The title row owns the filter chips, so nothing below can move them.
+          Counts live on their own single-line, fixed-height row: they used to
+          be spliced into the description, where selecting a stock appended
+          "· SYMBOL only", re-wrapped the paragraph, and shoved the entire feed
+          down a line mid-click. */}
+      <div className="mb-2.5 flex items-center justify-between gap-4">
+        <h1 className="[font-family:var(--font-serif)] text-[34px] leading-none tracking-[-0.02em]">
+          Activity
+        </h1>
+        <div className="flex shrink-0 gap-1 rounded-lg bg-[var(--bg-elevated)] p-1 [border:0.5px_solid_var(--border)]">
+          {(["all", "allowed", "rejected"] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={filter === f}
+              onClick={() => setFilter(f)}
+              className={`rounded-md px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] capitalize [transition:background_0.15s,color_0.15s] ${
+                filter === f
+                  ? "bg-[var(--bg-card)] text-[var(--text-primary)]"
+                  : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+              }`}
+            >
+              {f}
+            </button>
+          ))}
         </div>
+      </div>
 
-        <Label className="mb-3">Newest first</Label>
-        <SchedulesCard />
-        <div className="mt-5 mb-3">
-          <Label>History</Label>
+      <p className="text-[14px] text-[var(--text-secondary)]">
+        Every agent action and its on-chain Aegis verdict. Allowed actions are
+        recorded on-chain; rejections are shown for this session.
+      </p>
+
+      <div className="mt-2 flex h-[17px] items-center gap-2 overflow-hidden [font-family:var(--font-mono)] text-[11px] whitespace-nowrap text-[var(--text-tertiary)]">
+        <span>{activity.length} actions</span>
+        <span aria-hidden>·</span>
+        <span>{rejected} rejected</span>
+        {activeSymbol && (
+          <>
+            <span aria-hidden>·</span>
+            <span className="text-[var(--accent)]">{activeSymbol} only</span>
+          </>
+        )}
+      </div>
+
+      {stocksEnabled && (
+        <div className="mt-3.5">
+          <StockSwitcher label="Filter activity by stock" />
         </div>
+      )}
+
+      <div className="mt-6">
+        <SchedulesCard />
+        <Label className="mb-3">History · newest first</Label>
         <div className="flex flex-col gap-2.5">
           {shown.map((entry) => (
             <ActivityRow key={entry.id} entry={entry} now={now} />
@@ -101,7 +114,7 @@ export function ActivityLog() {
           )}
         </div>
       </div>
-    </div>
+    </Surface>
   );
 }
 
@@ -206,7 +219,7 @@ function SchedulesCard() {
   };
 
   return (
-    <div className="mb-2 rounded-xl bg-[var(--bg-card)] px-4 py-3.5 [border:0.5px_solid_var(--border)]">
+    <div className="mb-5 rounded-xl bg-[var(--bg-card)] px-4 py-3.5 [border:0.5px_solid_var(--border)]">
       <div className="mb-2.5 flex items-center gap-2">
         <IconCalendarRepeat size={14} className="text-[var(--text-tertiary)]" />
         <Label>Recurring buys · {schedules.length}</Label>

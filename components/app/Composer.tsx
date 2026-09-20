@@ -3,6 +3,8 @@
 import { IconArrowRight } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { SurfaceBand } from "./ui";
+
 /**
  * First-run prompts. Three of these used to be swaps — which are always
  * blocked — so a new user's most likely first three actions all dead-ended,
@@ -36,7 +38,7 @@ export function Composer({
   };
 
   return (
-    <div className="bg-[var(--bg-elevated)] px-6 pt-3.5 pb-4 [border-top:0.5px_solid_var(--border)]">
+    <SurfaceBand className="bg-[var(--bg-elevated)] pt-3.5 pb-4 [border-top:0.5px_solid_var(--border)]">
       {showSuggestions && (
         <div className="mb-3 flex flex-wrap gap-2">
           {SUGGESTIONS.map((s) => (
@@ -97,6 +99,6 @@ export function Composer({
         </span>
         <span className="shrink-0 max-[520px]:hidden">structured intent</span>
       </div>
-    </div>
+    </SurfaceBand>
   );
 }

@@ -52,6 +52,31 @@ body {
   --font-serif: var(--font-instrument-serif), Georgia, serif;
   --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: var(--font-jetbrains-mono), "SF Mono", Menlo, monospace;
+
+  /* ------------------------------------------------------------------
+     Product-app layout rhythm.
+
+     Conversation, Policy and Activity each used to pick their own
+     padding and content width (680 / 880 / 760px), so switching tabs
+     slid the whole column sideways by up to 100px. One gutter and one
+     measure, declared once here, are what make the three surfaces read
+     as one app instead of three pages. Change them here, never at a
+     call site.
+     ------------------------------------------------------------------ */
+  --app-gutter: 32px;
+  --app-measure: 820px;
+}
+
+@media (max-width: 960px) {
+  :root {
+    --app-gutter: 24px;
+  }
+}
+
+@media (max-width: 760px) {
+  :root {
+    --app-gutter: 20px;
+  }
 }
 
 html,

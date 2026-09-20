@@ -37,7 +37,7 @@ import {
 } from "./lib/useAsyncAction";
 import { useToast } from "./Toast";
 import { useAddressBook, usePolicy, useProvider } from "./ProviderContext";
-import { Card, Dot, Label } from "./ui";
+import { Card, Dot, Label, Surface } from "./ui";
 import {
   formatEditableUnits,
   formatSol,
@@ -94,8 +94,7 @@ export function PolicyDashboard() {
 
   return (
     <AsyncActionProvider value={actions}>
-    <div className="flex-1 overflow-y-auto px-8 py-7 max-[760px]:px-5">
-      <div className="mx-auto max-w-[880px]">
+      <Surface>
         {/* header */}
         <div className="mb-7 flex items-start justify-between gap-4">
           <div>
@@ -355,12 +354,10 @@ export function PolicyDashboard() {
           </>
         )}
 
-      </div>
-
-      {revokeOpen && (
-        <RevokeDialog onConfirm={() => provider.revokeAgent()} onClose={() => setRevokeOpen(false)} />
-      )}
-    </div>
+        {revokeOpen && (
+          <RevokeDialog onConfirm={() => provider.revokeAgent()} onClose={() => setRevokeOpen(false)} />
+        )}
+      </Surface>
     </AsyncActionProvider>
   );
 }

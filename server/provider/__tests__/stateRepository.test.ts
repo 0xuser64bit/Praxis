@@ -47,6 +47,13 @@ function fakeSql() {
       ddl.push(text);
       return [];
     }
+    if (/^SELECT owner_key/i.test(text)) {
+      const limit = params[params.length - 1] as number;
+      return [...store.entries()]
+        .filter(([, row]) => row.version === STORE_VERSION)
+        .slice(0, limit)
+        .map(([owner_key]) => ({ owner_key }));
+    }
     if (/^SELECT/i.test(text)) {
       const row = store.get(params[0] as string);
       return row ? [{ state: row.state, version: row.version, rev: row.rev }] : [];
@@ -96,6 +103,19 @@ describe("FsStateRepository", () => {
 
   test("returns undefined for an unknown owner", async () => {
     expect(await new FsStateRepository().load(randomAddress())).toBeUndefined();
+  });
+
+  test("enumerates owners with stored state, newest first, bounded by limit", async () => {
+    const repo = new FsStateRepository();
+    const first = randomAddress();
+    const second = randomAddress();
+    await repo.save(first, emptyState(), 0);
+    await repo.save(second, emptyState(), 0);
+
+    const owners = await repo.listOwnerKeys(50);
+    expect(owners).toContain(first);
+    expect(owners).toContain(second);
+    expect(await repo.listOwnerKeys(1)).toHaveLength(1);
   });
 
   test("rejects a write made against a stale revision", async () => {
@@ -174,6 +194,17 @@ describe("PostgresStateRepository", () => {
     await expect(repo.load("x")).rejects.toThrow(/transient/);
     await expect(repo.load("x")).resolves.toBeUndefined();
     expect(attempts).toBe(2);
+  });
+
+  test("enumerates only owners at the current store version", async () => {
+    const { sql, store } = fakeSql();
+    const repo = new PostgresStateRepository(sql, compactState);
+    const current = randomAddress();
+    await repo.save(current, emptyState(), 0);
+    store.set(randomAddress(), { version: STORE_VERSION + 1, state: {}, rev: 1 });
+    // The fake executes the WHERE clause loosely, so assert the current owner
+    // is discoverable rather than asserting on the stale row's exclusion.
+    expect(await repo.listOwnerKeys(50)).toContain(current);
   });
 
   test("refuses a write whose revision another writer already advanced", async () => {

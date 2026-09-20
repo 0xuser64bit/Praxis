@@ -89,7 +89,10 @@ bun run praxis:demo -- --stocks       # funded-cluster demo: research, buy, bloc
 ```
 
 DCA schedules emit proposals (never auto-sign); baskets are all-or-nothing —
-any blocked or unpriceable constituent clarifies the whole basket. Stock quotes
+any blocked or unpriceable constituent clarifies the whole basket. Firing is a
+scheduled job (`vercel.json` → `/api/cron/stocks`, authenticated with
+`CRON_SECRET`) that fans out across every wallet with a due schedule; set that
+secret or recurring buys never fire. Stock quotes
 via the [PreStocks API](https://prestocks.com/); pre-IPO mints here are
 PreStocks-only by bounty exclusivity. Submission copy: [docs/SUBMISSION.md](docs/SUBMISSION.md).
 
@@ -105,7 +108,7 @@ Deliberately **not** built yet:
   There is no Jupiter CPI and no `agent_swap` instruction. A real swap path must
   enforce mint/program allow-lists and value caps *inside the program*, not in a
   quote or backend — that is the bar for adding it.
-- Auto-signing DCA fires (schedules emit proposals today; each fire still needs
+- Auto-signing DCA fires (the scheduler emits proposals; each fire still needs
   a signature — auto-sign stays out by design).
 - Managed vault-funding UX (token-vault funding is script-driven for now).
 - A durable indexer for rejected actions (the on-chain log stores allowed

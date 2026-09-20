@@ -276,15 +276,53 @@ describe("stocklana C05: stock universe + policy mint view", () => {
     expect(res.status).toBe(400);
   });
 
-  test("cron/stocks: fires nothing for a fresh wallet (no schedules)", async () => {
+  test("cron/stocks: session caller fires nothing for a fresh wallet (no schedules)", async () => {
     const res = await cronStocks(authed("/api/cron/stocks"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ fired: [] });
+    expect(await res.json()).toEqual({ scope: "session", fired: [] });
   });
 
   test("cron/stocks: 401 without a session", async () => {
     const res = await cronStocks(makeRequest(`${ORIGIN}/api/cron/stocks`));
     expect(res.status).toBe(401);
+  });
+
+  test("cron/stocks: the scheduler path is unavailable when no secret is configured", async () => {
+    delete process.env.CRON_SECRET;
+    const res = await cronStocks(
+      makeRequest(`${ORIGIN}/api/cron/stocks`, { headers: { authorization: "Bearer anything" } }),
+    );
+    // Disabled, never open — and not silently downgraded to the session path.
+    expect(res.status).toBe(503);
+  });
+
+  test("cron/stocks: a bearer caller with the wrong secret is rejected, not downgraded", async () => {
+    process.env.CRON_SECRET = "a-sufficiently-long-cron-secret";
+    try {
+      const res = await cronStocks(
+        makeRequest(`${ORIGIN}/api/cron/stocks`, { headers: { authorization: "Bearer wrong-secret-value-here" } }),
+      );
+      expect(res.status).toBe(401);
+    } finally {
+      delete process.env.CRON_SECRET;
+    }
+  });
+
+  test("cron/stocks: the configured secret runs the all-wallet fan-out without a session", async () => {
+    process.env.CRON_SECRET = "a-sufficiently-long-cron-secret";
+    try {
+      const res = await cronStocks(
+        makeRequest(`${ORIGIN}/api/cron/stocks`, {
+          headers: { authorization: "Bearer a-sufficiently-long-cron-secret" },
+        }),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { scope: string; wallets: number };
+      expect(body.scope).toBe("all-wallets");
+      expect(typeof body.wallets).toBe("number");
+    } finally {
+      delete process.env.CRON_SECRET;
+    }
   });
 });
 

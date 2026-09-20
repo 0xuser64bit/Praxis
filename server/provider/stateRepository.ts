@@ -1,7 +1,7 @@
 import { PraxisConfigError } from "../errors";
 import { createPgExecutor, isLocalPostgresUrl } from "./pgStateExecutor";
 import { PostgresStateRepository } from "./postgresStateRepository";
-import { loadProviderState, saveProviderState } from "./stateStore";
+import { listProviderStateOwners, loadProviderState, saveProviderState } from "./stateStore";
 import { compactState, type StoredProviderState } from "./stateSerialization";
 
 /** A loaded state document plus the revision it was read at. */
@@ -35,6 +35,14 @@ export interface StateRepository {
    * revision. Throws {@link PraxisConflictError} when it is not.
    */
   save(ownerKey: string, state: StoredProviderState, expectedRev: number): Promise<number>;
+  /**
+   * Owner keys that have stored state, newest first.
+   *
+   * Needed by the scheduled-buy job, which has no session and therefore no
+   * wallet of its own: it has to discover which wallets to visit. Bounded by
+   * `limit` so one tick can never fan out unboundedly.
+   */
+  listOwnerKeys(limit: number): Promise<string[]>;
 }
 
 /**
@@ -53,6 +61,10 @@ export class FsStateRepository implements StateRepository {
   async save(ownerKey: string, state: StoredProviderState, expectedRev: number): Promise<number> {
     // stateStore compacts on write; keep behavior identical for the FS path.
     return saveProviderState(ownerKey, state, expectedRev);
+  }
+
+  async listOwnerKeys(limit: number): Promise<string[]> {
+    return listProviderStateOwners(limit);
   }
 }
 

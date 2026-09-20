@@ -176,10 +176,32 @@ Same project, these additions (values, not secrets — nothing sensitive here):
 | `NEXT_PUBLIC_PRAXIS_ALLOW_MOCK` | `0` (judges must hit the real API path) |
 
 The 8 stock mints come from the flag — do NOT list them in `PRAXIS_TOKENS`.
-DCA firing on staging is script-driven (`bun run praxis:stocks-dca -- --fire`
-against the deployment's owner wallet); `/api/cron/stocks` is session-authed
-for the signed-in wallet. No `vercel.json` cron is configured — multi-wallet
-fan-out is post-hackathon work.
+
+### Scheduled recurring buys
+
+`vercel.json` schedules `/api/cron/stocks` hourly. The job authenticates with
+`Authorization: Bearer $CRON_SECRET` (Vercel Cron sends this automatically from
+the project's `CRON_SECRET`) and fans out across every wallet with stored
+state, emitting one proposal per due schedule. It never signs — the owner still
+signs every fire.
+
+**Set `CRON_SECRET` whenever `PRAXIS_STOCKS_ENABLED=1`.** With no secret the
+endpoint is disabled rather than open, which is the safe failure — but it also
+means a user who schedules "buy $50 spacex every monday" will never receive a
+proposal, and the UI will have promised them one.
+
+Verify after deploy:
+
+```bash
+curl -s -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/stocks
+# {"scope":"all-wallets","wallets":N,"walletsFired":0,"proposals":0,"failures":0}
+```
+
+A `401` means the secret does not match; a `503` means none is configured.
+Per-wallet failures are isolated and counted, so one wallet with an
+unreachable RPC cannot stop the rest of the run. The same endpoint still
+answers a session cookie, firing only the signed-in wallet's schedules
+(useful for manual catch-up and for SDK callers).
 
 Cold-browser check before recording: research OPENAI → propose a buy →
 over-cap buy blocked (off-chain card AND on-chain log) → switch envelope →

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { PraxisConflictError } from "../errors";
@@ -77,6 +77,41 @@ export function saveProviderState(
   writeFileSync(tmp, JSON.stringify(encodeBigInts(payload), null, 2));
   renameSync(tmp, file);
   return nextRev;
+}
+
+/**
+ * Owner keys with a state file, newest-modified first.
+ *
+ * The owner key is read from inside each file rather than inferred from its
+ * name: `safeOwnerKey` is lossy (it replaces anything outside `[A-Za-z0-9_-]`),
+ * so a filename is not reliably the key that produced it.
+ */
+export function listProviderStateOwners(limit: number): string[] {
+  const dir = stateDir();
+  if (!existsSync(dir)) return [];
+  const files: Array<{ path: string; mtimeMs: number }> = [];
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith(".json")) continue;
+    const path = join(dir, name);
+    try {
+      files.push({ path, mtimeMs: statSync(path).mtimeMs });
+    } catch {
+      // Raced with a rename; skip it.
+    }
+  }
+  files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+  const owners: string[] = [];
+  for (const file of files) {
+    if (owners.length >= limit) break;
+    try {
+      const parsed = JSON.parse(readFileSync(file.path, "utf8")) as { ownerKey?: unknown };
+      if (typeof parsed.ownerKey === "string" && parsed.ownerKey) owners.push(parsed.ownerKey);
+    } catch {
+      // Unreadable/partial file; skip it.
+    }
+  }
+  return owners;
 }
 
 function readRev(value: unknown): number {

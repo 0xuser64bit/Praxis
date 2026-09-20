@@ -94,6 +94,19 @@ export class PostgresStateRepository implements StateRepository {
     return Number(rows[0].rev ?? nextRev);
   }
 
+  async listOwnerKeys(limit: number): Promise<string[]> {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      SELECT owner_key FROM praxis_provider_state
+      WHERE version = ${STORE_VERSION}
+      ORDER BY updated_at DESC
+      LIMIT ${limit}
+    `;
+    return rows
+      .map((row) => row.owner_key)
+      .filter((key): key is string => typeof key === "string" && key.length > 0);
+  }
+
   private ensureSchema(): Promise<void> {
     if (!this.schemaReady) {
       this.schemaReady = (async () => {

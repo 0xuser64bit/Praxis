@@ -1,20 +1,41 @@
-import { withMutationProvider } from "@/server/api/json";
+import { jsonError, jsonOk, withMutationProvider } from "@/server/api/json";
+import { assertCronAuthorized, hasBearerToken } from "@/server/api/cronAuth";
+import { fireDueSchedulesForAllWallets } from "@/server/stocks/scheduleRunner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Stocklana C06: mechanical DCA cron. Fires every due schedule for the
- * signed-in wallet — each fire emits ONE transfer proposal through the same
- * simulate + policy-check path as a one-off buy. Never signs.
+ * Fire every due recurring buy. Each fire emits ONE transfer proposal through
+ * the same simulate + policy-check path as a one-off buy. Never signs — the
+ * owner still signs every fire.
  *
- * Session-authenticated like every other mutation (single-writer affinity per
- * wallet comes from the provider mutex). Multi-wallet fan-out (one tick firing
- * every wallet's schedules) is a C11+ indexer job, not this route.
+ * Two callers, two auth modes:
+ *
+ * - **Scheduler** (`Authorization: Bearer $CRON_SECRET`): fans out across every
+ *   wallet with stored state. This is the path that makes recurring buys real;
+ *   without it a schedule only ever fired if its owner happened to hit this URL
+ *   from a signed-in browser, which is to say: never.
+ * - **Session** (cookie): fires the signed-in wallet's own schedules, for
+ *   manual catch-up and for SDK callers.
+ *
+ * A request carrying a bearer token is always judged as the scheduler — it is
+ * never silently downgraded to the session path, so a wrong or stale secret
+ * fails loudly instead of quietly doing nothing.
  */
 export async function GET(request: Request) {
+  if (hasBearerToken(request)) {
+    try {
+      assertCronAuthorized(request);
+      const summary = await fireDueSchedulesForAllWallets(Date.now());
+      return jsonOk({ scope: "all-wallets", ...summary });
+    } catch (error) {
+      return jsonError(error);
+    }
+  }
+
   return withMutationProvider(request, async (provider) => {
     const fired = await provider.fireDueSchedules(Date.now());
-    return { fired };
+    return { scope: "session", fired };
   });
 }

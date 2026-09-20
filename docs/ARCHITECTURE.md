@@ -162,6 +162,8 @@ They are not the source of truth for value movement.
   unbounded signing (mitigated by the single-transfer policy gate).
 - No durable rejected-transaction indexer for failures that happen outside the
   app process.
+- The scheduled-buy job walks every wallet in one tick (bounded at 500). Past
+  that it needs partitioning or a work queue.
 - No managed setup/funding product flow for SPL token vault balances.
 
 ## Verification Commands

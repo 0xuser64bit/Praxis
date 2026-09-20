@@ -221,6 +221,7 @@ function PolicyOnboarding({
 }) {
   const [selected, setSelected] = useState(2); // default: 1 SOL
   const [showDetails, setShowDetails] = useState(false);
+  const auth = useAuthSession();
   const preset = FUNDING_PRESETS[selected];
   const buttonLabel = busy
     ? "Confirm in your wallet"
@@ -323,6 +324,26 @@ function PolicyOnboarding({
                 </p>
               </div>
             )}
+          </div>
+        )}
+
+        {auth && (
+          <div className="mt-5 flex items-center justify-between [border-top:0.5px_solid_var(--border)] pt-4 text-[12px] text-[var(--text-tertiary)]">
+            <span>
+              Signed in as{" "}
+              <span className="[font-family:var(--font-mono)]">
+                {shortAddress(auth.walletAddress)}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => void auth.signOut()}
+              aria-label="Sign out"
+              className="flex items-center gap-1 hover:text-[var(--text-primary)]"
+            >
+              <IconLogout size={13} />
+              Sign out
+            </button>
           </div>
         )}
       </div>

@@ -487,3 +487,52 @@ describe("Gemini transport — transient failures retry, permanent ones name the
     expect(calls).toBe(1);
   });
 });
+
+/**
+ * Three real transcripts from testing, all of which asked for a preposition:
+ *   "research about trump coin"      -> Unknown token "TRUMP"  (never resolved)
+ *   "research about <mint>"          -> Unknown token "ABOUT"
+ *   "research for this coin TRUMP…"  -> Unknown token "THIS"
+ * The verb matcher took the word right after the verb and one preposition
+ * from a fixed list. Anything else in between became the token.
+ */
+describe("offline research extraction reads the token, not the filler", () => {
+  const MINT = "6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN";
+
+  function token(line: string): string | undefined {
+    const parsed = parseIntentLocallyForDemo(line);
+    if (parsed.outcome !== "actions") return undefined;
+    const action = parsed.actions[0];
+    return action.kind === "research" ? action.token : undefined;
+  }
+
+  test("filler words between the verb and the ticker are skipped", () => {
+    expect(token("research about trump coin")).toBe("TRUMP");
+    expect(token("can you research this token for me: pepe")).toBe("PEPE");
+    expect(token("what's the price of jup")).toBe("JUP");
+    expect(token("tell me about $wif")).toBe("WIF");
+    expect(token("look up fartcoin")).toBe("FARTCOIN");
+  });
+
+  test("a pasted mint wins, alone or beside a ticker", () => {
+    expect(token(`research about ${MINT}`)).toBe(MINT);
+    expect(token(`research for this coin TRUMP, min: ${MINT}`)).toBe(MINT);
+  });
+
+  test("a '$' forces a filler-looking word through", () => {
+    // Deny-listing words means a token really called DATA needs an override.
+    expect(token("research $data")).toBe("DATA");
+  });
+
+  test("the shapes that already worked still work", () => {
+    expect(token("research bonk")).toBe("BONK");
+    expect(token("openai price")).toBe("OPENAI");
+    expect(token("solana price now")).toBe("SOL");
+    expect(token("$bonk")).toBe("BONK");
+  });
+
+  test("an address in a transfer is still a recipient, never a research target", () => {
+    const parsed = parseIntentLocallyForDemo(`send 0.1 sol to ${ADDR}`);
+    expect(parsed.outcome === "actions" && parsed.actions[0].kind).toBe("transfer");
+  });
+});

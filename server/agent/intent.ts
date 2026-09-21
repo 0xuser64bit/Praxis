@@ -1,3 +1,5 @@
+import { PublicKey } from "@solana/web3.js";
+
 import { PraxisConfigError, PraxisInputError } from "../errors";
 import type { PraxisServerConfig } from "../env";
 import { envTimeout, fetchWithTimeout } from "../api/timeout";
@@ -400,20 +402,87 @@ function normalizeToken(word: string): string {
 }
 
 /**
+ * Words that are never the token being asked about.
+ *
+ * The old parser took the first word after the verb and an optional fixed
+ * preposition, so "research about trump coin" asked for the token "ABOUT"
+ * and "research for this coin TRUMP" asked for "THIS". A fixed list of
+ * prepositions cannot keep up with how people actually type; skipping filler
+ * until a real word appears can.
+ *
+ * ponytail: a deny-list, so a token literally named DATA or INFO is skipped.
+ * A "$" prefix ("$data") and a pasted mint both override it, which is the
+ * escape hatch; a live symbol index would be the upgrade if it ever matters.
+ */
+const RESEARCH_FILLER = new Set([
+  "a", "about", "all", "an", "and", "any", "anything", "are", "as", "at", "be", "can",
+  "chart", "charts", "check", "coin", "coins", "crypto", "currently", "data", "detail",
+  "details", "do", "does", "doing", "dyor", "find", "for", "get", "give", "going", "good",
+  "how", "i", "in", "info", "information", "is", "it", "its", "just", "know", "latest",
+  "like", "look", "lookup", "looks", "me", "mint", "more", "much", "my", "now", "of", "on",
+  "one", "out", "over", "please", "price", "prices", "project", "research", "right", "see",
+  "show", "some", "stats", "status", "tell", "that", "the", "their", "there", "these",
+  "they", "think", "this", "to", "today", "token", "tokens", "up", "us", "want", "was",
+  "week", "what", "whats", "which", "why", "with", "worth", "you", "your",
+]);
+
+/** Verbs and phrasings that introduce a research request. */
+const RESEARCH_VERB =
+  /\b(?:research|check|look\s*up|lookup|what'?s|how'?s|how is|price|chart|stats|tell me about|dyor|info on|analy[sz]e)\b/;
+
+/**
+ * A pasted mint anywhere in the line, validated as a real 32-byte key.
+ *
+ * Address beats ticker: "research this coin TRUMP, mint: 6p6x…" names the
+ * same thing twice and only one of the two is unambiguous. It also rescues
+ * the case a word matcher handles worst — a bare address, where every
+ * surrounding word is filler and the address itself is not a word at all.
+ */
+function findMintAddress(text: string): string | null {
+  for (const candidate of text.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/g) ?? []) {
+    try {
+      return new PublicKey(candidate).toBase58();
+    } catch {
+      // Right alphabet, wrong length or curve — keep scanning the line.
+    }
+  }
+  return null;
+}
+
+/** First word in `tail` that could be a ticker. A "$" forces a word through. */
+function firstTokenWord(tail: string): string | null {
+  for (const raw of tail.split(/[^a-zA-Z0-9$]+/)) {
+    if (!raw) continue;
+    const sigil = raw.startsWith("$");
+    const word = raw.replace(/^\$/, "");
+    if (!/^[a-zA-Z][a-zA-Z0-9]{0,11}$/.test(word)) continue;
+    if (!sigil && RESEARCH_FILLER.has(word.toLowerCase())) continue;
+    return word;
+  }
+  return null;
+}
+
+/**
  * Best-effort research detection for the offline fallback parser. Catches
- * verb-led ("research bonk", "what's sol", "price of jup"), token-led
- * ("solana price now", "bonk chart"), and bare token words ("sol", "$bonk").
+ * pasted mints, verb-led ("research about trump coin", "price of jup"),
+ * token-led ("solana price now", "bonk chart"), and bare words ("sol", "$bonk").
  */
 function matchResearch(text: string): string | null {
+  const mint = findMintAddress(text);
+  if (mint) return mint;
+
   const t = text.toLowerCase();
   // token-led first so "solana price now" resolves to the token, not "now".
-  let m = t.match(/\$?([a-z][a-z0-9]{1,11})\s+(?:price|chart|stats|doing|now|today)\b/);
-  if (m) return normalizeToken(m[1]);
-  // verb-led: research/check/what's/how's/price/chart [of|for|is|on] TOKEN
-  m = t.match(
-    /\b(?:research|check|what'?s|how'?s|how is|price|chart|stats|tell me about)\s+(?:of\s+|for\s+|is\s+|on\s+|about\s+)?\$?([a-z][a-z0-9]{1,11})\b/,
-  );
-  if (m) return normalizeToken(m[1]);
+  const led = t.match(/\$?([a-z][a-z0-9]{1,11})\s+(?:price|chart|stats|doing|now|today)\b/);
+  if (led && !RESEARCH_FILLER.has(led[1])) return normalizeToken(led[1]);
+
+  // verb-led: skip filler after the verb rather than guessing the preposition.
+  const verb = t.match(RESEARCH_VERB);
+  if (verb && verb.index !== undefined) {
+    const word = firstTokenWord(text.slice(verb.index + verb[0].length));
+    if (word) return normalizeToken(word);
+  }
+
   // bare token word/symbol on its own.
   const bare = t.replace(/[^a-z0-9$]/g, "").replace(/^\$/, "");
   if (TOKEN_ALIASES[bare]) return TOKEN_ALIASES[bare];

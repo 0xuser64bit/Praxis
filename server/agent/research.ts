@@ -1,5 +1,5 @@
 import { Connection, PublicKey, type Commitment } from "@solana/web3.js";
-import type { ResearchData, ResearchMetric, TokenInfo } from "@praxis/shared";
+import type { ResearchData, ResearchMetric } from "@praxis/shared";
 
 import type { PraxisServerConfig } from "../env";
 import { envTimeout, fetchWithTimeout, withTimeout } from "../api/timeout";
@@ -13,7 +13,10 @@ import {
   stockSummarySuffix,
   type PrestocksEntry,
 } from "../stocks/prestocks";
-import { isStockSymbol, normalizeStockAlias } from "../stocks/universe";
+import { isStockSymbol } from "../stocks/universe";
+import type { TokenResolution } from "./tokenResolve";
+
+type ResolvedToken = Extract<TokenResolution, { kind: "resolved" }>;
 
 interface DexScreenerPair {
   chainId?: string;
@@ -24,21 +27,16 @@ interface DexScreenerPair {
   fdv?: number;
   marketCap?: number;
   dexId?: string;
-  baseToken?: { symbol?: string; address?: string };
+  baseToken?: { symbol?: string; name?: string; address?: string };
   quoteToken?: { symbol?: string; address?: string };
 }
 
 export async function researchToken(
-  tokenInput: string,
+  resolved: ResolvedToken,
   connection: Connection,
   config: PraxisServerConfig,
 ): Promise<ResearchData> {
-  // Stocklana C03: resolve `p`-prefixed / cased stock phrasing to canonical
-  // symbols when the flagged universe is on; passthrough otherwise.
-  const token = resolveToken(
-    config.stocksEnabled ? normalizeStockAlias(tokenInput) : tokenInput,
-    config.tokens,
-  );
+  const token = resolved.token;
   const mint = new PublicKey(token.mint);
   const rpcTimeout = envTimeout("PRAXIS_RPC_READ_TIMEOUT_MS", 8_000);
   const wantStock = config.stocksEnabled && isStockSymbol(token.symbol);
@@ -54,6 +52,12 @@ export async function researchToken(
 
   const pairs = indexer.filter((pair) => pair.chainId === "solana");
   const primary = pairs.sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0];
+
+  // A pasted mint arrives unnamed. The indexer pairs already fetched above
+  // carry the ticker and project name, so the card can say "TRUMP / OFFICIAL
+  // TRUMP" instead of the old `mint.slice(0, 6)` guess ("6P6XGH").
+  const symbol = token.symbol || primary?.baseToken?.symbol || shortMint(token.mint);
+  const name = resolved.name ?? primary?.baseToken?.name;
 
   // Stocklana C03: PreStocks rows lead for stocks; everything below keeps the
   // existing RPC + indexer behavior (including honest "unavailable").
@@ -100,11 +104,12 @@ export async function researchToken(
   }
 
   return {
-    token: token.symbol,
+    token: symbol,
+    name: name && name.toUpperCase() !== symbol.toUpperCase() ? name : undefined,
     mint: token.mint,
     metrics,
     summary:
-      `Read-only ${token.symbol} data from Solana RPC and the configured indexer. ` +
+      `Read-only ${symbol} data from Solana RPC and the configured indexer. ` +
       "No buy, sell, or hold recommendation is being made." +
       (stock ? stockSummarySuffix(stock) : ""),
   };
@@ -186,22 +191,9 @@ function errToField(error: unknown): { error: string } {
   return { error: error instanceof Error ? error.message : String(error) };
 }
 
-function resolveToken(input: string, tokens: TokenInfo[]): TokenInfo {
-  const normalized = input.trim().replace(/^\$/, "").toUpperCase();
-  const bySymbol = tokens.find((token) => token.symbol.toUpperCase() === normalized);
-  if (bySymbol) return bySymbol;
-
-  try {
-    const mint = new PublicKey(input.trim()).toBase58();
-    return {
-      symbol: input.trim().slice(0, 6).toUpperCase(),
-      mint,
-      decimals: 0,
-      verified: false,
-    };
-  } catch {
-    throw new Error(`Unknown token "${input}". Try a mint address instead.`);
-  }
+/** "6p6xgH…2jfGiPN" — a last resort when nothing names the mint. */
+function shortMint(mint: string): string {
+  return `${mint.slice(0, 6)}…${mint.slice(-6)}`;
 }
 
 async function fetchIndexerPairs(mint: string, indexerUrl: string | undefined): Promise<DexScreenerPair[]> {

@@ -87,7 +87,11 @@ async function stocksMode(client: AegisClient, config: PraxisServerConfig) {
   );
   console.log(`ENVELOPE: OPENAI 200/tx, 500/day`);
 
-  const data = await researchToken("OPENAI", getResearchConnection(config), config);
+  const data = await researchToken(
+    { kind: "resolved", token: openai, via: "catalog", alternatives: [] },
+    getResearchConnection(config),
+    config,
+  );
   console.log(`RESEARCH: ${data.token} — ${data.summary}`);
 
   const owner = config.ownerAddress ?? requireOwnerKeypair().publicKey;

@@ -178,6 +178,12 @@ export interface ClarifyOption {
 /** Read-only research, distilled. Data only — never buy/sell/hold advice (§12.iv). */
 export interface ResearchData {
   token: string;
+  /**
+   * Project name from the indexer ("OFFICIAL TRUMP"), when it differs from
+   * the ticker. On a chain where four live mints answer to TRUMP, the ticker
+   * alone does not say which one the card is about.
+   */
+  name?: string;
   mint: Address;
   metrics: ResearchMetric[];
   /** A neutral, no-advice summary. */

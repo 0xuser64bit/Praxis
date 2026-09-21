@@ -34,6 +34,7 @@ import {
   type ParsedIntent,
 } from "../agent/intent";
 import { researchToken } from "../agent/research";
+import { describeCandidate, resolveResearchTarget } from "../agent/tokenResolve";
 import { getConnection, getResearchConnection } from "../aegis/client";
 import {
   assertSharedAgentKeySafe,
@@ -1344,8 +1345,49 @@ export class PraxisServerProvider implements PraxisProvider {
     return { blocks, title: `${action.basket} basket` };
   }
 
-  private async researchBlock(token: string): Promise<{ blocks: AgentBlock[]; title?: string }> {
-    const data = await researchToken(token, getResearchConnection(this.config), this.config);
+  /**
+   * Research is a lookup, not a spend, so it is not limited to the mints this
+   * deployment can move. The one thing it must not do is guess: a ticker on
+   * Solana can belong to a dozen live mints, and quietly charting the biggest
+   * one is how somebody reads the wrong coin's numbers and believes them.
+   */
+  private async researchBlock(query: string): Promise<{ blocks: AgentBlock[]; title?: string }> {
+    const resolution = await resolveResearchTarget(query, this.config);
+
+    if (resolution.kind === "unknown") {
+      return {
+        blocks: [{
+          type: "clarify",
+          text:
+            `I couldn't find a Solana token trading as "${resolution.query}". ` +
+            "Check the ticker, or paste the mint address — that always resolves.",
+          options: [],
+        }],
+      };
+    }
+
+    if (resolution.kind === "ambiguous") {
+      return {
+        blocks: [{
+          type: "clarify",
+          text:
+            `${resolution.candidates.length} live Solana tokens trade as ` +
+            `**${resolution.query.toUpperCase()}**. Which one? (Deepest liquidity first.)`,
+          options: resolution.candidates.map((candidate) => ({
+            label: candidate.name && candidate.name.toUpperCase() !== candidate.symbol.toUpperCase()
+              ? `${candidate.symbol} — ${candidate.name}`
+              : candidate.symbol,
+            // The mint, not the ticker: the round trip has to land on the
+            // exact token that was picked, not re-run the same ambiguity.
+            value: `research ${candidate.mint}`,
+            hint: describeCandidate(candidate),
+          })),
+        }],
+        title: `${resolution.query.toUpperCase()} — which one?`,
+      };
+    }
+
+    const data = await researchToken(resolution, getResearchConnection(this.config), this.config);
     return {
       blocks: [
         {

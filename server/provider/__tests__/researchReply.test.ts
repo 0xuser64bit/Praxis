@@ -64,6 +64,7 @@ function config(): PraxisServerConfig {
     policyAddress: findPolicyPda(owner.publicKey, DEFAULT_AEGIS_PROGRAM_ID),
     addressBook: [],
     tokens: [...DEFAULT_TOKENS],
+    intentProviders: [],
     stocksEnabled: true,
     prestocksApiUrl: DEFAULT_PRESTOCKS_API_URL,
     prestocksTimeoutMs: DEFAULT_PRESTOCKS_TIMEOUT_MS,

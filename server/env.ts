@@ -74,6 +74,14 @@ export const DEFAULT_TOKENS: TokenInfo[] = [
 export interface PraxisServerConfig {
   geminiApiKey?: string;
   geminiModel?: string;
+  groqApiKey?: string;
+  groqModel?: string;
+  /**
+   * Which intent parsers to try, in order, before the offline regex parser.
+   * Free-tier quotas are per-provider, so a second name here is not a
+   * nicety: it is the difference between running out and carrying on.
+   */
+  intentProviders: string[];
   rpcUrl: string;
   /** Read-only RPC for token research. Tokens are mainnet mints, so this defaults
    *  to mainnet-beta even when transfers (rpcUrl) run on devnet. */
@@ -149,6 +157,9 @@ export function getServerConfig(): PraxisServerConfig {
   cachedConfig = {
     geminiApiKey: process.env.GEMINI_API_KEY,
     geminiModel: process.env.GEMINI_MODEL,
+    groqApiKey: process.env.GROQ_API_KEY,
+    groqModel: process.env.GROQ_MODEL,
+    intentProviders: parseIntentProviders(process.env.PRAXIS_INTENT_PROVIDERS),
     rpcUrl: process.env.SOLANA_RPC_URL ?? "http://127.0.0.1:8899",
     researchRpcUrl: process.env.PRAXIS_RESEARCH_RPC_URL ?? "https://api.mainnet-beta.solana.com",
     commitment: parseCommitment(process.env.SOLANA_COMMITMENT),
@@ -342,6 +353,29 @@ function defaultAddressBook(): AddressBookEntry[] {
     return [];
   }
   return DEFAULT_CONTACTS;
+}
+
+/**
+ * `PRAXIS_INTENT_PROVIDERS` — comma-separated parser order, e.g. "gemini,groq".
+ *
+ * Defaults to trying both, Gemini first: measured free-tier ceilings are
+ * 15 RPM on gemini-flash-lite-latest against roughly 4/min on Groq (whose
+ * 8K tokens-per-minute budget, not its 30 RPM, is what binds a ~1.8K-token
+ * request). Gemini absorbs bursts better; Groq is the independent bucket
+ * that keeps answering once a daily cap is hit. A provider with no API key
+ * configured is skipped rather than failed.
+ */
+function parseIntentProviders(raw: string | undefined): string[] {
+  const names = (raw?.trim() ? raw.split(",") : ["gemini", "groq"])
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean);
+  const unknown = names.filter((name) => name !== "gemini" && name !== "groq");
+  if (unknown.length > 0) {
+    throw new PraxisConfigError(
+      `PRAXIS_INTENT_PROVIDERS has unknown provider(s): ${unknown.join(", ")}. Known: gemini, groq.`,
+    );
+  }
+  return names;
 }
 
 function parseTokens(

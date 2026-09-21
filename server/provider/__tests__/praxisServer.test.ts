@@ -91,6 +91,7 @@ function makeConfig(over: Partial<PraxisServerConfig> = {}): PraxisServerConfig 
   const owner = Keypair.generate();
   const agent = Keypair.generate();
   return {
+    intentProviders: [],
     rpcUrl: "http://127.0.0.1:8899",
     researchRpcUrl: "http://127.0.0.1:8899",
     commitment: "confirmed",

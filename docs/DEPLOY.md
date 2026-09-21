@@ -310,6 +310,8 @@ Full inline docs live in `.env.example`. The variables you actually touch:
 | `PRAXIS_SESSION_SECRET` | Stable signed wallet sessions. Required in production. |
 | `DATABASE_URL` | Durable prod state (threads/proposals/activity). Without it, state falls back to the filesystem (local/devnet only). |
 | `GEMINI_API_KEY` | Intent parsing via the Google Gemini API. Omit and set `PRAXIS_LOCAL_INTENT=1` for the deterministic parser. |
+| `GROQ_API_KEY` / `GROQ_MODEL` | Second intent parser (OpenAI-compatible), own free-tier quota, no card. Defaults to `openai/gpt-oss-120b`. Scores the same 17/17 as flash-lite on the intent sweep. Its 30 RPM/1000 RPD headline does not apply to this workload: a ~1.8K-token request is bound by the 8K TPM / 200K TPD budgets to roughly 4/min and 100/day. |
+| `PRAXIS_INTENT_PROVIDERS` | Comma-separated parse order before the offline regex fallback; default `gemini,groq`. Gemini leads on burst (15 RPM vs ~4/min); Groq is the independent bucket for when Gemini's day is spent. Providers without a key are skipped. |
 | `GEMINI_MODEL` | Defaults to `gemini-flash-lite-latest`. Use a `-latest` alias, not a pin: a retired model 404s and intent parsing degrades silently to the regex fallback. On the free tier stay on flash-**lite** — plain flash allows 20 requests/day/model, and request 21 falls into that same fallback. Watch `intent.gemini_failed_fallback_local` in the logs. |
 | `PRAXIS_RESEARCH_RPC_URL` | Read-only RPC for token research. Tokens are mainnet mints, so this stays on **mainnet-beta** even when transfers run on devnet. Use a provider RPC in production: the public endpoint rate-limits `getTokenLargestAccounts`, so the card's "Top 10 concentration" row stays empty on it. |
 

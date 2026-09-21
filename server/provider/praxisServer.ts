@@ -28,8 +28,8 @@ import { AddressBook } from "../agent/addressBook";
 import { checkSwapPolicy } from "../agent/policy";
 import { explainPolicy } from "../agent/policyExplainer";
 import {
+  intentAttempts,
   parseIntentLocallyForDemo,
-  parseIntentWithGemini,
   type ParsedAction,
   type ParsedIntent,
 } from "../agent/intent";
@@ -662,21 +662,38 @@ export class PraxisServerProvider implements PraxisProvider {
     return () => this.listeners.delete(listener);
   };
 
+  /**
+   * Parse with the configured providers in order, then the offline parser.
+   *
+   * The offline parser is a floor, not a peer: it reads "research about
+   * trump coin" as a token called ABOUT until you teach it otherwise, so
+   * reaching it at all is a degradation worth logging. Free-tier quotas are
+   * what make that happen in practice — one vendor runs out for the day and
+   * every reply quietly gets worse — so a second provider with its own
+   * bucket sits in front of the floor rather than behind it.
+   */
   private async parseIntent(text: string): Promise<ParsedIntent> {
-    // Prefer the real LLM so free-form phrasing ("solana price now") is actually
-    // understood. The deterministic parser is only a fallback: when explicitly
-    // forced, when no Gemini key is configured, or when a Gemini call fails
-    // (rate limit / network) so a transient hiccup still does something useful.
-    const forceLocal = process.env.PRAXIS_LOCAL_INTENT === "1";
-    if (forceLocal || !this.config.geminiApiKey) {
+    if (process.env.PRAXIS_LOCAL_INTENT === "1") {
       return parseIntentLocallyForDemo(text);
     }
-    try {
-      return await parseIntentWithGemini(text, this.config);
-    } catch (error) {
-      logger.warn("intent.gemini_failed_fallback_local", errorFields(error));
-      return parseIntentLocallyForDemo(text);
+
+    const attempts = intentAttempts(this.config);
+    for (const [index, attempt] of attempts.entries()) {
+      try {
+        return await attempt.parse(text);
+      } catch (error) {
+        // A later provider is a fresh quota and a different vendor's
+        // outage, so keep going; only the last failure ends in the floor.
+        logger.warn("intent.provider_failed", {
+          provider: attempt.name,
+          remaining: attempts.length - index - 1,
+          ...errorFields(error),
+        });
+      }
     }
+
+    if (attempts.length > 0) logger.warn("intent.all_providers_failed_fallback_local", {});
+    return parseIntentLocallyForDemo(text);
   }
 
   private async blocksForIntent(

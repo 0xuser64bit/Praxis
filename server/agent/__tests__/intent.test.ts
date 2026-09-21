@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import type { PraxisServerConfig } from "../../env";
-import { parseIntentLocallyForDemo, parseIntentWithGemini } from "../intent";
+import {
+  intentAttempts,
+  parseIntentLocallyForDemo,
+  parseIntentWithGemini,
+  parseIntentWithOpenAICompat,
+} from "../intent";
 
 const ADDR = "ALUMw7kSn9xn67suHr2ti21CXBQVNMuRk7uWSM1WuXEt";
 
@@ -534,5 +539,123 @@ describe("offline research extraction reads the token, not the filler", () => {
   test("an address in a transfer is still a recipient, never a research target", () => {
     const parsed = parseIntentLocallyForDemo(`send 0.1 sol to ${ADDR}`);
     expect(parsed.outcome === "actions" && parsed.actions[0].kind).toBe("transfer");
+  });
+});
+
+/**
+ * Free-tier quotas are per-provider and per-model. Free `gemini-flash-latest`
+ * allows 20 requests a day; Groq's 8K tokens-per-minute budget caps a ~1.8K
+ * token request near 4/min and ~100/day. Either ceiling on its own puts the
+ * product back on the offline regex parser — which reads "research about
+ * trump coin" as a token called ABOUT. A second vendor is the only thing
+ * that keeps a parse working once the first one is out.
+ */
+describe("the provider chain", () => {
+  const both = {
+    intentProviders: ["gemini", "groq"],
+    geminiApiKey: "g-key",
+    groqApiKey: "q-key",
+    groqModel: "openai/gpt-oss-120b",
+  } as unknown as PraxisServerConfig;
+
+  test("keys that are absent are skipped, not attempted", () => {
+    expect(intentAttempts(both).map((a) => a.name)).toEqual(["gemini", "groq"]);
+    expect(
+      intentAttempts({ ...both, groqApiKey: undefined } as PraxisServerConfig).map((a) => a.name),
+    ).toEqual(["gemini"]);
+    expect(
+      intentAttempts({ ...both, intentProviders: [] } as PraxisServerConfig),
+    ).toEqual([]);
+  });
+
+  test("the configured order is honoured", () => {
+    const flipped = { ...both, intentProviders: ["groq", "gemini"] } as PraxisServerConfig;
+    expect(intentAttempts(flipped).map((a) => a.name)).toEqual(["groq", "gemini"]);
+  });
+
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  test("a provider out of quota hands off to the next one, same answer", async () => {
+    const seen: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      const host = new URL(String(url)).host;
+      seen.push(host);
+      if (host.includes("googleapis")) {
+        // What a spent daily quota actually looks like.
+        return new Response(JSON.stringify({ error: { code: 429, message: "quota" } }), { status: 429 });
+      }
+      return new Response(
+        JSON.stringify({
+          choices: [{
+            message: {
+              tool_calls: [{
+                function: {
+                  name: "parse_praxis_intent",
+                  arguments: JSON.stringify({
+                    outcome: "actions",
+                    actions: [{ kind: "research", token: "trump" }],
+                  }),
+                },
+              }],
+            },
+          }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as unknown as typeof globalThis.fetch;
+
+    const attempts = intentAttempts(both);
+    let parsed;
+    for (const attempt of attempts) {
+      try {
+        parsed = await attempt.parse("research about trump coin");
+        break;
+      } catch {
+        // next provider
+      }
+    }
+    expect(parsed).toEqual({ outcome: "actions", actions: [{ kind: "research", token: "trump" }] });
+    expect(seen.some((h) => h.includes("googleapis"))).toBe(true);
+    expect(seen.at(-1)).toContain("groq.com");
+  });
+
+  test("the OpenAI-compatible path sends the schema untranslated", async () => {
+    let body: Record<string, unknown> = {};
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      body = JSON.parse(String(init.body));
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { tool_calls: [{ function: { name: "parse_praxis_intent", arguments: '{"outcome":"actions","actions":[{"kind":"research","token":"SOL"}]}' } }] } }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as unknown as typeof globalThis.fetch;
+
+    await parseIntentWithOpenAICompat("research sol", {
+      name: "groq",
+      baseUrl: "https://api.groq.com/openai/v1",
+      apiKey: "k",
+      model: "openai/gpt-oss-120b",
+    });
+
+    // Gemini needs uppercase types and rejects additionalProperties, so the
+    // Gemini path translates. OpenAI-compatible vendors take the schema as
+    // written — and Groq 400s on the translated one, so this must not drift.
+    const tools = body.tools as Array<{ function: { parameters: Record<string, unknown> } }>;
+    const params = tools[0].function.parameters;
+    expect(params.type).toBe("object");
+    expect(params.additionalProperties).toBe(false);
+    // The nested cadence shape that a bare `{type:"object"}` used to lose.
+    // Walked as plain JSON — the point is what goes over the wire.
+    const dig = (root: unknown, path: string): unknown =>
+      path.split(".").reduce<unknown>((node, key) => (node as Record<string, unknown>)?.[key], root);
+    expect(dig(params, "properties.actions.items.properties.cadence.properties.type.enum")).toEqual([
+      "daily",
+      "weekly",
+      "monthly",
+    ]);
   });
 });

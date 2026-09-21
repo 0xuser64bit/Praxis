@@ -327,7 +327,47 @@ const INTENT_SYSTEM_PROMPT = [
  * a real error (bad key, retired model) and fails straight through.
  */
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
-const GEMINI_ATTEMPTS = 3;
+const LLM_ATTEMPTS = 3;
+
+/** One configured LLM parser, ready to run. */
+export interface IntentAttempt {
+  name: string;
+  parse: (text: string) => Promise<ParsedIntent>;
+}
+
+const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
+const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
+
+/**
+ * The parsers to try, in the configured order, skipping any with no key.
+ *
+ * Free-tier quotas are per-provider and per-model, so chaining two vendors
+ * is not redundancy for its own sake — it is the only thing that keeps a
+ * parse working after one of them runs out for the day. Both entries below
+ * score 17/17 on the intent sweep in `server/agent/__tests__`, so falling
+ * from one to the other changes latency, never the answer.
+ */
+export function intentAttempts(config: PraxisServerConfig): IntentAttempt[] {
+  const attempts: IntentAttempt[] = [];
+  for (const name of config.intentProviders) {
+    if (name === "gemini" && config.geminiApiKey) {
+      attempts.push({ name, parse: (text) => parseIntentWithGemini(text, config) });
+    }
+    if (name === "groq" && config.groqApiKey) {
+      attempts.push({
+        name,
+        parse: (text) =>
+          parseIntentWithOpenAICompat(text, {
+            name: "groq",
+            baseUrl: GROQ_BASE_URL,
+            apiKey: config.groqApiKey!,
+            model: config.groqModel?.trim() || DEFAULT_GROQ_MODEL,
+          }),
+      });
+    }
+  }
+  return attempts;
+}
 
 export async function parseIntentWithGemini(text: string, config: PraxisServerConfig): Promise<ParsedIntent> {
   if (!config.geminiApiKey) {
@@ -388,25 +428,139 @@ export async function parseIntentWithGemini(text: string, config: PraxisServerCo
  * to change.
  */
 async function geminiWithRetry(model: string, init: RequestInit): Promise<Response> {
+  return postWithRetry(
+    `${GEMINI_API_BASE}/${model}:generateContent`,
+    init,
+    { provider: "gemini", model },
+  );
+}
+
+/**
+ * One LLM call, retried on transient failures. Throws with the provider and
+ * model in the message: the failure that started all of this was a retired
+ * model answering 404, and "(404)" alone does not say which name to change.
+ */
+async function postWithRetry(
+  url: string,
+  init: RequestInit,
+  who: { provider: string; model: string },
+): Promise<Response> {
   let lastStatus = 0;
   let lastBody = "";
-  for (let attempt = 1; attempt <= GEMINI_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= LLM_ATTEMPTS; attempt++) {
     const res = await fetchWithTimeout(
-      `${GEMINI_API_BASE}/${model}:generateContent`,
+      url,
       init,
-      { ms: envTimeout("PRAXIS_LLM_TIMEOUT_MS", 15_000), label: "Gemini intent parsing" },
+      { ms: envTimeout("PRAXIS_LLM_TIMEOUT_MS", 15_000), label: `${who.provider} intent parsing` },
     );
     if (res.ok) return res;
 
     lastStatus = res.status;
     lastBody = await res.text();
-    if (!RETRYABLE_STATUS.has(res.status) || attempt === GEMINI_ATTEMPTS) break;
-    logger.warn("intent.gemini_retry", { model, status: res.status, attempt });
+    if (!RETRYABLE_STATUS.has(res.status) || attempt === LLM_ATTEMPTS) break;
+    logger.warn("intent.llm_retry", { ...who, status: res.status, attempt });
     await sleep(250 * attempt);
   }
   throw new Error(
-    `Gemini generateContent failed for model "${model}" (${lastStatus}): ${lastBody.slice(0, 400)}`,
+    `${who.provider} intent parsing failed for model "${who.model}" (${lastStatus}): ${lastBody.slice(0, 400)}`,
   );
+}
+
+/**
+ * Groq, Cerebras, OpenRouter, Together, Mistral — one transport.
+ *
+ * They all speak OpenAI's chat-completions shape, which means the tool
+ * schema goes over the wire exactly as written: no `toGeminiSchema`
+ * translation, no uppercased types, no stripped `additionalProperties`.
+ * The schema this repo maintains is the schema the model is handed.
+ */
+export interface OpenAICompatProvider {
+  /** For logs and error messages. */
+  name: string;
+  /** Chat-completions endpoint, e.g. https://api.groq.com/openai/v1. */
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+export async function parseIntentWithOpenAICompat(
+  text: string,
+  provider: OpenAICompatProvider,
+): Promise<ParsedIntent> {
+  if (!provider.apiKey) {
+    throw new PraxisConfigError(`${provider.name} is missing an API key.`);
+  }
+
+  const res = await postWithRetry(
+    `${provider.baseUrl.replace(/\/$/, "")}/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${provider.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: provider.model,
+        // System first, tools next, the user turn last: a stable prefix is
+        // what prompt caching keys on, and on Groq's gpt-oss models cached
+        // tokens are excluded from the rate limits. ~96% of this request is
+        // byte-identical every call, so the ordering is load-bearing.
+        messages: [
+          { role: "system", content: INTENT_SYSTEM_PROMPT },
+          { role: "user", content: text },
+        ],
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: INTENT_TOOL_NAME,
+              description: intentTool.description,
+              parameters: intentTool.input_schema,
+            },
+          },
+        ],
+        tool_choice: { type: "function", function: { name: INTENT_TOOL_NAME } },
+        temperature: 0,
+      }),
+    },
+    { provider: provider.name, model: provider.model },
+  );
+
+  const body = await res.json();
+
+  // Token spend, and how much of it was served from cache. The failure this
+  // whole path keeps hitting is a quota running out silently, and the only
+  // way to see that coming is to watch what each parse actually costs.
+  // On Groq's gpt-oss models cached tokens are excluded from the rate
+  // limits, so `cached` is the number that decides the real ceiling.
+  const usage = body?.usage;
+  if (usage) {
+    logger.info("intent.llm_usage", {
+      provider: provider.name,
+      model: provider.model,
+      promptTokens: usage.prompt_tokens,
+      cachedTokens: usage.prompt_tokens_details?.cached_tokens ?? 0,
+      completionTokens: usage.completion_tokens,
+    });
+  }
+
+  const call = body?.choices?.[0]?.message?.tool_calls?.find(
+    (t: { function?: { name?: string } }) => t.function?.name === INTENT_TOOL_NAME,
+  ) ?? body?.choices?.[0]?.message?.tool_calls?.[0];
+
+  if (!call?.function?.arguments) {
+    throw new PraxisInputError(`${provider.name} did not return the expected intent tool call.`);
+  }
+
+  let args: unknown;
+  try {
+    args = JSON.parse(call.function.arguments);
+  } catch {
+    // Arguments come back as a JSON *string*; a truncated or malformed one
+    // must not surface as a raw SyntaxError.
+    throw new PraxisInputError(`${provider.name} returned tool arguments that were not valid JSON.`);
+  }
+  return normalizeIntent(args);
 }
 
 function sleep(ms: number): Promise<void> {

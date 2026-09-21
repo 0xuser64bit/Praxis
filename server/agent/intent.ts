@@ -171,7 +171,11 @@ const intentTool = {
             },
             token: {
               type: "string",
-              description: "Token symbol or mint address for read-only research.",
+              description:
+                "For research: the ticker or base58 mint EXACTLY as the user wrote it, with the " +
+                "surrounding words stripped ('research about trump coin' -> 'trump'). Never invent " +
+                "or complete a mint address — the server resolves the name and asks the user when a " +
+                "ticker matches several mints.",
             },
             assetIn: { type: "string" },
             assetOut: { type: "string" },
@@ -252,6 +256,12 @@ const INTENT_SYSTEM_PROMPT = [
     "the basket name and total USD in amountHuman. Never split a basket into transfers yourself: " +
     "the executor simulates every constituent and clarifies the whole basket if any is blocked. " +
     "Unknown basket names must be clarify, never a guessed split.",
+  "research: put the token in `token` EXACTLY as the user wrote it — a ticker like 'trump' " +
+    "or a base58 mint. NEVER invent, complete or recall a mint address, and never substitute a " +
+    "ticker you think they meant. The server resolves the name against a live index and asks " +
+    "the user which one when a ticker matches several mints, which it often does. " +
+    "If the user gives both a ticker and a mint, send the mint. Strip the surrounding words " +
+    "('research about trump coin' -> token 'trump'), and keep the case of a mint exactly.",
   "Never emit buy/sell/hold advice. Research is neutral data only.",
   "policy_question: when the user ASKS ABOUT their own policy, limits, caps, session expiry, pause state, allow-lists, or how Praxis keeps them safe. Pick the closest topic, or 'general'.",
   "policy_change: when the user wants to CHANGE a policy setting. 'change/raise/lower/set my daily limit to N SOL' -> field=daily_limit, amountHuman=N. 'set max per tx to N SOL' -> field=max_per_tx, amountHuman=N. 'extend my session by N hours/days' or 'set expiry to N hours' -> field=expiry, expiryHours=N (convert days to hours). 'pause/freeze the agent' -> field=pause, paused=true. 'unpause/resume the agent' -> field=pause, paused=false. Distinguish a CHANGE (imperative: change/set/raise/lower/pause) from a QUESTION (what/how/is my...).",

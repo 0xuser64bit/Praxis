@@ -51,7 +51,7 @@ export async function researchToken(
       : Promise.resolve(undefined as PrestocksEntry | undefined),
   ]);
 
-  const pairs = indexer.filter((pair) => pair.chainId === "solana");
+  const pairs = indexer.pairs.filter((pair) => pair.chainId === "solana");
   const primary = pairs.sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0];
 
   // A pasted mint arrives unnamed. The indexer pairs already fetched above
@@ -60,7 +60,9 @@ export async function researchToken(
   const symbol = token.symbol || primary?.baseToken?.symbol || shortMint(token.mint);
   const name = resolved.name ?? primary?.baseToken?.name;
 
-  const noPairs = "No Solana pair for this mint on the configured indexer.";
+  const noPairs = indexer.error
+    ? `The market-data lookup failed${reason(indexer.error)}.`
+    : "No Solana pair for this mint on the configured indexer.";
 
   // Stocklana C03: PreStocks rows lead for stocks; everything below keeps the
   // existing RPC + indexer behavior (including honest "unavailable").
@@ -127,7 +129,7 @@ export async function researchToken(
     name: name && name.toUpperCase() !== symbol.toUpperCase() ? name : undefined,
     mint: token.mint,
     metrics,
-    sources: buildSources({ resolved, symbol, chain, pairs, primary, stock, config }),
+    sources: buildSources({ resolved, symbol, chain, pairs, primary, stock, config, indexerError: indexer.error }),
     summary:
       `Read-only ${symbol} data from Solana RPC and the configured indexer. ` +
       "No buy, sell, or hold recommendation is being made." +
@@ -156,8 +158,9 @@ function buildSources(input: {
   primary: DexScreenerPair | undefined;
   stock: PrestocksEntry | undefined;
   config: PraxisServerConfig;
+  indexerError?: string;
 }): ResearchSource[] {
-  const { resolved, symbol, chain, pairs, primary, stock, config } = input;
+  const { resolved, symbol, chain, pairs, primary, stock, config, indexerError } = input;
 
   const resolution: Record<ResolvedToken["via"], string> = {
     mint: `You pasted the mint address, so no lookup was needed — ${shortMint(resolved.token.mint)}.`,
@@ -195,7 +198,11 @@ function buildSources(input: {
       ? `${pairs.length} Solana pair${pairs.length === 1 ? "" : "s"}; price, 24h change, volume and ` +
         `market cap come from the deepest one (${primary.dexId ?? "unknown dex"}, ` +
         `${primary.baseToken?.symbol ?? symbol}/${primary.quoteToken?.symbol ?? "?"}).`
-      : "No Solana pair found for this mint, so there is no market price to report.",
+      : indexerError
+        // An outage and "this mint has no market" are not the same answer:
+        // one is worth trying again in a minute, the other never will be.
+        ? `The lookup did not complete${reason(indexerError)}, so there is no market price on this card.`
+        : "No Solana pair found for this mint, so there is no market price to report.",
   });
 
   if (config.stocksEnabled && isStockSymbol(symbol)) {
@@ -350,22 +357,42 @@ function shortMint(mint: string): string {
   return `${mint.slice(0, 6)}…${mint.slice(-6)}`;
 }
 
-async function fetchIndexerPairs(mint: string, indexerUrl: string | undefined): Promise<DexScreenerPair[]> {
+/**
+ * Market pairs for a mint, best-effort.
+ *
+ * A non-2xx already degraded to `[]`, but a timeout or a DNS failure threw —
+ * and that throw escaped all the way to the chat reply, so an indexer hiccup
+ * replaced the whole card (including the on-chain data that *did* load) with
+ * "Token indexer lookup timed out after 4000ms". Every other read here
+ * degrades; this one now does too, and the source trail says which.
+ */
+async function fetchIndexerPairs(
+  mint: string,
+  indexerUrl: string | undefined,
+): Promise<{ pairs: DexScreenerPair[]; error?: string }> {
   const url = indexerUrl?.includes("{mint}")
     ? indexerUrl.replace("{mint}", encodeURIComponent(mint))
     : `https://api.dexscreener.com/latest/dex/tokens/${mint}`;
 
-  const res = await fetchWithTimeout(
-    url,
-    { headers: { accept: "application/json" } },
-    {
-      ms: envTimeout("PRAXIS_INDEXER_TIMEOUT_MS", 4_000),
-      label: "Token indexer lookup",
-    },
-  );
-  if (!res.ok) return [];
-  const body = await res.json();
-  return Array.isArray(body.pairs) ? body.pairs : [];
+  try {
+    const res = await fetchWithTimeout(
+      url,
+      { headers: { accept: "application/json" } },
+      {
+        ms: envTimeout("PRAXIS_INDEXER_TIMEOUT_MS", 4_000),
+        label: "Token indexer lookup",
+      },
+    );
+    if (!res.ok) {
+      logger.warn("research.indexer_status", { mint, status: res.status });
+      return { pairs: [], error: `the indexer answered ${res.status}` };
+    }
+    const body = await res.json();
+    return { pairs: Array.isArray(body.pairs) ? body.pairs : [] };
+  } catch (error) {
+    logger.warn("research.indexer_unavailable", { mint, ...errToField(error) });
+    return { pairs: [], error: errToField(error).error };
+  }
 }
 
 function topHolderBps(amounts: bigint[], supply: bigint): bigint | undefined {

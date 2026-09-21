@@ -151,3 +151,22 @@ test("the concentration row explains itself whether or not it has a value", asyn
   expect(row(present)?.value).toBe("50.00%");
   expect(row(present)?.note).toMatch(/ten largest token accounts/);
 });
+
+/**
+ * An indexer timeout used to throw out of `researchToken` and become the
+ * whole chat reply — "Token indexer lookup timed out after 4000ms" — taking
+ * the on-chain data that HAD loaded down with it. Every other read here
+ * degrades; this one has to as well.
+ */
+describe("an indexer outage costs the market rows, not the card", () => {
+  test("on-chain data survives, and the trail separates an outage from 'no market'", async () => {
+    globalThis.fetch = (async () => {
+      throw new Error("Token indexer lookup timed out after 4000ms");
+    }) as unknown as typeof globalThis.fetch;
+
+    const data = await researchToken(resolved(), rpc(), config());
+    expect(data.metrics.find((m) => m.label === "Supply")?.value).toBe("87.99T");
+    expect(data.metrics.find((m) => m.label === "Price")?.note).toMatch(/market-data lookup failed/);
+    expect(data.sources?.[2].detail).toMatch(/did not complete \(no answer before the read timeout\)/);
+  });
+});

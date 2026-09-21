@@ -5,6 +5,7 @@ import type { PraxisServerConfig } from "../env";
 import { envTimeout, fetchWithTimeout, withTimeout } from "../api/timeout";
 import { logger } from "../observability/logger";
 import { formatBps } from "../units";
+import { compactAmount, compactUsd, formatPrice } from "./researchFormat";
 import {
   fetchPrestocksEntries,
   findPrestocksEntry,
@@ -59,20 +60,28 @@ export async function researchToken(
   const symbol = token.symbol || primary?.baseToken?.symbol || shortMint(token.mint);
   const name = resolved.name ?? primary?.baseToken?.name;
 
+  const noPairs = "No Solana pair for this mint on the configured indexer.";
+
   // Stocklana C03: PreStocks rows lead for stocks; everything below keeps the
   // existing RPC + indexer behavior (including honest "unavailable").
   const metrics: ResearchMetric[] = [
     ...(stock ? stockPriceMetrics(stock) : []),
-    { label: "Price", value: primary?.priceUsd ? `$${primary.priceUsd}` : "unavailable" },
+    {
+      label: "Price",
+      ...(primary?.priceUsd ? formatPrice(primary.priceUsd) : { value: "unavailable", note: noPairs }),
+    },
     {
       label: "24h change",
       value: primary?.priceChange?.h24 === undefined ? "unavailable" : `${formatSigned(primary.priceChange.h24)}%`,
       trend: trend(primary?.priceChange?.h24),
+      ...(primary?.priceChange?.h24 === undefined ? { note: noPairs } : {}),
     },
     {
       label: "24h volume",
       // Volume alone is a level, not a direction — leave trend flat unless we have a delta.
-      value: primary?.volume?.h24 === undefined ? "unavailable" : formatUsd(primary.volume.h24),
+      ...(primary?.volume?.h24 === undefined
+        ? { value: "unavailable", note: noPairs }
+        : compactUsd(primary.volume.h24)),
       trend: "flat",
     },
   ];
@@ -84,21 +93,31 @@ export async function researchToken(
       label: "Top 10 concentration",
       value: chain.concentrationBps === undefined ? "unavailable" : formatBps(chain.concentrationBps),
       trend: "flat",
+      note: chain.concentrationBps === undefined
+        ? CONCENTRATION_UNAVAILABLE
+        : CONCENTRATION_MEANING,
     });
   }
 
+  // Stocklana C03: when on-chain supply is unavailable for a stock, fall back
+  // to the PreStocks-reported figure — labeled as such, never silently.
+  const supply = chain.supply
+    ? { ...compactAmount(chain.supply.raw), note: chain.supply.note }
+    : stock
+      ? formatPrestocksSupply(stock)
+      : undefined;
   metrics.push({
     label: "Supply",
-    // Stocklana C03: when on-chain supply is unavailable for a stock, fall back
-    // to the PreStocks-reported figure — labeled as such, never silently.
-    value: chain.supply ?? (stock ? (formatPrestocksSupply(stock) ?? "unavailable") : "unavailable"),
+    value: "unavailable",
+    note: "The research RPC did not return this mint's supply.",
+    ...supply,
     trend: "flat",
   });
 
   if (primary?.marketCap || primary?.fdv) {
     metrics.push({
       label: primary.marketCap ? "Market cap" : "FDV",
-      value: formatUsd(primary.marketCap ?? primary.fdv ?? 0),
+      ...compactUsd(primary.marketCap ?? primary.fdv ?? 0),
       trend: "flat",
     });
   }
@@ -118,11 +137,36 @@ export async function researchToken(
 const WSOL_MINT = "So11111111111111111111111111111111111111112";
 
 type OnChainStats = {
-  supply?: string;
+  /** Raw numeric supply, plus what qualifies it. Formatted by the caller. */
+  supply?: { raw: string; note?: string };
   concentrationBps?: bigint;
   /** Whether holder concentration is a meaningful metric for this mint. */
   concentrationApplies: boolean;
 };
+
+/**
+ * What the row measures, for the reader who has not met the metric before —
+ * it is a rug-risk signal, not a price signal.
+ */
+const CONCENTRATION_MEANING =
+  "Share of supply held by the ten largest token accounts — a concentration " +
+  "signal: the higher it is, the fewer wallets it takes to move the price.";
+
+/**
+ * Why the row is so often empty, which was the actual question.
+ *
+ * `getTokenLargestAccounts` is one of the calls the public Solana RPC
+ * (api.mainnet-beta.solana.com, the default here) rate-limits hardest: it
+ * answers 429 "Too many requests for a specific RPC call" more or less
+ * always, while `getTokenSupply` on the very same mint succeeds. So the row
+ * reads "unavailable" on every deployment that never set
+ * PRAXIS_RESEARCH_RPC_URL — which looks like a broken feature and is really
+ * an unset endpoint.
+ */
+const CONCENTRATION_UNAVAILABLE =
+  CONCENTRATION_MEANING +
+  " Unavailable: the research RPC refused the holder-accounts query, which " +
+  "the public Solana endpoint rate-limits hard. A provider RPC returns it.";
 
 /**
  * On-chain supply + holder concentration are best-effort and resilient:
@@ -150,7 +194,10 @@ async function fetchOnChainStats(
       );
       const circulatingSol = Number(supply.value.circulating) / 1e9;
       return {
-        supply: `${Math.round(circulatingSol).toLocaleString("en-US")} SOL circulating`,
+        supply: {
+          raw: circulatingSol.toFixed(2),
+          note: "Circulating SOL, excluding known non-circulating accounts.",
+        },
         concentrationApplies: false,
       };
     } catch (error) {
@@ -181,7 +228,7 @@ async function fetchOnChainStats(
       : undefined;
 
   return {
-    supply: supply ? supply.value.uiAmountString ?? supply.value.amount : undefined,
+    supply: supply ? { raw: supply.value.uiAmountString ?? supply.value.amount } : undefined,
     concentrationBps,
     concentrationApplies: true,
   };
@@ -218,13 +265,6 @@ function topHolderBps(amounts: bigint[], supply: bigint): bigint | undefined {
   if (supply <= 0n) return undefined;
   const top10 = amounts.slice(0, 10).reduce((sum, amount) => sum + amount, 0n);
   return (top10 * 10_000n) / supply;
-}
-
-function formatUsd(value: number): string {
-  return `$${value.toLocaleString("en-US", {
-    minimumFractionDigits: value > 0 && value < 1 ? 4 : 2,
-    maximumFractionDigits: value > 0 && value < 1 ? 4 : 2,
-  })}`;
 }
 
 function formatSigned(value: number): string {

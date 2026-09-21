@@ -1,6 +1,7 @@
 import type { ResearchMetric } from "@praxis/shared";
 
 import { fetchWithTimeout, type FetchLike } from "../api/timeout";
+import { compactAmount } from "../agent/researchFormat";
 
 /**
  * PreStocks quote fetcher (Stocklana C03).
@@ -106,9 +107,15 @@ export function stockPriceMetrics(entry: PrestocksEntry): ResearchMetric[] {
   ];
 }
 
-export function formatPrestocksSupply(entry: PrestocksEntry): string | undefined {
+export function formatPrestocksSupply(entry: PrestocksEntry): ResearchMetric | undefined {
   if (!Number.isFinite(entry.supply) || entry.supply <= 0) return undefined;
-  return `${entry.supply.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${entry.symbol} (PreStocks reported)`;
+  const { value, exact } = compactAmount(entry.supply.toFixed(2));
+  return {
+    label: "Supply",
+    value: `${value} ${entry.symbol}`,
+    ...(exact ? { exact: `${exact} ${entry.symbol}` } : {}),
+    note: "Reported by PreStocks, not read from the mint on-chain.",
+  };
 }
 
 /**

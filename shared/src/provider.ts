@@ -192,8 +192,23 @@ export interface ResearchData {
 
 export interface ResearchMetric {
   label: string;
-  /** Already display-formatted market data (not policy-governed money). */
+  /**
+   * Already display-formatted market data (not policy-governed money), and
+   * abbreviated where a raw figure would be unreadable — a supply of
+   * "87994397952881.85356" is a digit-counting exercise, not a number.
+   */
   value: string;
+  /**
+   * The full-precision figure behind an abbreviated `value`, surfaced on
+   * hover. Rounding is for reading; the exact number stays one gesture away
+   * rather than being destroyed at the formatter.
+   */
+  exact?: string;
+  /**
+   * Why this metric is missing or what it measures. Shown on hover, and the
+   * difference between "unavailable" as a shrug and as an explanation.
+   */
+  note?: string;
   /** Optional directional hint for styling ("up" | "down" | "flat"). */
   trend?: "up" | "down" | "flat";
 }

@@ -87,8 +87,21 @@ describe("stock presentation helpers", () => {
   });
 
   test("supply fallback is labeled; non-positive supply is undefined", () => {
-    expect(formatPrestocksSupply(entry())).toMatch(/2,826\.49 OPENAI \(PreStocks reported\)/);
+    // Under a million, the grouped digits ARE the readable form — nothing is
+    // abbreviated, so there is no exact figure to keep for the hover.
+    expect(formatPrestocksSupply(entry())).toEqual({
+      label: "Supply",
+      value: "2,826.49 OPENAI",
+      note: "Reported by PreStocks, not read from the mint on-chain.",
+    });
     expect(formatPrestocksSupply(entry({ supply: 0 }))).toBeUndefined();
+  });
+
+  test("a supply worth abbreviating keeps the exact figure for the hover", () => {
+    expect(formatPrestocksSupply(entry({ supply: 87_994_397_952_881.8 }))).toMatchObject({
+      value: "87.99T OPENAI",
+      exact: "87,994,397,952,881.80 OPENAI",
+    });
   });
 
   test("summary suffix discloses issuer authority without advice verbs", () => {

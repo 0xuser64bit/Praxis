@@ -14,9 +14,17 @@ export function ResearchCard({ data }: { data: ResearchData }) {
   return (
     <div className="mt-2 overflow-hidden rounded-xl bg-[var(--bg)] [border:0.5px_solid_var(--border-strong)]">
       <div className="flex items-center justify-between px-5 py-3.5 [border-bottom:0.5px_solid_var(--border)]">
-        <div className="flex items-center gap-2.5">
+        <div className="flex min-w-0 items-baseline gap-2.5">
           <span className="[font-family:var(--font-serif)] text-[20px]">{data.token}</span>
-          <span className="[font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
+          {/* Four live mints answer to TRUMP: the ticker alone does not say
+              which coin this card is about, so the project name rides along. */}
+          {data.name && (
+            <span className="truncate text-[12.5px] text-[var(--text-secondary)]">{data.name}</span>
+          )}
+          <span
+            title={data.mint}
+            className="shrink-0 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]"
+          >
             {shortenAddress(data.mint)}
           </span>
         </div>
@@ -56,6 +64,11 @@ function Metric({ metric }: { metric: ResearchMetric }) {
       : metric.trend === "down"
         ? IconArrowDownRight
         : IconMinus;
+  // The abbreviated figure is what you read; the exact one is what you check.
+  // Both live on the same element, so a hover (or a screen reader) reaches the
+  // precise value without the card having to show fourteen digits.
+  const title = [metric.exact, metric.note].filter(Boolean).join(" — ") || undefined;
+
   return (
     <div>
       <div className="[font-family:var(--font-mono)] text-[10px] tracking-[0.1em] text-[var(--text-tertiary)] uppercase">
@@ -63,7 +76,17 @@ function Metric({ metric }: { metric: ResearchMetric }) {
       </div>
       <div className="mt-1 flex items-center gap-1.5 text-[16px] text-[var(--text-primary)]">
         {metric.trend && <Icon size={14} style={{ color }} />}
-        <span>{metric.value}</span>
+        <span
+          title={title}
+          aria-label={title ? `${metric.label}: ${metric.value}. ${title}` : undefined}
+          className={
+            title
+              ? "cursor-help decoration-[var(--border-bright)] decoration-dotted underline-offset-4 [text-decoration-line:underline]"
+              : undefined
+          }
+        >
+          {metric.value}
+        </span>
       </div>
     </div>
   );

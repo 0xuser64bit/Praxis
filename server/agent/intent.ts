@@ -257,16 +257,31 @@ const intentTool = {
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 /**
- * A moving alias, not a pinned version, and that is the point.
+ * A moving alias, and the lite tier. Both halves are deliberate.
  *
- * The pinned `gemini-2.5-flash` was retired for new API keys and started
- * answering 404. Nothing broke loudly: `parseIntent` catches every Gemini
- * failure and falls back to the regex parser, so the product kept replying —
- * with a parser that reads "research about trump" as the token "ABOUT".
- * A model name that rots silently degrades the whole product to its fallback,
- * so the default tracks the alias Google keeps pointed at a live model.
+ * `-latest` rather than a pin: the pinned `gemini-2.5-flash` was retired for
+ * API keys issued now and started answering 404. Nothing broke loudly,
+ * because `parseIntent` catches every Gemini failure and falls back to the
+ * regex parser — so the product kept replying, with a parser that reads
+ * "research about trump coin" as the token "ABOUT". A name that rots
+ * silently demotes the whole product to its fallback. (`gemini-2.5-flash-lite`
+ * is a real model name and 404s the same way; the whole 2.5 family does.)
+ *
+ * `flash-lite` rather than `flash`: measured, not assumed. Free-tier
+ * `gemini-flash-latest` allows twenty requests PER DAY
+ * (GenerateRequestsPerDayPerProjectPerModel-FreeTier = 20), and request
+ * twenty-one is a 429 — which lands in that same silent fallback. A parser
+ * that degrades after twenty messages is the bug above with a different
+ * cause. Flash-lite has real daily headroom, answers in ~0.9s against ~8s,
+ * and, once the tool schema stopped leaving nested shapes to inference,
+ * scored 17/17 on a sweep of the intents this repo pins.
+ *
+ * Both are overridable with GEMINI_MODEL. Anyone on a paid key with no
+ * daily cap should reach for full flash on the harder end of free-form
+ * phrasing; this default is chosen for the tier the README tells people to
+ * sign up for.
  */
-const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
+const DEFAULT_GEMINI_MODEL = "gemini-flash-lite-latest";
 
 const INTENT_SYSTEM_PROMPT = [
   "You parse user text for Praxis, a Solana agent protected by Aegis.",

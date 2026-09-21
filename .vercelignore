@@ -1,0 +1,6 @@
+# Vercel honours only the ROOT .gitignore, not nested ones — so aegis/target
+# (2.4GB of Rust build output, already ignored by aegis/.gitignore) was being
+# uploaded on every deploy and would hit the 2GB deployment limit.
+# The Anchor program is built and deployed on-chain separately; the Next.js
+# build never reads it.
+aegis/target

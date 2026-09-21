@@ -186,8 +186,24 @@ export interface ResearchData {
   name?: string;
   mint: Address;
   metrics: ResearchMetric[];
+  /** How the card was produced, in the order the steps ran. */
+  sources?: ResearchSource[];
   /** A neutral, no-advice summary. */
   summary: string;
+}
+
+/**
+ * One step in how a research card was produced: which source was asked, and
+ * what it said. A read-only card whose whole pitch is "data, no advice" has
+ * to be able to show its working — "unavailable" means something different
+ * when the indexer has no pair than when the RPC refused the query.
+ */
+export interface ResearchSource {
+  /** "Solana RPC", "DexScreener", "PreStocks", "Token resolution". */
+  label: string;
+  status: "ok" | "partial" | "unavailable";
+  /** What was asked and what came back. */
+  detail: string;
 }
 
 export interface ResearchMetric {

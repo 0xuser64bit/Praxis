@@ -5,8 +5,8 @@
  * buy/sell/hold call (spec §12.iv) — the "no advice" badge is part of the pitch.
  */
 
-import type { ResearchData, ResearchMetric } from "@praxis/shared";
-import { IconArrowDownRight, IconArrowUpRight, IconMinus } from "@tabler/icons-react";
+import type { ResearchData, ResearchMetric, ResearchSource } from "@praxis/shared";
+import { IconArrowDownRight, IconArrowUpRight, IconChevronDown, IconMinus } from "@tabler/icons-react";
 
 import { shortenAddress } from "./lib/units";
 
@@ -39,6 +39,8 @@ export function ResearchCard({ data }: { data: ResearchData }) {
         ))}
       </div>
 
+      {data.sources && data.sources.length > 0 && <SourceTrail sources={data.sources} />}
+
       <div className="flex items-start gap-2.5 bg-[var(--bg-elevated)] px-5 py-3.5 [border-top:0.5px_solid_var(--border)]">
         <span className="mt-px [font-family:var(--font-mono)] text-[10px] tracking-[0.12em] text-[var(--text-tertiary)] uppercase">
           No advice
@@ -50,6 +52,55 @@ export function ResearchCard({ data }: { data: ResearchData }) {
     </div>
   );
 }
+
+/**
+ * How the card was produced. Collapsed by default — the numbers are the
+ * answer, the trail is the audit — and built on native `<details>`, so it
+ * needs no state, works before hydration, and is keyboard-reachable for free.
+ *
+ * It earns its place because a read-only card that says "unavailable" owes
+ * the reader the difference between "the indexer has no pair for this mint"
+ * and "the RPC refused the query" — one of those is worth trying again.
+ */
+function SourceTrail({ sources }: { sources: ResearchSource[] }) {
+  const gaps = sources.filter((s) => s.status !== "ok").length;
+  return (
+    <details className="group [border-top:0.5px_solid_var(--border)]">
+      <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-2.5 [font-family:var(--font-mono)] text-[10px] tracking-[0.1em] text-[var(--text-tertiary)] uppercase hover:text-[var(--text-secondary)]">
+        <span>
+          How this was gathered · {sources.length} source{sources.length === 1 ? "" : "s"}
+          {gaps > 0 && ` · ${gaps} incomplete`}
+        </span>
+        <IconChevronDown
+          size={13}
+          className="shrink-0 [transition:transform_0.15s] group-open:rotate-180"
+        />
+      </summary>
+      <ol className="flex flex-col gap-2.5 px-5 pt-0.5 pb-4">
+        {sources.map((source, i) => (
+          <li key={i} className="flex items-start gap-2.5">
+            <span
+              aria-hidden
+              className="mt-[7px] size-1.5 shrink-0 rounded-full"
+              style={{ background: STATUS_COLOR[source.status] }}
+            />
+            <span className="min-w-0 text-[12.5px] leading-[1.5]">
+              <span className="text-[var(--text-primary)]">{source.label}</span>
+              <span className="sr-only"> — {source.status}. </span>
+              <span className="text-[var(--text-secondary)]"> {source.detail}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
+const STATUS_COLOR: Record<ResearchSource["status"], string> = {
+  ok: "var(--success)",
+  partial: "var(--warning)",
+  unavailable: "var(--text-tertiary)",
+};
 
 function Metric({ metric }: { metric: ResearchMetric }) {
   const color =

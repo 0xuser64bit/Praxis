@@ -310,7 +310,7 @@ Full inline docs live in `.env.example`. The variables you actually touch:
 | `PRAXIS_SESSION_SECRET` | Stable signed wallet sessions. Required in production. |
 | `DATABASE_URL` | Durable prod state (threads/proposals/activity). Without it, state falls back to the filesystem (local/devnet only). |
 | `GEMINI_API_KEY` | Intent parsing via the Google Gemini API. Omit and set `PRAXIS_LOCAL_INTENT=1` for the deterministic parser. |
-| `PRAXIS_RESEARCH_RPC_URL` | Read-only RPC for token research. Tokens are mainnet mints, so this stays on **mainnet-beta** even when transfers run on devnet. |
+| `PRAXIS_RESEARCH_RPC_URL` | Read-only RPC for token research. Tokens are mainnet mints, so this stays on **mainnet-beta** even when transfers run on devnet. Use a provider RPC in production: the public endpoint rate-limits `getTokenLargestAccounts`, so the card's "Top 10 concentration" row stays empty on it. |
 
 ### Agent key (one of)
 

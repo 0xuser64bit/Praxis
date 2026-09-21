@@ -1,5 +1,5 @@
 import { Connection, PublicKey, type Commitment } from "@solana/web3.js";
-import type { ResearchData, ResearchMetric } from "@praxis/shared";
+import type { ResearchData, ResearchMetric, ResearchSource } from "@praxis/shared";
 
 import type { PraxisServerConfig } from "../env";
 import { envTimeout, fetchWithTimeout, withTimeout } from "../api/timeout";
@@ -127,11 +127,113 @@ export async function researchToken(
     name: name && name.toUpperCase() !== symbol.toUpperCase() ? name : undefined,
     mint: token.mint,
     metrics,
+    sources: buildSources({ resolved, symbol, chain, pairs, primary, stock, config }),
     summary:
       `Read-only ${symbol} data from Solana RPC and the configured indexer. ` +
       "No buy, sell, or hold recommendation is being made." +
       (stock ? stockSummarySuffix(stock) : ""),
   };
+}
+
+/**
+ * How the card was produced, step by step.
+ *
+ * A read-only card whose whole pitch is "data, no advice" has to be able to
+ * show its working. Until now every gap looked identical — one word,
+ * "unavailable" — whether the indexer had no pair for the mint, the RPC
+ * refused the query, or the metric does not apply to this token at all.
+ * Those are three different facts, and only one of them is worth retrying.
+ *
+ * The resolution step leads, because on a chain where four live mints answer
+ * to TRUMP, "which token is this card about, and how did we decide" is the
+ * first thing a reader needs to be able to check.
+ */
+function buildSources(input: {
+  resolved: ResolvedToken;
+  symbol: string;
+  chain: OnChainStats;
+  pairs: DexScreenerPair[];
+  primary: DexScreenerPair | undefined;
+  stock: PrestocksEntry | undefined;
+  config: PraxisServerConfig;
+}): ResearchSource[] {
+  const { resolved, symbol, chain, pairs, primary, stock, config } = input;
+
+  const resolution: Record<ResolvedToken["via"], string> = {
+    mint: `You pasted the mint address, so no lookup was needed — ${shortMint(resolved.token.mint)}.`,
+    catalog: `${symbol} is in this deployment's configured token list, which wins over any same-ticker mint.`,
+    search: `${symbol} matched one Solana mint on the indexer's symbol search — ${shortMint(resolved.token.mint)}.`,
+  };
+  const sources: ResearchSource[] = [
+    { label: "Token resolution", status: "ok", detail: resolution[resolved.via] },
+  ];
+
+  const rpc = hostOf(config.researchRpcUrl);
+  const rpcDetail = [
+    chain.supply ? "Supply read from the mint." : `Supply unavailable${reason(chain.supplyError)}.`,
+    chain.concentrationApplies
+      ? chain.concentrationBps !== undefined
+        ? "Top 10 holder accounts read."
+        : `Holder accounts unavailable${reason(chain.holdersError)} — the public ` +
+          "Solana endpoint rate-limits this call hard; a provider RPC returns it."
+      : "Holder concentration does not apply to native SOL.",
+  ].join(" ");
+  sources.push({
+    label: `Solana RPC (${rpc})`,
+    status: chain.supply && (chain.concentrationBps !== undefined || !chain.concentrationApplies)
+      ? "ok"
+      : chain.supply
+        ? "partial"
+        : "unavailable",
+    detail: rpcDetail,
+  });
+
+  sources.push({
+    label: `Market data (${hostOf(config.indexerUrl ?? "https://api.dexscreener.com")})`,
+    status: primary ? "ok" : "unavailable",
+    detail: primary
+      ? `${pairs.length} Solana pair${pairs.length === 1 ? "" : "s"}; price, 24h change, volume and ` +
+        `market cap come from the deepest one (${primary.dexId ?? "unknown dex"}, ` +
+        `${primary.baseToken?.symbol ?? symbol}/${primary.quoteToken?.symbol ?? "?"}).`
+      : "No Solana pair found for this mint, so there is no market price to report.",
+  });
+
+  if (config.stocksEnabled && isStockSymbol(symbol)) {
+    sources.push({
+      label: "PreStocks",
+      status: stock ? "ok" : "unavailable",
+      detail: stock
+        ? "Token and mark price, and the supply fallback, come from the PreStocks quote feed."
+        : "The PreStocks quote feed did not return a row for this symbol.",
+    });
+  }
+
+  return sources;
+}
+
+/** Host only — a provider RPC URL can carry an API key in its query string. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "configured endpoint";
+  }
+}
+
+/**
+ * Turn an RPC failure into something a reader can act on. Falls through to
+ * the raw message rather than an empty parenthesis: an unrecognised error is
+ * still more use than "unavailable" on its own — that is the whole point of
+ * the trail.
+ */
+function reason(error: string | undefined): string {
+  if (!error) return "";
+  if (/429|too many requests|rate limit/i.test(error)) return " (the endpoint rate-limited this call)";
+  if (/timed out/i.test(error)) return " (no answer before the read timeout)";
+  if (/could not find account|account does not exist/i.test(error)) {
+    return " (this mint is not on the cluster the research RPC points at)";
+  }
+  return ` (${error.replace(/\s+/g, " ").trim().slice(0, 90)})`;
 }
 
 const WSOL_MINT = "So11111111111111111111111111111111111111112";
@@ -142,6 +244,9 @@ type OnChainStats = {
   concentrationBps?: bigint;
   /** Whether holder concentration is a meaningful metric for this mint. */
   concentrationApplies: boolean;
+  /** Why a half of the read is missing — shown in the card's source trail. */
+  supplyError?: string;
+  holdersError?: string;
 };
 
 /**
@@ -202,7 +307,7 @@ async function fetchOnChainStats(
       };
     } catch (error) {
       logger.warn("research.onchain_unavailable", { symbol, mint: WSOL_MINT, ...errToField(error) });
-      return { concentrationApplies: false };
+      return { concentrationApplies: false, supplyError: errToField(error).error };
     }
   }
 
@@ -231,6 +336,8 @@ async function fetchOnChainStats(
     supply: supply ? { raw: supply.value.uiAmountString ?? supply.value.amount } : undefined,
     concentrationBps,
     concentrationApplies: true,
+    ...(supplyResult.status === "rejected" ? { supplyError: errToField(supplyResult.reason).error } : {}),
+    ...(largestResult.status === "rejected" ? { holdersError: errToField(largestResult.reason).error } : {}),
   };
 }
 

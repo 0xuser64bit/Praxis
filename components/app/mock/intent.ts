@@ -15,6 +15,7 @@ import type {
   ClarifyOption,
   PolicyCheckResult,
   ResearchData,
+  ResearchSource,
   TokenInfo,
 } from "@praxis/shared";
 import { remaining } from "@praxis/shared";
@@ -446,19 +447,55 @@ function looksLikeResearch(lower: string): boolean {
 }
 
 // Canned read-only data for the demo's research surface.
+/**
+ * The demo card shows the same working the live one does — a research card
+ * that cannot say where a number came from is a card asking to be trusted.
+ */
+const BONK_SOURCES: ResearchSource[] = [
+  {
+    label: "Token resolution",
+    status: "ok",
+    detail: "BONK is in this deployment's configured token list, which wins over any same-ticker mint.",
+  },
+  {
+    label: "Solana RPC (api.mainnet-beta.solana.com)",
+    status: "ok",
+    detail: "Supply and the top 10 holder accounts read from the mint.",
+  },
+  {
+    label: "Market data (api.dexscreener.com)",
+    status: "ok",
+    detail: "14 Solana pairs; price, 24h change, volume and market cap come from the deepest one (raydium, BONK/SOL).",
+  },
+];
+
 const RESEARCH: Record<string, ResearchData> = {
   BONK: {
     token: "BONK",
+    name: "Bonk",
     mint: MINT.bonk,
     summary:
       "Price is up week-over-week on rising volume; holder count grew modestly. Liquidity is concentrated in the top two pools.",
     metrics: [
       { label: "Price", value: "$0.00002730", trend: "up" },
       { label: "7d change", value: "+18.4%", trend: "up" },
-      { label: "24h volume", value: "$142.6M", trend: "up" },
+      { label: "24h volume", value: "$142.6M", exact: "$142,600,000.00", trend: "up" },
       { label: "Holders", value: "742,910", trend: "up" },
-      { label: "Market cap", value: "$1.93B", trend: "flat" },
+      { label: "Market cap", value: "$1.93B", exact: "$1,930,000,000.00", trend: "flat" },
+      {
+        label: "Top 10 concentration",
+        value: "19.40%",
+        note: "Share of supply held by the ten largest token accounts — a concentration signal: the higher it is, the fewer wallets it takes to move the price.",
+        trend: "flat",
+      },
+      {
+        label: "Supply",
+        value: "87.99T",
+        exact: "87,994,397,952,881.85356",
+        trend: "flat",
+      },
     ],
+    sources: BONK_SOURCES,
   },
   JUP: {
     token: "JUP",

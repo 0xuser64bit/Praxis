@@ -960,9 +960,14 @@ function readCadence(value: unknown): DcaCadence {
   throw new PraxisInputError("schedule_dca cadence type must be daily, weekly, or monthly");
 }
 
+/**
+ * `field` rides along in `details` so the reply can name what is missing.
+ * "intent field recipient must be a non-empty string" is a sentence for a
+ * log; "Who should receive it?" is one for the person who typed the line.
+ */
 function readRequiredString(value: unknown, name: string): string {
   if (typeof value !== "string" || !value.trim()) {
-    throw new PraxisInputError(`intent field ${name} must be a non-empty string`);
+    throw new PraxisInputError(`intent field ${name} must be a non-empty string`, { field: name });
   }
   return value.trim();
 }

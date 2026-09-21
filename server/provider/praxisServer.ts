@@ -402,12 +402,7 @@ export class PraxisServerProvider implements PraxisProvider {
         blocks = result.blocks;
         title = result.title;
       } catch (error) {
-        blocks = [
-          {
-            type: "prose",
-            text: error instanceof Error ? error.message : "The agent could not parse that request.",
-          },
-        ];
+        blocks = this.blocksForFailure(error);
       }
 
       const reply: Message = { id: this.id("m"), role: "agent", ts: nowSeconds(), blocks };
@@ -1351,6 +1346,61 @@ export class PraxisServerProvider implements PraxisProvider {
    * Solana can belong to a dozen live mints, and quietly charting the biggest
    * one is how somebody reads the wrong coin's numbers and believes them.
    */
+  /**
+   * What the owner sees when producing a reply threw.
+   *
+   * This used to be `error.message`, verbatim, which put plumbing in the
+   * chat: "intent field recipient must be a non-empty string", "Solana token
+   * supply lookup timed out after 8000ms". It also logged nothing, so a
+   * failed reply left no trace for whoever had to explain it afterwards.
+   *
+   * Deliberately NOT a blanket rewrite. Plenty of messages reaching here are
+   * written for the owner — an Aegis rejection, a mint the program cannot
+   * drive — and replacing those with "something went wrong" would lose the
+   * only useful thing in them. Only the two classes that are demonstrably
+   * internal get rewritten.
+   */
+  private blocksForFailure(error: unknown): AgentBlock[] {
+    logger.warn("agent.reply_failed", errorFields(error));
+
+    // The parse came back missing a field. Naming it beats guessing at it —
+    // and guessing is the one thing this parser exists not to do.
+    //
+    // Keyed on `details.field`, which only the intent normalizer sets: a
+    // PraxisInputError raised deliberately elsewhere ("address must be a
+    // valid Solana public key") is already a sentence for the owner, and
+    // falls through to keep it.
+    const field = error instanceof PraxisInputError && typeof error.details?.field === "string"
+      ? error.details.field
+      : undefined;
+    if (field) {
+      const ask = MISSING_FIELD_QUESTION[field]
+        ?? "I didn't catch the whole request, and I'd rather ask than guess.";
+      return [{ type: "clarify", text: `${ask} (I won't fill that in myself.)`, options: [] }];
+    }
+
+    const message = error instanceof Error ? error.message : "";
+    // `withTimeout` / `fetchWithTimeout` label their timeouts "<label> timed
+    // out after Nms". The label is useful; the milliseconds are not.
+    const timedOut = message.match(/^(.*) timed out after \d+ms$/);
+    if (timedOut) {
+      return [{
+        type: "prose",
+        text: `That took too long — the ${lowerFirst(timedOut[1])} didn't answer. Try again in a moment.`,
+      }];
+    }
+
+    if (error instanceof PraxisConfigError) {
+      return [{
+        type: "prose",
+        text: "This Praxis deployment isn't fully configured for that yet, so I've stopped rather " +
+          "than half-doing it. The server log has the detail.",
+      }];
+    }
+
+    return [{ type: "prose", text: message || "I couldn't complete that request." }];
+  }
+
   private async researchBlock(query: string): Promise<{ blocks: AgentBlock[]; title?: string }> {
     const resolution = await resolveResearchTarget(query, this.config);
 
@@ -1784,4 +1834,21 @@ function welcomeThread(ts: number): Thread {
 
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
+}
+
+/** What to ask when the parser came back missing a field. */
+const MISSING_FIELD_QUESTION: Record<string, string> = {
+  recipient: "Who should receive it?",
+  amountHuman: "How much?",
+  asset: "Which asset — SOL, or a configured token?",
+  token: "Which token should I look up? A ticker or a mint address works.",
+  address: "Which address should I save?",
+  label: "What name should I save it under?",
+  assetIn: "Which asset are you swapping from?",
+  assetOut: "Which asset are you swapping into?",
+  basket: "Which basket?",
+};
+
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }

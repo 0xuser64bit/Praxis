@@ -153,7 +153,9 @@ const intentTool = {
             amountHuman: {
               type: "string",
               description:
-                "Human decimal amount exactly as intended, e.g. 0.5. Never convert to lamports.",
+                "Human decimal amount exactly as intended, e.g. 0.5. Never convert to lamports. " +
+                "Required for transfer, swap_stub, schedule_dca and basket_buy — on a swap it is " +
+                "the amount of assetIn.",
             },
             recipient: {
               type: "string",
@@ -177,8 +179,19 @@ const intentTool = {
                 "or complete a mint address — the server resolves the name and asks the user when a " +
                 "ticker matches several mints.",
             },
-            assetIn: { type: "string" },
-            assetOut: { type: "string" },
+            assetIn: {
+              type: "string",
+              description:
+                "For swap_stub: the symbol being sold ('swap 100 USDC for JUP' -> 'USDC'; " +
+                "'sell 40 OPENAI for SOL' -> 'OPENAI'). Required on every swap_stub.",
+            },
+            assetOut: {
+              type: "string",
+              description:
+                "For swap_stub: the symbol being bought ('swap 100 USDC for JUP' -> 'JUP'). " +
+                "Required on every swap_stub; a bare 'sell 40 OPENAI' with no named " +
+                "counter-asset is a clarify, not a swap_stub with this field omitted.",
+            },
             topic: {
               type: "string",
               enum: ["caps", "expiry", "allowlist", "pause", "general"],
@@ -208,8 +221,28 @@ const intentTool = {
               description: "For policy_change pause: true to pause the agent, false to unpause/resume.",
             },
             cadence: {
+              // Declared field by field, not described in prose. A bare
+              // `{type: "object"}` leaves the shape to be inferred, and a
+              // small model infers it wrong — every recurring buy came back
+              // with an unusable cadence and fell through to the fallback.
               type: "object",
-              description: "For schedule_dca: {type: daily|weekly|monthly, weekday 0-6 for weekly, day 1-31 for monthly}.",
+              description: "For schedule_dca: how often the buy repeats.",
+              required: ["type"],
+              properties: {
+                type: {
+                  type: "string",
+                  enum: ["daily", "weekly", "monthly"],
+                  description: "Repeat interval.",
+                },
+                weekday: {
+                  type: "integer",
+                  description: "For weekly: 0-6, Sunday = 0. 'every Monday' is 1.",
+                },
+                day: {
+                  type: "integer",
+                  description: "For monthly: day of month, 1-31.",
+                },
+              },
             },
             basket: {
               type: "string",

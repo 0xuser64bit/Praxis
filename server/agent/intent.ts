@@ -1,6 +1,7 @@
 import { PraxisConfigError, PraxisInputError } from "../errors";
 import type { PraxisServerConfig } from "../env";
 import { envTimeout, fetchWithTimeout } from "../api/timeout";
+import { logger } from "../observability/logger";
 import { STOCK_SYMBOLS, normalizeStockAlias } from "../stocks/universe";
 import {
   availableBaskets,
@@ -216,7 +217,17 @@ const intentTool = {
 };
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+/**
+ * A moving alias, not a pinned version, and that is the point.
+ *
+ * The pinned `gemini-2.5-flash` was retired for new API keys and started
+ * answering 404. Nothing broke loudly: `parseIntent` catches every Gemini
+ * failure and falls back to the regex parser, so the product kept replying —
+ * with a parser that reads "research about trump" as the token "ABOUT".
+ * A model name that rots silently degrades the whole product to its fallback,
+ * so the default tracks the alias Google keeps pointed at a live model.
+ */
+const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
 
 const INTENT_SYSTEM_PROMPT = [
   "You parse user text for Praxis, a Solana agent protected by Aegis.",
@@ -249,54 +260,51 @@ const INTENT_SYSTEM_PROMPT = [
   "Never guess. One clarifying question is safer than one wrong transaction.",
 ].join(" ");
 
+/**
+ * Gemini's free tier answers 429/503 under load often enough that a single
+ * hiccup would otherwise demote the request to the regex fallback. The call
+ * is a pure read, so retrying it is safe; a 4xx that is not a rate limit is
+ * a real error (bad key, retired model) and fails straight through.
+ */
+const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+const GEMINI_ATTEMPTS = 3;
+
 export async function parseIntentWithGemini(text: string, config: PraxisServerConfig): Promise<ParsedIntent> {
   if (!config.geminiApiKey) {
     throw new PraxisConfigError("GEMINI_API_KEY is required for intent parsing.");
   }
   const model = config.geminiModel ?? DEFAULT_GEMINI_MODEL;
 
-  const res = await fetchWithTimeout(
-    `${GEMINI_API_BASE}/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-goog-api-key": config.geminiApiKey,
-      },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: INTENT_SYSTEM_PROMPT }] },
-        contents: [{ role: "user", parts: [{ text }] }],
-        tools: [
-          {
-            functionDeclarations: [
-              {
-                name: INTENT_TOOL_NAME,
-                description: intentTool.description,
-                parameters: toGeminiSchema(intentTool.input_schema),
-              },
-            ],
-          },
-        ],
-        // Force exactly one call to our intent tool, mirroring Anthropic's tool_choice.
-        toolConfig: {
-          functionCallingConfig: {
-            mode: "ANY",
-            allowedFunctionNames: [INTENT_TOOL_NAME],
-          },
+  const res = await geminiWithRetry(model, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-goog-api-key": config.geminiApiKey,
+    },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: INTENT_SYSTEM_PROMPT }] },
+      contents: [{ role: "user", parts: [{ text }] }],
+      tools: [
+        {
+          functionDeclarations: [
+            {
+              name: INTENT_TOOL_NAME,
+              description: intentTool.description,
+              parameters: toGeminiSchema(intentTool.input_schema),
+            },
+          ],
         },
-        generationConfig: { temperature: 0, maxOutputTokens: 700 },
-      }),
-    },
-    {
-      ms: envTimeout("PRAXIS_LLM_TIMEOUT_MS", 15_000),
-      label: "Gemini intent parsing",
-    },
-  );
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Gemini generateContent API failed (${res.status}): ${body}`);
-  }
+      ],
+      // Force exactly one call to our intent tool, mirroring Anthropic's tool_choice.
+      toolConfig: {
+        functionCallingConfig: {
+          mode: "ANY",
+          allowedFunctionNames: [INTENT_TOOL_NAME],
+        },
+      },
+      generationConfig: { temperature: 0, maxOutputTokens: 700 },
+    }),
+  });
 
   const body = await res.json();
   const parts: Array<{ functionCall?: { name?: string; args?: unknown } }> | undefined =
@@ -311,6 +319,38 @@ export async function parseIntentWithGemini(text: string, config: PraxisServerCo
   }
 
   return normalizeIntent(call.functionCall.args);
+}
+
+/**
+ * One Gemini call, retried on transient failures. Throws with the model name
+ * in the message: the failure mode that started all of this was a retired
+ * model answering 404, and "(404)" alone does not tell an operator which name
+ * to change.
+ */
+async function geminiWithRetry(model: string, init: RequestInit): Promise<Response> {
+  let lastStatus = 0;
+  let lastBody = "";
+  for (let attempt = 1; attempt <= GEMINI_ATTEMPTS; attempt++) {
+    const res = await fetchWithTimeout(
+      `${GEMINI_API_BASE}/${model}:generateContent`,
+      init,
+      { ms: envTimeout("PRAXIS_LLM_TIMEOUT_MS", 15_000), label: "Gemini intent parsing" },
+    );
+    if (res.ok) return res;
+
+    lastStatus = res.status;
+    lastBody = await res.text();
+    if (!RETRYABLE_STATUS.has(res.status) || attempt === GEMINI_ATTEMPTS) break;
+    logger.warn("intent.gemini_retry", { model, status: res.status, attempt });
+    await sleep(250 * attempt);
+  }
+  throw new Error(
+    `Gemini generateContent failed for model "${model}" (${lastStatus}): ${lastBody.slice(0, 400)}`,
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**

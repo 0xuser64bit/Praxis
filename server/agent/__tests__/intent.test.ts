@@ -428,3 +428,62 @@ describe("the $ sigil is recorded, not silently discarded", () => {
     expect(action.kind === "transfer" && action.amountHuman).toBe("5");
   });
 });
+
+/**
+ * The parse path degrades silently by design: any Gemini failure falls back to
+ * the offline regex parser, so a broken model name never shows up as an error —
+ * only as much worse answers. `gemini-2.5-flash` was retired for new API keys
+ * and 404'd on every request, which is exactly how "research about trump coin"
+ * came back as the token "ABOUT". These two tests are the tripwire.
+ */
+describe("Gemini transport — transient failures retry, permanent ones name the model", () => {
+  const config = { geminiApiKey: "test-key", geminiModel: "test-model" } as unknown as PraxisServerConfig;
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  function okBody() {
+    return JSON.stringify({
+      candidates: [
+        {
+          content: {
+            parts: [
+              {
+                functionCall: {
+                  name: "parse_praxis_intent",
+                  args: { outcome: "actions", actions: [{ kind: "research", token: "SOL" }] },
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+  }
+
+  test("a 503 is retried rather than dropped to the offline parser", async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return calls === 1
+        ? new Response("overloaded", { status: 503 })
+        : new Response(okBody(), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof globalThis.fetch;
+
+    const parsed = await parseIntentWithGemini("research sol", config);
+    expect(calls).toBe(2);
+    expect(parsed.outcome === "actions" && parsed.actions[0]).toEqual({ kind: "research", token: "SOL" });
+  });
+
+  test("a retired model fails once, and the error says which name to change", async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return new Response("model not found", { status: 404 });
+    }) as unknown as typeof globalThis.fetch;
+
+    await expect(parseIntentWithGemini("research sol", config)).rejects.toThrow(/test-model.*404/);
+    expect(calls).toBe(1);
+  });
+});

@@ -149,6 +149,13 @@ export type ProposalState = "pending" | "signing" | "signed" | "blocked" | "canc
 
 export interface ActionProposal {
   id: string;
+  /**
+   * Unix seconds when the proposal was produced. The signature gate refuses a
+   * proposal older than 24 hours: everything on it (fee, simulation, remaining
+   * envelope, USD figure) is a point-in-time reading. Ask again for a fresh
+   * one. Absent on proposals created before this field existed.
+   */
+  createdAt?: number;
   detail: ProposalDetail;
   networkFee: BaseUnitString;
   simulation: string;

@@ -105,3 +105,27 @@ describe("session cookies", () => {
     expect(() => normalizeWallet("not-a-key")).toThrow();
   });
 });
+
+describe("session lifetime", () => {
+  test("a cookie minted under a longer TTL is refused once the TTL is shortened", () => {
+    const prevSecret = process.env.PRAXIS_SESSION_SECRET;
+    const prevTtl = process.env.PRAXIS_SESSION_TTL_HOURS;
+    process.env.PRAXIS_SESSION_SECRET = SECRET;
+    try {
+      const wallet = Keypair.generate().publicKey.toBase58();
+      process.env.PRAXIS_SESSION_TTL_HOURS = "24";
+      const long = createSessionCookie(wallet, makeRequest(URL));
+      expect(readSession(requestWithCookie(long))?.walletAddress).toBe(wallet);
+
+      // Shortening the setting has to bind sessions already issued, or it only
+      // applies to people who happen to sign in again.
+      process.env.PRAXIS_SESSION_TTL_HOURS = "1";
+      expect(readSession(requestWithCookie(long))).toBeNull();
+    } finally {
+      if (prevSecret === undefined) delete process.env.PRAXIS_SESSION_SECRET;
+      else process.env.PRAXIS_SESSION_SECRET = prevSecret;
+      if (prevTtl === undefined) delete process.env.PRAXIS_SESSION_TTL_HOURS;
+      else process.env.PRAXIS_SESSION_TTL_HOURS = prevTtl;
+    }
+  });
+});

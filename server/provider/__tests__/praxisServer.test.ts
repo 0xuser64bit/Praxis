@@ -464,3 +464,35 @@ describe("activity feed identity", () => {
     expect(transfers[0].id).toBe("chain-0");
   });
 });
+
+describe("the signature gate", () => {
+  async function pendingProposal() {
+    const { provider, fake } = build();
+    const { threadId } = await provider.send(null, "send 0.5 SOL to maya");
+    const blocks = (provider.getThread(threadId)!.messages.at(-1) as {
+      blocks: Array<{ type: string; proposalId?: string }>;
+    }).blocks;
+    return { provider, fake, proposalId: blocks.find((b) => b.type === "proposal")!.proposalId! };
+  }
+
+  test("refuses a stale proposal instead of signing a preview nobody read", async () => {
+    const { provider, fake, proposalId } = await pendingProposal();
+    const proposal = provider.getProposal(proposalId)!;
+    // Aegis would still enforce the envelope; what it cannot know is whether
+    // the person authorized THIS card or one from last month.
+    proposal.createdAt = Math.floor(Date.now() / 1000) - 25 * 60 * 60;
+
+    await provider.signProposal(proposalId);
+
+    expect(fake.calls).not.toContain("executeAgentTransfer");
+    expect(provider.getProposal(proposalId)!.state).toBe("blocked");
+    expect(provider.getProposal(proposalId)!.check.reason).toMatch(/hours old/);
+  });
+
+  test("signs a fresh proposal", async () => {
+    const { provider, fake, proposalId } = await pendingProposal();
+    await provider.signProposal(proposalId);
+    expect(fake.calls).toContain("executeAgentTransfer");
+    expect(provider.getProposal(proposalId)!.state).toBe("signed");
+  });
+});

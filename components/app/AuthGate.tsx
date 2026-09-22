@@ -30,9 +30,12 @@ interface AuthContextValue {
 
 interface SolanaWallet {
   isPhantom?: boolean;
-  publicKey?: { toBase58(): string };
+  publicKey?: { toBase58(): string } | null;
   connect(input?: { onlyIfTrusted?: boolean }): Promise<{ publicKey: { toBase58(): string } }>;
   signMessage(message: Uint8Array, display?: "utf8"): Promise<{ signature: Uint8Array } | Uint8Array>;
+  on?(event: string, handler: (...args: unknown[]) => void): void;
+  off?(event: string, handler: (...args: unknown[]) => void): void;
+  removeListener?(event: string, handler: (...args: unknown[]) => void): void;
 }
 
 declare global {
@@ -104,10 +107,59 @@ export function ApiAuthGate({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await fetch("/api/praxis/auth/session", { method: "DELETE" });
+    await fetch("/api/praxis/auth/session", { method: "DELETE" }).catch(() => undefined);
     setSession({ authenticated: false });
     setPhase("signed-out");
   }, []);
+
+  /**
+   * Keep the session bound to the wallet that is actually connected.
+   *
+   * The session cookie names one wallet for seven days. The wallet extension
+   * can be switched to a different account at any moment, and nothing told
+   * this app — so the header would show account B while every read, every
+   * proposal and every agent transfer still ran against account A's vault.
+   * Owner actions would have failed at the fee-payer check, but an agent
+   * transfer needs no wallet signature at all: a click meant for B's money
+   * would have moved A's.
+   *
+   * A different connected account, or an explicit disconnect, therefore ends
+   * the session. Signing in again is one click and unambiguous; guessing is
+   * not.
+   */
+  const sessionWallet = session.walletAddress;
+  useEffect(() => {
+    if (!sessionWallet) return;
+    const wallet = typeof window === "undefined" ? undefined : window.solana;
+    if (!wallet?.on) return;
+
+    const endIfDifferent = (address: string | undefined) => {
+      if (address && address === sessionWallet) return;
+      void signOut();
+    };
+
+    // A wallet connected to another account right now (a switch while this tab
+    // was closed) is the same divergence, just observed on mount. A wallet
+    // that is not connected at all is not: the session is the authentication,
+    // and the wallet is only needed again to sign an owner transaction.
+    // Deferred, because the extension injects `publicKey` around the same tick
+    // this effect first runs.
+    queueMicrotask(() => endIfDifferent(wallet.publicKey?.toBase58() ?? sessionWallet));
+
+    const onAccountChanged = (...args: unknown[]) => {
+      const next = args[0] as { toBase58?: () => string } | null | undefined;
+      endIfDifferent(next?.toBase58?.());
+    };
+    const onDisconnect = () => void signOut();
+
+    wallet.on("accountChanged", onAccountChanged);
+    wallet.on("disconnect", onDisconnect);
+    return () => {
+      const remove = wallet.off ?? wallet.removeListener;
+      remove?.call(wallet, "accountChanged", onAccountChanged);
+      remove?.call(wallet, "disconnect", onDisconnect);
+    };
+  }, [sessionWallet, signOut]);
 
   const value = useMemo<AuthContextValue | null>(() => {
     if (!session.authenticated || !session.walletAddress) return null;

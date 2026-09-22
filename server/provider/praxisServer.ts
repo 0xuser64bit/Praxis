@@ -86,6 +86,19 @@ interface StoreState {
 /** Bounded retries when claiming a proposal against a concurrent writer. */
 const CLAIM_ATTEMPTS = 3;
 
+/**
+ * How long a proposal stays signable.
+ *
+ * The card is a set of readings taken when the proposal was produced — fee,
+ * simulated outcome, remaining daily envelope, the USD figure on a stock buy.
+ * Aegis enforces the envelope whenever the transfer lands, but it has no way
+ * to know whether the person authorized the card in front of them or one from
+ * last month. A day is long enough that a recurring buy fired this morning is
+ * still there this evening, and short enough that nobody signs a preview they
+ * never read.
+ */
+const PROPOSAL_TTL_SECONDS = 24 * 60 * 60;
+
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 
 let singleton: PraxisServerProvider | undefined;
@@ -435,6 +448,22 @@ export class PraxisServerProvider implements PraxisProvider {
       // within this process — proceeds to submit the transfer.
       const proposal = await this.claimProposalForExecution(proposalId);
       if (!proposal) return;
+
+      const age = proposal.createdAt === undefined ? 0 : nowSeconds() - proposal.createdAt;
+      if (age > PROPOSAL_TTL_SECONDS) {
+        proposal.state = "blocked";
+        proposal.simulation = "Not submitted: the preview expired.";
+        proposal.check = {
+          ...proposal.check,
+          allowed: false,
+          reason:
+            `This proposal is ${Math.floor(age / 3600)} hours old, so its fee, simulation and `
+            + "remaining-limit figures are no longer the ones you would be signing. Ask again "
+            + "for a fresh one.",
+        };
+        await this.commit();
+        return;
+      }
 
       if (proposal.detail.kind === "swap") {
         proposal.state = "blocked";
@@ -1065,6 +1094,7 @@ export class PraxisServerProvider implements PraxisProvider {
   }): ActionProposal {
     const proposal: ActionProposal = {
       id: this.id("p"),
+      createdAt: nowSeconds(),
       detail: {
         kind: "transfer",
         amount: args.amount,
@@ -1509,6 +1539,7 @@ export class PraxisServerProvider implements PraxisProvider {
 
     const proposal: ActionProposal = {
       id: this.id("p"),
+      createdAt: nowSeconds(),
       detail: {
         kind: "swap",
         amountIn,

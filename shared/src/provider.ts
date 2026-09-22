@@ -120,13 +120,14 @@ export interface ActionProposal {
   /**
    * Unix seconds when this proposal was produced.
    *
-   * Everything on the card — the fee, the simulated outcome, the remaining
-   * daily envelope, the USD figure on a stock buy — is a reading taken at
-   * this moment. Aegis will still enforce the envelope whenever the transfer
-   * is submitted, but it cannot know whether the person is authorizing the
-   * card they read or one that has since gone stale, so the signature gate
-   * refuses a proposal older than its TTL. Absent on proposals persisted
-   * before this field existed, which are treated as fresh.
+   * The amount is fixed here and Aegis enforces the envelope live at submit,
+   * so an older card still moves exactly what it says. What drifts is the
+   * reading: the fee, the simulated outcome, the remaining daily envelope,
+   * the USD figure on a stock buy. The signature gate refuses a proposal
+   * older than a week — long enough that a weekly recurring buy is still
+   * signable, short enough that nobody signs a preview whose intent they no
+   * longer remember. Absent on proposals persisted before this field existed,
+   * which are treated as fresh.
    */
   createdAt?: number;
   detail: ProposalDetail;

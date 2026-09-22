@@ -484,13 +484,27 @@ describe("the signature gate", () => {
     const proposal = provider.getProposal(proposalId)!;
     // Aegis would still enforce the envelope; what it cannot know is whether
     // the person authorized THIS card or one from last month.
-    proposal.createdAt = Math.floor(Date.now() / 1000) - 25 * 60 * 60;
+    proposal.createdAt = Math.floor(Date.now() / 1000) - 8 * 24 * 60 * 60;
 
     await provider.signProposal(proposalId);
 
     expect(fake.calls).not.toContain("executeAgentTransfer");
     expect(provider.getProposal(proposalId)!.state).toBe("blocked");
-    expect(provider.getProposal(proposalId)!.check.reason).toMatch(/hours old/);
+    expect(provider.getProposal(proposalId)!.check.reason).toMatch(/days old/);
+  });
+
+  test("a weekly recurring buy is still signable six days later", async () => {
+    // The amount is fixed when the card is built and Aegis enforces the
+    // envelope live, so an older card still moves exactly what it says. The
+    // TTL guards against forgetting, and must not quietly break the schedule
+    // the product promised.
+    const { provider, fake, proposalId } = await pendingProposal();
+    provider.getProposal(proposalId)!.createdAt =
+      Math.floor(Date.now() / 1000) - 6 * 24 * 60 * 60;
+
+    await provider.signProposal(proposalId);
+    expect(fake.calls).toContain("executeAgentTransfer");
+    expect(provider.getProposal(proposalId)!.state).toBe("signed");
   });
 
   test("signs a fresh proposal", async () => {

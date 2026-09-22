@@ -33,10 +33,11 @@ for (const p of proposals) {
 }
 ```
 
-A proposal is a set of readings taken when it was produced — fee, simulated
-outcome, remaining daily envelope. It stays signable for 24 hours; after that
-the backend refuses it and you ask again. Aegis enforces the envelope either
-way, but it cannot tell whether the card you read is the one you signed.
+A proposal stays signable for a week. Its amount is fixed when it is built and
+Aegis enforces the envelope live at submit, so an older card still moves
+exactly what it says — what drifts are the readings on it (fee, simulated
+outcome, remaining daily envelope). Past a week the backend refuses it and you
+ask again.
 
 `ask()` returns once the agent has finished — the API resolves `send` only after
 the reply is ready, so there is no polling.

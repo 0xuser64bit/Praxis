@@ -157,9 +157,10 @@ export interface ActionProposal {
   id: string;
   /**
    * Unix seconds when the proposal was produced. The signature gate refuses a
-   * proposal older than 24 hours: everything on it (fee, simulation, remaining
-   * envelope, USD figure) is a point-in-time reading. Ask again for a fresh
-   * one. Absent on proposals created before this field existed.
+   * proposal older than a week: the amount is fixed and Aegis enforces the
+   * envelope live, but the readings on it (fee, simulation, remaining
+   * envelope, USD figure) drift. Ask again for a fresh one. Absent on
+   * proposals created before this field existed.
    */
   createdAt?: number;
   detail: ProposalDetail;

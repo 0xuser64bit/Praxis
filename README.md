@@ -30,9 +30,10 @@ policy, not by the quality of a prompt.
 4. The action is simulated and checked against the policy, producing a proposal
    card with the fee, the simulation result, and the Aegis verdict.
 5. On confirm, the backend signs an Aegis instruction with the **scoped agent
-   key** and submits it. A proposal stays signable for 24 hours — everything on
-   the card is a reading taken when it was produced, and the chain cannot tell
-   whether you authorized that card or one from last month.
+   key** and submits it. A proposal stays signable for a week: its amount is
+   fixed and Aegis enforces the envelope live, but the readings on the card
+   drift, and nobody should sign a preview whose intent they no longer
+   remember.
 6. Aegis enforces the policy *on-chain* — signer, pause, expiry, per-transaction
    cap, rolling daily cap, recipient allow-list, and (for SPL) the configured
    mint and token envelope — before value moves.
@@ -128,7 +129,9 @@ with your vault; it cannot bound the issuer of a token you chose to hold. We
 name that rather than let "limits even a hacked AI can't break" imply more
 than it does.
 
-DCA schedules emit proposals (never auto-sign); baskets are all-or-nothing —
+DCA schedules emit proposals (never auto-sign), and each fired card stays
+signable for a week, so a weekly buy does not expire before you get to it;
+baskets are all-or-nothing —
 any blocked or unpriceable constituent clarifies the whole basket. Firing is a
 scheduled job (`vercel.json` → `/api/cron/stocks`, authenticated with
 `CRON_SECRET`) that fans out across every wallet with a due schedule; set that

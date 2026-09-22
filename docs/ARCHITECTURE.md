@@ -92,12 +92,14 @@ degraded to per-instance nonces.
 4. The provider builds a proposal with simulation, fee, and policy verdict.
 5. The UI renders the proposal card.
 6. On confirm, API mode signs an Aegis instruction with the scoped agent key.
-   A proposal is signable for 24 hours. Everything on the card — fee,
-   simulated outcome, remaining envelope, the USD figure on a stock buy — is a
-   reading taken when it was produced, and Aegis has no way to tell whether
-   the person authorized the card in front of them or one from last month.
-   This is a freshness contract, deliberately not a second copy of the policy
-   check.
+   A proposal is signable for a week. Its amount is fixed when the card is
+   built and Aegis enforces the envelope live at submit, so an older card
+   still moves exactly what it says; what drifts is the reading — fee,
+   simulated outcome, remaining envelope, the USD figure on a stock buy. The
+   bar is therefore forgetting rather than drift: long enough that a weekly
+   recurring buy fired on Monday is still signable on Sunday, short enough
+   that nobody signs a preview from last month. A freshness contract,
+   deliberately not a second copy of the policy check.
 7. Aegis enforces the policy on-chain before any value leaves the vault.
 8. Policy and activity are refreshed into the UI.
 9. Threads, proposals, and off-chain rejected activity are persisted by wallet.

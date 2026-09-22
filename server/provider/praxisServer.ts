@@ -89,15 +89,19 @@ const CLAIM_ATTEMPTS = 3;
 /**
  * How long a proposal stays signable.
  *
- * The card is a set of readings taken when the proposal was produced — fee,
- * simulated outcome, remaining daily envelope, the USD figure on a stock buy.
- * Aegis enforces the envelope whenever the transfer lands, but it has no way
- * to know whether the person authorized the card in front of them or one from
- * last month. A day is long enough that a recurring buy fired this morning is
- * still there this evening, and short enough that nobody signs a preview they
- * never read.
+ * What goes stale on an old card is the *reading*, not the action: the amount
+ * is fixed when the proposal is built and Aegis enforces the envelope live at
+ * submit. A week-old card still moves exactly what it says; the fee, the
+ * simulated outcome, the remaining daily envelope and the USD figure on a
+ * stock buy are the parts that drift.
+ *
+ * So the bar is forgetting, not drift. A week is long enough that a weekly
+ * recurring buy fired on Monday is still signable on Sunday — shorter and the
+ * product would quietly break the schedule it promised — and short enough
+ * that nobody signs a preview from last month whose intent they no longer
+ * remember.
  */
-const PROPOSAL_TTL_SECONDS = 24 * 60 * 60;
+const PROPOSAL_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 
@@ -461,7 +465,7 @@ export class PraxisServerProvider implements PraxisProvider {
           ...proposal.check,
           allowed: false,
           reason:
-            `This proposal is ${Math.floor(age / 3600)} hours old, so its fee, simulation and `
+            `This proposal is ${Math.floor(age / 86_400)} days old, so its fee, simulation and `
             + "remaining-limit figures are no longer the ones you would be signing. Ask again "
             + "for a fresh one.",
         };

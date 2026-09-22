@@ -8,7 +8,8 @@ import {
   TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
 } from "../constants";
-import { findAssociatedTokenAddress, findPolicyPda, findVaultPda } from "../pdas";
+import { findActionLogPda, findAssociatedTokenAddress, findPolicyPda, findVaultPda } from "../pdas";
+import { buildClosePolicyIx } from "../instructions";
 import { PraxisConfigError, PraxisInputError } from "../../errors";
 import { DEFAULT_PRESTOCKS_API_URL, DEFAULT_PRESTOCKS_TIMEOUT_MS, DEFAULT_TOKENS, type PraxisServerConfig } from "../../env";
 import type { AgentSigner } from "../../agent/agentSigner";
@@ -55,6 +56,10 @@ function fakeConnection(over: Partial<Record<string, unknown>> = {}): Connection
     confirmTransaction: async () => ({ value: { err: null } }),
     ...over,
   } as unknown as Connection;
+}
+
+function serialize(tx: Transaction): string {
+  return tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
 }
 
 function makeConfig(over: Partial<PraxisServerConfig> = {}): PraxisServerConfig {
@@ -383,7 +388,7 @@ describe("submitSignedTransaction", () => {
   test("returns the signature on a confirmed transaction", async () => {
     const { config, draft } = await aegisOwnerDraft();
     const client = new AegisClient(config, fakeConnection());
-    expect(await client.submitSignedTransaction(draft)).toBe("owner-sig");
+    expect(await client.submitSignedTransaction(draft, config.ownerAddress!)).toBe("owner-sig");
   });
 
   test("throws when the cluster reports an error", async () => {
@@ -392,17 +397,16 @@ describe("submitSignedTransaction", () => {
       config,
       fakeConnection({ confirmTransaction: async () => ({ value: { err: { InstructionError: [0, "Custom"] } } }) }),
     );
-    await expect(client.submitSignedTransaction(draft)).rejects.toThrow(/owner transaction failed/);
+    await expect(
+      client.submitSignedTransaction(draft, config.ownerAddress!),
+    ).rejects.toThrow(/owner transaction failed/);
   });
 
   test("rejects an unparseable transaction", async () => {
-    const config = makeConfig();
+    const { config, draft } = await aegisOwnerDraft();
     const client = new AegisClient(config, fakeConnection());
     await expect(
-      client.submitSignedTransaction(
-        { transaction: "AQID", blockhash: BLOCKHASH, lastValidBlockHeight: 321 },
-        { expectedFeePayer: config.ownerAddress },
-      ),
+      client.submitSignedTransaction({ ...draft, transaction: "AQID" }, config.ownerAddress!),
     ).rejects.toBeInstanceOf(PraxisInputError);
   });
 
@@ -410,77 +414,85 @@ describe("submitSignedTransaction", () => {
     const { config, draft } = await aegisOwnerDraft();
     const client = new AegisClient(config, fakeConnection());
     await expect(
-      client.submitSignedTransaction(draft, { expectedFeePayer: Keypair.generate().publicKey }),
+      client.submitSignedTransaction(draft, Keypair.generate().publicKey),
     ).rejects.toThrow(/fee payer does not match/);
   });
 
   test("rejects a transaction carrying a non-Aegis instruction (no open relay)", async () => {
-    const config = makeConfig();
+    const { config, draft } = await aegisOwnerDraft();
     const wallet = config.ownerAddress!;
     // A wallet-signed raw SOL transfer — exactly what an attacker would try to
-    // smuggle through the owner-submit relay. It must be refused.
-    const evil = new Transaction({ feePayer: wallet, blockhash: BLOCKHASH, lastValidBlockHeight: 321 }).add(
+    // smuggle through the owner-submit relay, carrying a legitimately issued
+    // draft token. It must be refused.
+    const evil = new Transaction({ feePayer: wallet, blockhash: draft.blockhash, lastValidBlockHeight: 321 }).add(
       SystemProgram.transfer({ fromPubkey: wallet, toPubkey: Keypair.generate().publicKey, lamports: 1 }),
     );
     const client = new AegisClient(config, fakeConnection());
     await expect(
-      client.submitSignedTransaction(
-        {
-          transaction: evil.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
-          blockhash: BLOCKHASH,
-          lastValidBlockHeight: 321,
-        },
-        { expectedFeePayer: wallet },
-      ),
+      client.submitSignedTransaction({ ...draft, transaction: serialize(evil) }, wallet),
     ).rejects.toThrow(/Aegis|ATA CreateIdempotent/);
   });
 
-  test("accepts wallet-appended ComputeBudget priority-fee instructions", async () => {
-    const config = makeConfig();
+  test("rejects Aegis instructions the backend did not build (draft mismatch)", async () => {
+    // The gate's program allow-list alone would pass this: it IS an Aegis
+    // instruction against the signer's own policy. But it is not the one the
+    // backend produced, which is how a client would skip the server-side
+    // preconditions attached to an action (a token-balance refusal on close,
+    // a movable-mint check on configure).
+    const { config, draft } = await aegisOwnerDraft();
     const wallet = config.ownerAddress!;
-    // Wallets (e.g. Phantom) append SetComputeUnitLimit + SetComputeUnitPrice to
-    // the unsigned draft on sign. The relay gate must not mistake those for an
-    // open-relay attack: they move no funds.
-    const withFees = new Transaction({ feePayer: wallet, blockhash: BLOCKHASH, lastValidBlockHeight: 321 }).add(
-      ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
-      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 10_000 }),
-      // ...alongside a genuine Aegis instruction (content is irrelevant to the gate).
-      SystemProgram.transfer({ fromPubkey: wallet, toPubkey: wallet, lamports: 0 }),
+    const swapped = new Transaction({ feePayer: wallet, blockhash: draft.blockhash, lastValidBlockHeight: 321 }).add(
+      buildClosePolicyIx({
+        programId: config.programId,
+        owner: wallet,
+        policy: config.policyAddress!,
+        vault: findVaultPda(config.policyAddress!, config.programId),
+        actionLog: findActionLogPda(config.policyAddress!, config.programId),
+      }),
     );
-    // Rewrite the placeholder transfer's program id to the Aegis program so the
-    // tx is [budget, budget, aegis] — the shape a signed bootstrap produces.
-    withFees.instructions[2]!.programId = config.programId;
     const client = new AegisClient(config, fakeConnection());
     await expect(
-      client.submitSignedTransaction(
-        {
-          transaction: withFees.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
-          blockhash: BLOCKHASH,
-          lastValidBlockHeight: 321,
-        },
-        { expectedFeePayer: wallet },
-      ),
+      client.submitSignedTransaction({ ...draft, transaction: serialize(swapped) }, wallet),
+    ).rejects.toThrow(/does not match the draft/);
+  });
+
+  test("rejects a draft token minted for another wallet", async () => {
+    const { config, draft } = await aegisOwnerDraft();
+    const other = await aegisOwnerDraft(makeConfig());
+    const client = new AegisClient(config, fakeConnection());
+    await expect(
+      client.submitSignedTransaction({ ...draft, draft: other.draft.draft }, config.ownerAddress!),
+    ).rejects.toThrow(/different wallet|does not match the draft/);
+  });
+
+  test("accepts wallet-appended ComputeBudget priority-fee instructions", async () => {
+    // Wallets (e.g. Phantom) append SetComputeUnitLimit + SetComputeUnitPrice to
+    // the unsigned draft on sign. Neither the program allow-list nor the draft
+    // fingerprint may mistake those for tampering: they move no funds.
+    const { config, draft } = await aegisOwnerDraft();
+    const wallet = config.ownerAddress!;
+    const withFees = Transaction.from(Uint8Array.from(Buffer.from(draft.transaction, "base64")));
+    withFees.instructions.unshift(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 10_000 }),
+    );
+    const client = new AegisClient(config, fakeConnection());
+    await expect(
+      client.submitSignedTransaction({ ...draft, transaction: serialize(withFees) }, wallet),
     ).resolves.toBe("owner-sig");
   });
 
   test("still rejects a ComputeBudget-shaped disguise on another program", async () => {
-    const config = makeConfig();
+    const { config, draft } = await aegisOwnerDraft();
     const wallet = config.ownerAddress!;
     // Right shape, wrong program: a muted SystemProgram transfer must not pass
     // just because it is small.
-    const evil = new Transaction({ feePayer: wallet, blockhash: BLOCKHASH, lastValidBlockHeight: 321 }).add(
+    const evil = new Transaction({ feePayer: wallet, blockhash: draft.blockhash, lastValidBlockHeight: 321 }).add(
       SystemProgram.transfer({ fromPubkey: wallet, toPubkey: Keypair.generate().publicKey, lamports: 1 }),
     );
     const client = new AegisClient(config, fakeConnection());
     await expect(
-      client.submitSignedTransaction(
-        {
-          transaction: evil.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
-          blockhash: BLOCKHASH,
-          lastValidBlockHeight: 321,
-        },
-        { expectedFeePayer: wallet },
-      ),
+      client.submitSignedTransaction({ ...draft, transaction: serialize(evil) }, wallet),
     ).rejects.toThrow(/blocked program 11111111111111111111111111111111/);
   });
 
@@ -566,8 +578,6 @@ describe("submitSignedTransaction", () => {
       tokenMaxPerTx: 10n,
       tokenDailyLimit: 100n,
     });
-    expect(await client.submitSignedTransaction(draft, { expectedFeePayer: config.ownerAddress })).toBe(
-      "owner-sig",
-    );
+    expect(await client.submitSignedTransaction(draft, config.ownerAddress!)).toBe("owner-sig");
   });
 });

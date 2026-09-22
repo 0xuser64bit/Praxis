@@ -25,6 +25,7 @@ import {
   TOKEN_PROGRAM_ID,
 } from "./constants";
 import { decodeActionLog, decodePolicyAccount } from "./codec";
+import { assertMatchesOwnerDraft, issueOwnerDraftToken } from "./ownerDraft";
 import { checkMintMovable, resolveMintInfo, supportedTokenPrograms } from "../stocks/mintDecimals";
 import {
   buildAgentTransferIx,
@@ -102,6 +103,13 @@ export interface UnsignedOwnerTransaction {
   transaction: string;
   blockhash: string;
   lastValidBlockHeight: number;
+  /**
+   * Opaque, backend-signed fingerprint of this draft. Echo it back verbatim on
+   * submit — it is what proves the signed bytes are the ones Praxis built, and
+   * therefore that the server-side preconditions for this action actually ran.
+   * See `ownerDraft.ts`.
+   */
+  draft: string;
 }
 
 export interface TransferSimulation {
@@ -924,16 +932,17 @@ export class AegisClient {
         .toString("base64"),
       blockhash: latestBlockhash.blockhash,
       lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+      draft: issueOwnerDraftToken(ownerPubkey, tx),
     };
   }
 
   /** Submit a wallet-signed owner transaction and wait for confirmation. */
   async submitSignedTransaction(
     input: UnsignedOwnerTransaction,
-    opts: { expectedFeePayer?: PublicKey } = {},
+    owner: PublicKey,
   ): Promise<string> {
     const raw = Buffer.from(input.transaction, "base64");
-    this.assertSubmittableOwnerTransaction(raw, input, opts.expectedFeePayer);
+    this.assertSubmittableOwnerTransaction(raw, input, owner);
     // Bounded like every other submit path (see sendAndConfirm): a hung RPC
     // must not hold a serverless function open until the platform kills it.
     const sig = await withTimeout(
@@ -956,20 +965,20 @@ export class AegisClient {
   }
 
   /**
-   * Gate a wallet-signed owner transaction before the backend relays it. The
-   * owner-action builder ({@link ownerActionInstructions}) only emits Aegis
-   * instructions and SPL Associated-Token CreateIdempotent ixs (for vault /
-   * recipient ATA setup). Wallets may additionally append ComputeBudget
-   * priority-fee ixs (see {@link isWalletPriorityFeeIx}) — those move no funds
-   * and the fee payer is the signing owner themself. Anything else — e.g. a raw
-   * SOL transfer — means the client assembled its own transaction and is trying
-   * to use the backend as an open relay. Refuse that. On-chain `has_one = owner`
-   * still binds Aegis ixs to the signer's own policy.
+   * Gate a wallet-signed owner transaction before the backend relays it.
+   *
+   * Two things have to hold. The instructions must belong to the small set the
+   * owner-action builder emits (Aegis, ATA CreateIdempotent) plus the
+   * ComputeBudget priority-fee instructions wallets legitimately append —
+   * otherwise the backend is an open relay. And the transaction must be the
+   * draft Praxis itself built ({@link assertMatchesOwnerDraft}), which is what
+   * keeps the server-side preconditions in `ownerActionInstructions` from being
+   * optional. On-chain `has_one = owner` remains the enforcement of record.
    */
   private assertSubmittableOwnerTransaction(
     raw: Buffer,
     input: UnsignedOwnerTransaction,
-    expectedFeePayer?: PublicKey,
+    expectedFeePayer: PublicKey,
   ): void {
     let tx: Transaction;
     try {
@@ -991,14 +1000,10 @@ export class AegisClient {
       );
     }
 
-    if (expectedFeePayer) {
-      if (!tx.feePayer?.equals(expectedFeePayer)) {
-        throw new PraxisInputError("Signed owner transaction fee payer does not match the authenticated wallet.");
-      }
-      if (tx.recentBlockhash !== input.blockhash) {
-        throw new PraxisInputError("Signed owner transaction blockhash does not match the unsigned draft.");
-      }
+    if (!tx.feePayer?.equals(expectedFeePayer)) {
+      throw new PraxisInputError("Signed owner transaction fee payer does not match the authenticated wallet.");
     }
+    assertMatchesOwnerDraft(input.draft, tx, expectedFeePayer);
   }
 
   private async sendOwnerAction(action: OwnerAction): Promise<string> {
@@ -1257,7 +1262,18 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+/**
+ * The Anchor error code behind a failure, from the structured error when there
+ * is one and from the program logs when there is not.
+ *
+ * Only ever called on a failure: scanning the logs of a SUCCESSFUL transaction
+ * would let any string a program happened to log ("Error Number: 6003") be
+ * reported to the owner as an Aegis rejection of a transfer that in fact
+ * landed.
+ */
 function extractCustomErrorCode(errorLike: unknown, logs: string[] = []): number | undefined {
+  if (errorLike === null || errorLike === undefined) return undefined;
+
   const fromObject = findCustomCode(errorLike);
   if (fromObject !== undefined) return fromObject;
 

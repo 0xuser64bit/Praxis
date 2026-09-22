@@ -342,9 +342,17 @@ describe("mutations", () => {
       transaction: "b64tx",
       blockhash: "hash",
       lastValidBlockHeight: 123,
+      draft: "draft.sig",
     });
     expect(res.sig).toBe("5xSig");
-    expect(calls[0].body).toEqual({ transaction: "b64tx", blockhash: "hash", lastValidBlockHeight: 123 });
+    // The draft token has to ride along verbatim — the relay refuses a
+    // submission it cannot match to a transaction it built.
+    expect(calls[0].body).toEqual({
+      transaction: "b64tx",
+      blockhash: "hash",
+      lastValidBlockHeight: 123,
+      draft: "draft.sig",
+    });
   });
 
   test("logout posts DELETE and forgets the cookie", async () => {

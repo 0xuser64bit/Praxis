@@ -279,6 +279,13 @@ export interface ActivityEntry {
   kind: "transfer" | "swap";
   /** Target label — recipient name or "USDC → JUP". */
   label: string;
+  /**
+   * Destination address for a transfer. Carried alongside the label because
+   * the label is a lookup that can change (a contact renamed, removed, or
+   * never saved) while the identity of the action cannot — it is what matches
+   * a locally-recorded row to the on-chain record of the same transfer.
+   */
+  target?: Address;
   /** Primary asset symbol ("SOL"). */
   asset: string;
   /** Amount in base units of `asset`. */

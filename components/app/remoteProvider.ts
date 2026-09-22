@@ -39,6 +39,8 @@ interface OwnerActionDraft {
   transaction: string;
   blockhash: string;
   lastValidBlockHeight: number;
+  /** Backend-signed fingerprint of the draft; echoed back verbatim on submit. */
+  draft: string;
 }
 
 interface RemoteStoreState {
@@ -371,6 +373,7 @@ export class RemotePraxisProvider implements PraxisProvider {
         transaction,
         blockhash: draft.blockhash,
         lastValidBlockHeight: draft.lastValidBlockHeight,
+        draft: draft.draft,
       }),
     );
   }

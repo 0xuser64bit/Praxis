@@ -288,17 +288,32 @@ export class PraxisServerProvider implements PraxisProvider {
     return policy;
   }
 
+  /**
+   * Merge the on-chain audit log into the local activity feed.
+   *
+   * Two identity problems used to produce duplicate rows on every refresh.
+   * The log is a ring buffer, so an entry's ARRAY INDEX shifts each time a new
+   * action lands — keying rows on it minted a fresh id for the same action
+   * over and over. And a confirmed transfer is recorded twice: once locally at
+   * sign time (which is where the transaction signature lives) and once
+   * on-chain (which is the durable record). The on-chain `seq` fixes the
+   * first; matching the two records of one transfer fixes the second, with the
+   * chain row keeping the local row's signature.
+   */
   async refreshActivity(): Promise<ActivityEntry[]> {
     const logs = await this.aegis.getActionLog();
-    const onChain = logs.map((entry, index): ActivityEntry => {
+    const local = [...this.state.activity];
+    const onChain = logs.map((entry): ActivityEntry => {
       const isSpl = entry.kind === ActionKind.TransferSpl;
       const tokenAsset = isSpl ? this.tokenForMint(entry.mint) : undefined;
+      const claimed = takeMatchingLocalRow(local, entry.target, entry.amount, entry.ts);
       return {
-        id: `chain-${entry.sig ?? entry.ts}-${index}`,
+        id: `chain-${entry.seq}`,
         // Both native and SPL transfers render as a transfer row; the asset
         // distinguishes them, and the on-chain record carries historical mint.
         kind: "transfer",
         label: this.destinationLabel(entry.target),
+        target: entry.target,
         asset: isSpl ? tokenAsset?.symbol ?? "TOKEN" : "SOL",
         amount: entry.amount,
         decimals: isSpl ? tokenAsset?.decimals ?? SOL_DECIMALS : SOL_DECIMALS,
@@ -306,13 +321,12 @@ export class PraxisServerProvider implements PraxisProvider {
         reason: entry.reason,
         reasonCode: entry.reasonCode,
         ts: entry.ts,
-        sig: entry.sig,
+        sig: claimed?.sig,
       };
     });
+
     const keyed = new Map<string, ActivityEntry>();
-    for (const entry of [...this.state.activity, ...onChain]) {
-      keyed.set(entry.sig ?? entry.id, entry);
-    }
+    for (const entry of [...local, ...onChain]) keyed.set(entry.id, entry);
     this.state.activity = [...keyed.values()].sort((a, b) => b.ts - a.ts);
     return this.state.activity;
   }
@@ -448,6 +462,7 @@ export class PraxisServerProvider implements PraxisProvider {
           id: this.id("a"),
           kind: "transfer",
           label: this.destinationLabel(proposal.detail.recipientAddress, proposal.detail.recipientName),
+          target: proposal.detail.recipientAddress,
           asset: asset.symbol,
           amount: proposal.detail.amount,
           decimals: asset.decimals,
@@ -626,7 +641,7 @@ export class PraxisServerProvider implements PraxisProvider {
   /** Submit a wallet-signed owner transaction, then refresh on-chain state. */
   submitOwnerAction = async (input: UnsignedOwnerTransaction): Promise<{ sig: string }> => {
     const owner = this.requireOwnerWallet();
-    const sig = await this.aegis.submitSignedTransaction(input, { expectedFeePayer: owner });
+    const sig = await this.aegis.submitSignedTransaction(input, owner);
     try {
       await this.refreshOnChain();
     } catch (error) {
@@ -1077,6 +1092,7 @@ export class PraxisServerProvider implements PraxisProvider {
           id: this.id("a"),
           kind: "transfer",
           label: this.destinationLabel(args.recipientAddress, args.recipientName),
+          target: args.recipientAddress,
           asset: args.token.symbol,
           amount: args.amount,
           decimals: args.token.decimals,
@@ -1851,6 +1867,36 @@ function welcomeThread(ts: number): Thread {
 
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
+}
+
+/**
+ * How far apart the two clocks that time one transfer may be: the backend's
+ * `Date.now()` when the proposal was signed, and the validator's clock when
+ * the action was recorded.
+ */
+const ACTIVITY_MATCH_WINDOW_SECONDS = 300;
+
+/**
+ * Remove and return the locally-recorded row for an on-chain action, if there
+ * is one. Destructive so two identical transfers claim two distinct rows
+ * rather than both matching the first.
+ */
+function takeMatchingLocalRow(
+  local: ActivityEntry[],
+  target: string,
+  amount: bigint,
+  ts: number,
+): ActivityEntry | undefined {
+  const index = local.findIndex(
+    (row) =>
+      row.result === "allowed"
+      && row.kind === "transfer"
+      && row.target === target
+      && row.amount === amount
+      && Math.abs(row.ts - ts) <= ACTIVITY_MATCH_WINDOW_SECONDS,
+  );
+  if (index === -1) return undefined;
+  return local.splice(index, 1)[0];
 }
 
 /** What to ask when the parser came back missing a field. */

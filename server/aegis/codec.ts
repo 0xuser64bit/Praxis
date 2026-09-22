@@ -116,7 +116,7 @@ function readTokenEnvelope(c: Cursor): {
   };
 }
 
-function decodeRecord(c: Cursor): ActionLogEntry {
+function decodeRecord(c: Cursor, seq: number): ActionLogEntry {
   const kind = c.u8();
   const amount = c.u64();
   const target = c.pubkey();
@@ -126,6 +126,7 @@ function decodeRecord(c: Cursor): ActionLogEntry {
   const ts = c.i64();
 
   return {
+    seq,
     kind: decodeKind(kind),
     amount,
     target,
@@ -149,17 +150,19 @@ export function decodeActionLog(data: Buffer): ActionLogEntry[] {
   c.pubkey(); // policy
   const head = c.u16();
   const count = c.u16();
-  c.u64(); // total
+  const total = c.u64();
 
   const ring: ActionLogEntry[] = [];
-  for (let i = 0; i < ACTION_LOG_CAP; i++) ring.push(decodeRecord(c));
+  for (let i = 0; i < ACTION_LOG_CAP; i++) ring.push(decodeRecord(c, 0));
   c.u8(); // bump
 
+  // Newest first. `total` counts every action ever recorded, so the newest
+  // live entry sits at `total - 1` — a stable identity the ring index is not.
   const out: ActionLogEntry[] = [];
   const cappedCount = Math.min(count, ACTION_LOG_CAP);
   for (let i = 0; i < cappedCount; i++) {
     const idx = (head + ACTION_LOG_CAP - 1 - i) % ACTION_LOG_CAP;
-    out.push(ring[idx]);
+    out.push({ ...ring[idx], seq: Number(total) - 1 - i });
   }
   return out;
 }

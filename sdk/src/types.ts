@@ -226,6 +226,8 @@ export interface ActivityEntry {
   id: string;
   kind: "transfer" | "swap";
   label: string;
+  /** Destination address for a transfer. Stable where `label` is a lookup. */
+  target?: Address;
   asset: string;
   amount: BaseUnitString;
   decimals: number;
@@ -270,6 +272,13 @@ export interface UnsignedOwnerTransaction {
   transaction: string;
   blockhash: string;
   lastValidBlockHeight: number;
+  /**
+   * Opaque, backend-signed fingerprint of this draft. Echo it back verbatim in
+   * {@link SignedOwnerTransaction}: the relay refuses any transaction that is
+   * not the one Praxis built, which is what keeps the server-side checks for
+   * this action from being skippable.
+   */
+  draft: string;
 }
 
 /**

@@ -10,6 +10,7 @@ import { requireSession, type PraxisSession } from "../auth/session";
 import {
   PraxisAuthError,
   PraxisConfigError,
+  PraxisConflictError,
   PraxisError,
   PraxisInputError,
   PraxisNotFoundError,
@@ -38,7 +39,9 @@ export function jsonError(error: unknown, init: ResponseInit = {}): Response {
         ? 404
         : error instanceof PraxisRateLimitError
           ? 429
-          : 500;
+          : error instanceof PraxisConflictError
+            ? 409
+            : 500;
 
   // Unexpected (5xx) failures are reported for alerting; expected 4xx client
   // errors are not, to keep the signal clean. 503s are config problems worth a
@@ -375,6 +378,7 @@ export function readUnsignedOwnerTransaction(value: Record<string, unknown>): Un
     transaction: readString(value.transaction, "transaction", { maxLength: 8_192 }),
     blockhash: readString(value.blockhash, "blockhash", { maxLength: 128 }),
     lastValidBlockHeight: readNonNegativeNumber(value.lastValidBlockHeight, "lastValidBlockHeight"),
+    draft: readString(value.draft, "draft", { maxLength: 1_024 }),
   };
 }
 

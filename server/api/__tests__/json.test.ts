@@ -205,16 +205,20 @@ describe("readOwnerAction", () => {
 });
 
 describe("readUnsignedOwnerTransaction", () => {
-  test("requires transaction, blockhash, and a numeric lastValidBlockHeight", () => {
-    expect(
-      readUnsignedOwnerTransaction({ transaction: "AQID", blockhash: "abc", lastValidBlockHeight: 99 }),
-    ).toEqual({ transaction: "AQID", blockhash: "abc", lastValidBlockHeight: 99 });
-    expect(() => readUnsignedOwnerTransaction({ transaction: "AQID", blockhash: "abc" })).toThrow();
+  const base = { transaction: "AQID", blockhash: "abc", lastValidBlockHeight: 99, draft: "d.sig" };
+
+  test("requires transaction, blockhash, lastValidBlockHeight and the draft token", () => {
+    expect(readUnsignedOwnerTransaction({ ...base })).toEqual(base);
+    expect(() => readUnsignedOwnerTransaction({ ...base, lastValidBlockHeight: undefined })).toThrow();
+    // The draft token is what binds the submission to what the backend built,
+    // so a submit without one is rejected at the edge rather than deep in the
+    // relay gate.
+    expect(() => readUnsignedOwnerTransaction({ ...base, draft: undefined })).toThrow(/draft/);
     expect(() =>
-      readUnsignedOwnerTransaction({ transaction: "AQID", blockhash: "abc", lastValidBlockHeight: 1.5 }),
+      readUnsignedOwnerTransaction({ ...base, lastValidBlockHeight: 1.5 }),
     ).toThrow(/safe integer/);
     expect(() =>
-      readUnsignedOwnerTransaction({ transaction: "AQID", blockhash: "abc", lastValidBlockHeight: -1 }),
+      readUnsignedOwnerTransaction({ ...base, lastValidBlockHeight: -1 }),
     ).toThrow(/non-negative/);
   });
 });

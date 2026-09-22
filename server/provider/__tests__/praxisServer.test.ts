@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { Keypair } from "@solana/web3.js";
-import type { PolicyView } from "@praxis/shared";
+import { ActionKind, type ActionLogEntry, type PolicyView } from "@praxis/shared";
 
 import { PraxisServerProvider } from "../praxisServer";
 import type { AegisClient, TransferExecution, TransferSimulation } from "../../aegis/client";
@@ -59,8 +59,9 @@ class FakeAegis {
   async getPolicy() {
     return this.policy;
   }
+  actionLog: ActionLogEntry[] = [];
   async getActionLog() {
-    return [];
+    return this.actionLog;
   }
   async simulateAgentTransfer() {
     this.calls.push("simulateAgentTransfer");
@@ -413,5 +414,53 @@ describe("transfer with no destination at all", () => {
     expect(blocks.blocks.some((b) => b.type === "clarify")).toBe(true);
     expect(blocks.blocks.some((b) => b.type === "proposal")).toBe(false);
     expect(fake.calls).not.toContain("simulateAgentTransfer");
+  });
+});
+
+describe("activity feed identity", () => {
+  function chainEntry(seq: number, over: Partial<ActionLogEntry> = {}): ActionLogEntry {
+    return {
+      seq,
+      kind: ActionKind.Transfer,
+      amount: 500_000_000n,
+      target: MAYA,
+      result: "allowed",
+      ts: Math.floor(Date.now() / 1000),
+      ...over,
+    };
+  }
+
+  test("a repeated refresh does not duplicate on-chain rows as the ring rotates", async () => {
+    const { provider, fake } = build();
+    fake.actionLog = [chainEntry(0)];
+    await provider.refreshActivity();
+    // A newer action lands: every earlier entry's ARRAY INDEX shifts by one.
+    // Its identity must not.
+    fake.actionLog = [chainEntry(1, { amount: 1n }), chainEntry(0)];
+    await provider.refreshActivity();
+    await provider.refreshActivity();
+
+    const ids = provider.getActivity().map((entry) => entry.id);
+    expect(ids).toEqual([...new Set(ids)]);
+    expect(ids.filter((id) => id.startsWith("chain-")).length).toBe(2);
+  });
+
+  test("a signed transfer appears once, with its signature, not twice", async () => {
+    const { provider, fake } = build();
+    const { threadId } = await provider.send(null, "send 0.5 SOL to maya");
+    const blocks = (provider.getThread(threadId)!.messages.at(-1) as {
+      blocks: Array<{ type: string; proposalId?: string }>;
+    }).blocks;
+    const proposalId = blocks.find((b) => b.type === "proposal")!.proposalId!;
+    await provider.signProposal(proposalId);
+
+    // The same transfer, now recorded on-chain.
+    fake.actionLog = [chainEntry(0)];
+    await provider.refreshActivity();
+
+    const transfers = provider.getActivity().filter((entry) => entry.result === "allowed");
+    expect(transfers).toHaveLength(1);
+    expect(transfers[0].sig).toBe("sig-confirmed");
+    expect(transfers[0].id).toBe("chain-0");
   });
 });

@@ -149,6 +149,13 @@ export interface PolicyCheckResult {
 // ---------------------------------------------------------------------------
 
 export interface ActionLogEntry {
+  /**
+   * Absolute position in the log's monotonic counter — `total - 1` for the
+   * newest entry. The ring buffer overwrites in place, so an entry's INDEX
+   * shifts every time a new action lands; this does not, which is what lets
+   * off-chain activity identify the same on-chain action across refreshes.
+   */
+  seq: number;
   kind: ActionKind;
   amount: BaseUnits;
   target: Address;

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 /** A small mono pill (matches the landing's balance/status chips). */
 export function Pill({
@@ -69,36 +69,6 @@ export function Label({
     >
       {children}
     </div>
-  );
-}
-
-/** A ghost icon button. */
-export function IconButton({
-  children,
-  className = "",
-  ...rest
-}: ComponentPropsWithoutRef<"button">) {
-  return (
-    <button
-      type="button"
-      className={`flex cursor-pointer items-center justify-center rounded-md text-[var(--text-tertiary)] [transition:color_0.15s,background_0.15s] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] ${className}`}
-      {...rest}
-    >
-      {children}
-    </button>
-  );
-}
-
-/** A simple mono caption row. */
-export function Mono({
-  children,
-  className = "",
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <span className={`[font-family:var(--font-mono)] ${className}`}>{children}</span>
   );
 }
 

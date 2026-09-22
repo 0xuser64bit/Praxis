@@ -146,11 +146,6 @@ export function readString(value: unknown, name: string, opts: { maxLength?: num
   return trimmed;
 }
 
-export function readNullableString(value: unknown, name: string, opts: { maxLength?: number } = {}): string | null {
-  if (value === null || value === undefined) return null;
-  return readString(value, name, opts);
-}
-
 /** Nullable variant of {@link readId} for optional thread references. */
 export function readNullableId(value: unknown, name: string): string | null {
   if (value === null || value === undefined) return null;

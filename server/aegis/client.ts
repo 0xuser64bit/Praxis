@@ -176,11 +176,6 @@ export function getResearchConnection(config = getServerConfig()): Connection {
   return researchConnection;
 }
 
-/** Test seam: drop cached connections (e.g. after env change in tests). */
-export function resetConnectionsForTests() {
-  connections.clear();
-}
-
 export class AegisClient {
   private cachedAgentSigner?: AgentSigner;
 

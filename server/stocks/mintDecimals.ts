@@ -176,7 +176,7 @@ const MAX_ACCOUNTS_PER_REQUEST = 100;
  * way, and it keeps this function honest against callers that only implement
  * `getAccountInfo`.
  */
-export async function lookupMints(
+async function lookupMints(
   connection: Connection,
   mints: string[],
 ): Promise<Map<string, MintLookup>> {

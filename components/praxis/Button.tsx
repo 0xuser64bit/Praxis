@@ -1,7 +1,7 @@
 import type { ComponentPropsWithoutRef, ElementType, ReactNode } from "react";
 
 type ButtonOwnProps = {
-  variant?: "primary" | "default";
+  variant?: "primary" | "default" | "danger";
   size?: "sm" | "default";
   className?: string;
   children: ReactNode;
@@ -31,7 +31,9 @@ export function Button<E extends ElementType = "button">({
   const variantClasses =
     variant === "primary"
       ? "[border:0.5px_solid_var(--text-primary)] bg-[var(--text-primary)] text-[var(--bg)] hover:[border-color:var(--accent)] hover:bg-[var(--accent)]"
-      : "[border:0.5px_solid_var(--border-strong)] bg-transparent text-[var(--text-primary)] hover:[border-color:var(--border-bright)] hover:bg-[var(--bg-elevated)]";
+      : variant === "danger"
+        ? "[border:0.5px_solid_transparent] bg-[var(--danger)] text-white"
+        : "[border:0.5px_solid_var(--border-strong)] bg-transparent text-[var(--text-primary)] hover:[border-color:var(--border-bright)] hover:bg-[var(--bg-elevated)]";
 
   const classes = [base, sizeClasses, variantClasses, className]
     .filter(Boolean)

@@ -34,6 +34,7 @@ export function Nav() {
 
   return (
     <nav
+      aria-label="Primary"
       className={`fixed top-0 right-0 left-0 z-[100] border-b-[0.5px] backdrop-blur-[20px] [transition:border-color_0.3s_ease,background_0.3s_ease] ${navBg} ${navBorder}`}
     >
       <div className="mx-auto flex max-w-[1240px] items-center justify-between px-8 py-4">

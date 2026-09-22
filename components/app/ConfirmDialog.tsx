@@ -100,18 +100,17 @@ export function ConfirmDialog({
           >
             {cancelLabel}
           </Button>
-          <button
-            type="button"
+          <Button
+            variant="danger"
+            className="flex-1 justify-center py-[11px]"
             disabled={busy}
             onClick={onConfirm}
-            className="flex flex-1 items-center justify-center gap-2 rounded-lg py-[11px] text-[14px] font-medium text-white [transition:opacity_0.15s] disabled:cursor-not-allowed disabled:opacity-60"
-            style={{ background: "var(--danger)" }}
           >
             {busy && (
               <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
             )}
             {busy ? (busyLabel ?? confirmLabel) : confirmLabel}
-          </button>
+          </Button>
         </div>
 
         {error && (

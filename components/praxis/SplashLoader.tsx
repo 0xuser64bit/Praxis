@@ -17,6 +17,11 @@ export function SplashLoader() {
   const [phase, setPhase] = useState<"visible" | "exiting" | "done">("visible");
 
   useEffect(() => {
+    // Reduced-motion users get the page immediately — no 2.2s brand hold.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const skip = setTimeout(() => setPhase("done"), 0);
+      return () => clearTimeout(skip);
+    }
     // Hold the splash for a minimum duration, then begin exit
     const hold = setTimeout(() => setPhase("exiting"), 2200);
     return () => clearTimeout(hold);

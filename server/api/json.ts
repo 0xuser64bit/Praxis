@@ -19,8 +19,6 @@ import {
 } from "../errors";
 import { assertRateLimit } from "./rateLimit";
 
-export const routeRuntime = "nodejs";
-export const routeDynamic = "force-dynamic";
 const U64_MAX = 2n ** 64n - 1n;
 const MAX_JSON_BODY_BYTES = 64 * 1024;
 

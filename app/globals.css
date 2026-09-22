@@ -379,3 +379,14 @@ textarea:disabled,
     opacity: 0.5;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-glow,
+  .splash-content,
+  .splash-line {
+    animation: none;
+  }
+  .splash-loader {
+    transition: none;
+  }
+}

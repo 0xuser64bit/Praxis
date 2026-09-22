@@ -18,7 +18,7 @@ export function Verdict({
   allowed: boolean;
   /** Headroom line when allowed; the on-chain reason when not. */
   detail: ReactNode;
-  /** `{ spent, amount, daily }` as fractions of the daily cap, 0–1. */
+  /** `{ spent, amount }` as fractions of the daily cap, 0–1. */
   meter?: { spent: number; amount: number };
   /** The Aegis `RejectReason` label, shown verbatim when rejected. */
   reasonCode?: string;

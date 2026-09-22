@@ -1,7 +1,7 @@
 import { IconArrowRight } from "@tabler/icons-react";
 
 import { Button } from "@/components/praxis/Button";
-import { ContainerNarrow } from "@/components/praxis/ContainerNarrow";
+import { Container } from "@/components/praxis/Container";
 import { Eyebrow } from "@/components/praxis/Eyebrow";
 
 export function FinalCTA() {
@@ -11,7 +11,7 @@ export function FinalCTA() {
         aria-hidden
         className="pointer-events-none absolute top-1/2 left-1/2 z-0 h-[600px] w-[800px] -translate-x-1/2 -translate-y-1/2 [background:radial-gradient(ellipse_at_center,rgba(201,160,93,0.08),transparent_60%)]"
       />
-      <ContainerNarrow className="relative z-10">
+      <Container narrow className="relative z-10">
         <Eyebrow accent className="mb-6 block">
           — Live on devnet
         </Eyebrow>
@@ -34,7 +34,7 @@ export function FinalCTA() {
             Read the principles
           </Button>
         </div>
-      </ContainerNarrow>
+      </Container>
     </section>
   );
 }

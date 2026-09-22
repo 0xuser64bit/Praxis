@@ -1,4 +1,4 @@
-import { ContainerNarrow } from "@/components/praxis/ContainerNarrow";
+import { Container } from "@/components/praxis/Container";
 import { Eyebrow } from "@/components/praxis/Eyebrow";
 
 type Principle = {
@@ -38,7 +38,7 @@ const PRINCIPLES: Principle[] = [
 export function Principles() {
   return (
     <section id="principles" className="py-[140px] max-[960px]:py-[100px]">
-      <ContainerNarrow>
+      <Container narrow>
         <div className="mb-20 max-w-[720px]">
           <Eyebrow accent className="mb-5 block">
             — 05 / Principles
@@ -76,7 +76,7 @@ export function Principles() {
             </div>
           ))}
         </div>
-      </ContainerNarrow>
+      </Container>
     </section>
   );
 }

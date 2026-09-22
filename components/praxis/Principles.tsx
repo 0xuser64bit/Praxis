@@ -38,7 +38,7 @@ const PRINCIPLES: Principle[] = [
 export function Principles() {
   return (
     <section id="principles" className="py-[140px] max-[960px]:py-[100px]">
-      <Container narrow>
+      <Container>
         <div className="mb-20 max-w-[720px]">
           <Eyebrow accent className="mb-5 block">
             — 05 / Principles

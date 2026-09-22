@@ -23,13 +23,16 @@ policy, not by the quality of a prompt.
 ## How it works
 
 1. You enter text in the conversation surface.
-2. The agent parses it into a typed action (Google Gemini, or a local
-   deterministic parser for $0 demos).
+2. The agent parses it into a typed action (Gemini, then Groq, then a local
+   deterministic parser for $0 demos — free-tier quotas are per-provider, so
+   the second one is what keeps parsing working after the first runs out).
 3. Recipient names resolve through an off-chain address book.
 4. The action is simulated and checked against the policy, producing a proposal
    card with the fee, the simulation result, and the Aegis verdict.
 5. On confirm, the backend signs an Aegis instruction with the **scoped agent
-   key** and submits it.
+   key** and submits it. A proposal stays signable for 24 hours — everything on
+   the card is a reading taken when it was produced, and the chain cannot tell
+   whether you authorized that card or one from last month.
 6. Aegis enforces the policy *on-chain* — signer, pause, expiry, per-transaction
    cap, rolling daily cap, recipient allow-list, and (for SPL) the configured
    mint and token envelope — before value moves.
@@ -96,7 +99,7 @@ Token-2022 (`TransferChecked`). The full path is asserted, not screenshotted:
 ```bash
 PRAXIS_STOCKS_ENABLED=1 bun run dev   # 8 PreStocks symbols, switcher in Policy → SPL
 bun run praxis:stocksgate             # offline honesty gate (CI-grade, no network)
-bun run aegis:test                    # LiteSVM T1–T8, incl. the Token-2022 envelope
+bun run aegis:test                    # LiteSVM T1–T9, incl. the Token-2022 envelope
 bun run praxis:stocksbuycheck         # live cluster: buy lands, over-cap refused on-chain
 ```
 
@@ -178,7 +181,8 @@ signer, see **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 bun run lint
 bun run test       # auth/session, validation, state, Aegis codec, API routes — no network
 bun run build
-bun run aegis:test # rebuild the Anchor program + run the LiteSVM enforcement gate
+bun run aegis:test # rebuild the Anchor program + run the LiteSVM enforcement gate (T1–T9)
+bun run aegis:idl  # rebuild and re-sync the generated IDL into @praxis/shared
 ```
 
 ## Layout

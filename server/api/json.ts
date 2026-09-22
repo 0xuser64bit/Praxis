@@ -78,18 +78,6 @@ export function jsonError(error: unknown, init: ResponseInit = {}): Response {
   return Response.json(body, { ...init, status, headers: withNoStore(init.headers) });
 }
 
-export async function withProvider<T>(
-  session: PraxisSession,
-  fn: (provider: PraxisServerProvider) => Promise<T> | T,
-): Promise<Response> {
-  try {
-    const provider = await getPraxisServerProvider(session.walletAddress);
-    return jsonOk(await fn(provider));
-  } catch (error) {
-    return jsonError(error);
-  }
-}
-
 export async function withReadProvider<T>(
   request: Request,
   fn: (provider: PraxisServerProvider, session: PraxisSession) => Promise<T> | T,

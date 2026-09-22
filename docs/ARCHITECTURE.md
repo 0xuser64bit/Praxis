@@ -1,6 +1,6 @@
 # Praxis Architecture
 
-Updated: 2026-09-19
+Updated: 2026-09-22
 
 Praxis has two parts:
 
@@ -33,7 +33,10 @@ enforces the spending envelope.
 - Derives the live policy PDA from the signed-in wallet address.
 - Persists off-chain threads, proposals, and activity through the configured
   state repository (`postgres` for production, `fs` for local/devnet).
-- Parses intent with the Google Gemini API or the local deterministic parser.
+- Parses intent with the configured LLM providers in order (`PRAXIS_INTENT_PROVIDERS`,
+  Gemini then Groq by default), falling back to the local deterministic parser.
+  Free-tier quotas are per-provider, so a second name there is what keeps a
+  parse working after the first runs out for the day.
 - Resolves address-book labels off-chain.
 - Simulates through `AegisClient`.
 - Signs agent actions with the configured scoped agent key.
@@ -63,6 +66,15 @@ just within one process — previously two instances could each read the same
 `pending` proposal and both submit an `agent_transfer` (bounded by the Aegis
 caps, but two real transfers).
 
+Schedule firing claims the same way, and claims *first*: a due schedule's
+`nextFireTs` is advanced and CAS-written before any proposal is built. The
+scheduled-buy job fans out across wallets and the same endpoint is reachable
+from a signed-in session, so two callers could otherwise both read a schedule
+as due, both emit a card, and the loser's write revert the winner's advance —
+leaving it due again next tick. Claiming first makes a fire at-most-once: a
+crash between the claim and the card misses a fire, which for money is the
+right direction to fail.
+
 For the conversational document (threads, activity, contacts) a conflict
 resolves as a deliberate, logged last-write-wins: reload the newer revision and
 rewrite. Wallet challenge nonces are claimed through a shared nonce store (`SET NX EX`
@@ -80,6 +92,12 @@ degraded to per-instance nonces.
 4. The provider builds a proposal with simulation, fee, and policy verdict.
 5. The UI renders the proposal card.
 6. On confirm, API mode signs an Aegis instruction with the scoped agent key.
+   A proposal is signable for 24 hours. Everything on the card — fee,
+   simulated outcome, remaining envelope, the USD figure on a stock buy — is a
+   reading taken when it was produced, and Aegis has no way to tell whether
+   the person authorized the card in front of them or one from last month.
+   This is a freshness contract, deliberately not a second copy of the policy
+   check.
 7. Aegis enforces the policy on-chain before any value leaves the vault.
 8. Policy and activity are refreshed into the UI.
 9. Threads, proposals, and off-chain rejected activity are persisted by wallet.
@@ -109,6 +127,16 @@ Both value paths enforce:
 4. value is within per-transaction cap
 5. rolling daily cap is not exceeded
 6. recipient allow-list, when non-empty
+
+and refuse a zero amount outright — it moved nothing, paid a fee, and wrote an
+audit-log row saying an action happened.
+
+The vault is a data-less system PDA, so the runtime rejects any transaction
+that leaves it funded below the rent-exempt minimum. "The vault holds N" is
+therefore not "N is spendable": the agent may only spend above the reserve and
+can never deallocate the vault, while the owner may either leave it rent-exempt
+or sweep it to zero. Measuring against `lamports()` instead produced an opaque
+`InsufficientFundsForRent` where a typed Aegis error belongs.
 
 The SPL path also enforces:
 
@@ -166,7 +194,7 @@ Trusted:
 Not trusted for enforcement:
 
 - Prompt text.
-- LLM output (Gemini or the deterministic parser).
+- LLM output (Gemini, Groq, or the deterministic parser).
 - Mock parser.
 - Server policy mirror.
 - Frontend UI state.
@@ -174,6 +202,39 @@ Not trusted for enforcement:
 
 The off-chain policy mirrors exist for explainability and simulation previews.
 They are not the source of truth for value movement.
+
+Not trusted as *data* either — bounded and normalized at the seam
+(`server/agent/untrusted.ts`) before reaching any surface:
+
+- Market-indexer fields. A token's `symbol` and `name` are chosen by whoever
+  minted it, which is anyone. React escapes markup, so this is not about XSS:
+  it is a 4KB "ticker" that destroys the card it lands on, and bidi overrides
+  and zero-width marks that let a value rewrite the line it sits in. Addresses
+  from an indexer are validated as real keys at the same point, rather than
+  carried as identifiers until something downstream happens to parse one.
+- PreStocks quote fields, including an http(s) check on the URL the research
+  summary quotes into its own sentence.
+- LLM output, which is bounded in both field length and action count — each
+  action costs a simulation, RPC round-trips, and a card to read.
+
+Research informs; it never authorizes. Conversation history is not replayed to
+the model — each turn sends only the current line — so text an indexer returns
+cannot steer a later parse.
+
+**The owner relay.** `/owner/build` returns an unsigned transaction plus a
+backend-signed fingerprint of it; `/owner/submit` refuses anything that is not
+that transaction, signed by the session's wallet. Without that binding the
+program allow-list was the only real check, and the server-side preconditions
+attached to an action — the "your vault still holds tokens" refusal on close,
+the movable-mint check on configure — were skippable by assembling your own
+bytes. On-chain `has_one = owner` remains the enforcement of record; this is
+what makes the layer above it coherent.
+
+**The session is a spending credential.** Praxis signs agent transfers with its
+own scoped key, so holding a valid session is enough to move value *within* the
+envelope with no further wallet signature. It is therefore short-lived
+(`PRAXIS_SESSION_TTL_HOURS`, default 24) and bound to the connected wallet
+account: switching accounts in the extension, or disconnecting, ends it.
 
 ## Current Production Gaps
 
@@ -186,8 +247,11 @@ They are not the source of truth for value movement.
   `PRAXIS_RATE_LIMITER=redis` plus platform/WAF controls.
 - Without Redis configured, nonce single-use is per instance only — multi-
   instance deployments should set `REDIS_URL` (or Upstash credentials).
-- The remote signer service has no rate limit; a leaked `SIGNER_TOKEN` allows
-  unbounded signing (mitigated by the single-transfer policy gate).
+- The remote signer enforces a per-process signature ceiling and logs every
+  outcome; those lines are the only record of what the agent key signed, and
+  shipping them somewhere durable is the operator's job.
+- Rate limits degrade to a process-local limiter when the shared store is
+  unavailable, which is weaker than shared state across instances.
 - No durable rejected-transaction indexer for failures that happen outside the
   app process.
 - The scheduled-buy job walks every wallet in one tick (bounded at 500). Past
@@ -200,7 +264,8 @@ They are not the source of truth for value movement.
 bun run lint          # eslint
 bun run test          # TypeScript suite: auth, validation, state, Aegis codec, routes
 bun run build         # production Next.js build
-bun run aegis:test    # rebuild the Anchor program + LiteSVM enforcement gate (T1–T8)
+bun run aegis:test    # rebuild the Anchor program + LiteSVM enforcement gate (T1–T9)
+bun run aegis:idl     # rebuild and re-sync the generated IDL into @praxis/shared
 ```
 
 Demo / scripted checks against a funded cluster:

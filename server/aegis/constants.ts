@@ -83,6 +83,14 @@ export const AEGIS_ERROR_CODE_TO_REASON: Record<number, RejectReason> = {
   [ANCHOR_ERROR_OFFSET + 13]: AegisRejectReason.MintNotAllowed,
 };
 
+/**
+ * Aegis codes that are NOT policy verdicts — a misconfiguration or a broken
+ * precondition rather than "the envelope said no". Together with
+ * {@link AEGIS_ERROR_CODE_TO_REASON} these must cover every error the program
+ * declares, or a new on-chain error degrades to an unexplained
+ * "Simulation failed". `__tests__/constants.test.ts` asserts that coverage
+ * against the generated IDL.
+ */
 export const AEGIS_OPERATIONAL_ERROR: Record<number, string> = {
   [ANCHOR_ERROR_OFFSET + 7]: "too many allowed programs",
   [ANCHOR_ERROR_OFFSET + 8]: "too many allowed recipients",
@@ -92,7 +100,11 @@ export const AEGIS_OPERATIONAL_ERROR: Record<number, string> = {
   [ANCHOR_ERROR_OFFSET + 12]: "invalid agent authority",
   [ANCHOR_ERROR_OFFSET + 14]: "SPL token transfers are not configured for this policy",
   [ANCHOR_ERROR_OFFSET + 15]: "account is not a valid SPL token account for the configured mint",
+  [ANCHOR_ERROR_OFFSET + 16]: "amount must be greater than zero",
+  [ANCHOR_ERROR_OFFSET + 17]:
+    "the vault must be left either empty or rent-exempt (its rent reserve is not spendable)",
 };
+
 
 export function reasonFromAegisErrorCode(code: number): RejectReason | undefined {
   return AEGIS_ERROR_CODE_TO_REASON[code];

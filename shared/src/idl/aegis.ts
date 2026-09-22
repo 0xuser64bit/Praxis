@@ -1129,6 +1129,16 @@ export type Aegis = {
       "code": 6015,
       "name": "invalidTokenAccount",
       "msg": "Account is not a valid SPL token account for the configured mint"
+    },
+    {
+      "code": 6016,
+      "name": "zeroAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6017,
+      "name": "vaultRentExemption",
+      "msg": "The vault must be left either empty or rent-exempt"
     }
   ],
   "types": [

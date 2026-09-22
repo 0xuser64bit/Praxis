@@ -43,4 +43,10 @@ pub enum AegisError {
     SplNotConfigured, // 6014
     #[msg("Account is not a valid SPL token account for the configured mint")]
     InvalidTokenAccount, // 6015
+
+    // --- amount / vault invariants ---
+    #[msg("Amount must be greater than zero")]
+    ZeroAmount, // 6016
+    #[msg("The vault must be left either empty or rent-exempt")]
+    VaultRentExemption, // 6017
 }

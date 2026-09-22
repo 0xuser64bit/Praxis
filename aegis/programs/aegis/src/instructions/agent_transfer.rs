@@ -1,4 +1,4 @@
-use crate::{constants::*, error::*, events::*, state::*};
+use crate::{constants::*, error::*, events::*, state::*, vault::spendable_lamports};
 use anchor_lang::{
     prelude::*,
     system_program::{self, Transfer},
@@ -58,6 +58,8 @@ fn emit_rejected(policy: Pubkey, reason: RejectReason, amount: u64, target: Pubk
 }
 
 pub fn handler(ctx: Context<AgentTransfer>, amount: u64) -> Result<()> {
+    require!(amount > 0, AegisError::ZeroAmount);
+
     let now = Clock::get()?.unix_timestamp;
     let policy_key = ctx.accounts.policy.key();
     let target = ctx.accounts.recipient.key();
@@ -119,9 +121,11 @@ pub fn handler(ctx: Context<AgentTransfer>, amount: u64) -> Result<()> {
         return err!(AegisError::RecipientNotAllowed);
     }
 
-    // Operational (not a policy rejection): the vault must hold the funds.
+    // Operational (not a policy rejection): the vault must hold the funds ABOVE
+    // its rent reserve. The agent may never deallocate the vault, so the
+    // reserve is not part of its spendable balance.
     require!(
-        ctx.accounts.vault.lamports() >= amount,
+        spendable_lamports(ctx.accounts.vault.lamports())? >= amount,
         AegisError::InsufficientVaultBalance
     );
 

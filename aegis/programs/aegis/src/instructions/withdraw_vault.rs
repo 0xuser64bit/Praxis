@@ -1,4 +1,4 @@
-use crate::{constants::*, error::*, events::*, state::*};
+use crate::{constants::*, error::*, events::*, state::*, vault::assert_owner_debit_allowed};
 use anchor_lang::{
     prelude::*,
     system_program::{self, Transfer},
@@ -29,10 +29,10 @@ pub struct WithdrawVault<'info> {
 }
 
 pub fn handler(ctx: Context<WithdrawVault>, amount: u64) -> Result<()> {
-    require!(
-        ctx.accounts.vault.lamports() >= amount,
-        AegisError::InsufficientVaultBalance
-    );
+    require!(amount > 0, AegisError::ZeroAmount);
+    // The owner may sweep the vault to zero; a partial withdrawal has to leave
+    // the reserve behind (see `vault::assert_owner_debit_allowed`).
+    assert_owner_debit_allowed(ctx.accounts.vault.lamports(), amount)?;
 
     let policy_key = ctx.accounts.policy.key();
     let vault_bump = ctx.bumps.vault;

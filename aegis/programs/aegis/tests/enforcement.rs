@@ -226,6 +226,10 @@ impl Ctx {
     }
 
     fn fund(&mut self, amount: u64) {
+        expect_ok(&self.fund_result(amount), "fund_vault").unwrap();
+    }
+
+    fn fund_result(&mut self, amount: u64) -> TransactionResult {
         let ix = Instruction::new_with_bytes(
             aegis::ID,
             &aegis::instruction::FundVault { amount }.data(),
@@ -238,7 +242,7 @@ impl Ctx {
             .to_account_metas(None),
         );
         let owner = self.owner.insecure_clone();
-        expect_ok(&self.send(ix, &[&owner]), "fund_vault").unwrap();
+        self.send(ix, &[&owner])
     }
 
     fn agent_transfer(
@@ -1013,6 +1017,83 @@ fn t8_token_2022() -> Result<String, String> {
     ))
 }
 
+// --------------------------------------------------------------------------
+// T9 — Vault invariants: zero amounts are refused everywhere, and the vault's
+//      rent reserve is not spendable. Without this the runtime rejects the
+//      whole transaction with an opaque InsufficientFundsForRent instead of a
+//      typed Aegis error, and "the vault holds N" reads as "N is spendable".
+// --------------------------------------------------------------------------
+
+/// `Rent::minimum_balance(0)` — what a data-less system account must retain.
+const RENT_EXEMPT_ZERO_DATA: u64 = 890_880;
+
+fn t9_vault_invariants() -> Result<String, String> {
+    let t0 = 1_000_000i64;
+    let expiry = t0 + 10 * 86_400;
+    // Exactly the reserve plus one spendable SOL.
+    let mut c = Ctx::setup(
+        sol(2),
+        sol(5),
+        vec![],
+        expiry,
+        t0,
+        RENT_EXEMPT_ZERO_DATA + sol(1),
+    );
+    let agent = c.agent.insecure_clone();
+    let owner = c.owner.insecure_clone();
+    let recipient = Pubkey::new_unique();
+
+    let zero = ecode(AegisError::ZeroAmount);
+    expect_reject(&c.fund_result(0), zero, "ZeroAmount", "T9 zero fund")?;
+    expect_reject(&c.withdraw(0, &owner), zero, "ZeroAmount", "T9 zero withdraw")?;
+    expect_reject(
+        &c.agent_transfer(0, recipient, &agent),
+        zero,
+        "ZeroAmount",
+        "T9 zero agent transfer",
+    )?;
+
+    // One lamport past the spendable balance: the reserve is not the agent's.
+    expect_reject(
+        &c.agent_transfer(sol(1) + 1, recipient, &agent),
+        ecode(AegisError::InsufficientVaultBalance),
+        "InsufficientVaultBalance",
+        "T9 agent spending into the reserve",
+    )?;
+    // The boundary itself is allowed.
+    expect_ok(
+        &c.agent_transfer(sol(1), recipient, &agent),
+        "T9 agent spending down to the reserve",
+    )?;
+
+    // The owner may sweep the vault to empty, but not leave it rent-paying.
+    expect_reject(
+        &c.withdraw(RENT_EXEMPT_ZERO_DATA - 1, &owner),
+        ecode(AegisError::VaultRentExemption),
+        "VaultRentExemption",
+        "T9 partial withdraw leaving a rent-paying vault",
+    )?;
+    expect_ok(
+        &c.withdraw(RENT_EXEMPT_ZERO_DATA, &owner),
+        "T9 owner sweeping the vault",
+    )?;
+
+    // An empty vault cannot be re-funded below the reserve.
+    expect_reject(
+        &c.fund_result(1_000),
+        ecode(AegisError::VaultRentExemption),
+        "VaultRentExemption",
+        "T9 funding below the reserve",
+    )?;
+    expect_ok(&c.fund_result(RENT_EXEMPT_ZERO_DATA), "T9 funding at the reserve")?;
+
+    Ok(format!(
+        "zero amounts→Custom({zero}); reserve unspendable→Custom({}); rent-paying vault→Custom({})",
+        ecode(AegisError::InsufficientVaultBalance),
+        ecode(AegisError::VaultRentExemption),
+    ))
+}
+
 #[test]
 fn aegis_enforcement_gate() {
     let cases: Vec<(&str, &str, fn() -> Result<String, String>)> = vec![
@@ -1024,6 +1105,7 @@ fn aegis_enforcement_gate() {
         ("T6", "Admin invariants", t6_admin_invariants),
         ("T7", "SPL token envelope", t7_spl_token),
         ("T8", "Token-2022 envelope", t8_token_2022),
+        ("T9", "Vault invariants", t9_vault_invariants),
     ];
 
     let mut results: Vec<(&str, &str, bool, String)> = Vec::new();

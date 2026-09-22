@@ -1123,6 +1123,16 @@
       "code": 6015,
       "name": "InvalidTokenAccount",
       "msg": "Account is not a valid SPL token account for the configured mint"
+    },
+    {
+      "code": 6016,
+      "name": "ZeroAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6017,
+      "name": "VaultRentExemption",
+      "msg": "The vault must be left either empty or rent-exempt"
     }
   ],
   "types": [

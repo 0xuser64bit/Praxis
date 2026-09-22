@@ -9,9 +9,13 @@ use anchor_lang::{
 /// audit-log accounts — returning their rent to the owner. Irreversible; the
 /// owner can re-create a fresh policy afterward (same deterministic PDA).
 ///
-/// Phase 1 is SOL-only. A configured token envelope's vault token account is a
-/// separate account this instruction does not touch; the client refuses to
-/// close while a token balance remains so funds are never silently stranded.
+/// Phase 1 is SOL-only: a configured token envelope's vault token account is a
+/// separate account this instruction does not touch. Those tokens are NOT lost
+/// — the vault PDA is derived from the policy PDA, which is derived from the
+/// owner, so re-running `initialize_policy` for the same owner restores
+/// authority over the same token account. The client still refuses to close on
+/// a non-zero token balance, because "recoverable by re-initializing" is a poor
+/// thing to discover after the fact.
 #[derive(Accounts)]
 pub struct ClosePolicy<'info> {
     #[account(mut)]

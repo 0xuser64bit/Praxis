@@ -1,4 +1,4 @@
-use crate::{constants::*, error::*, events::*, state::*};
+use crate::{constants::*, error::*, events::*, state::*, vault::rent_reserve};
 use anchor_lang::{
     prelude::*,
     system_program::{self, Transfer},
@@ -30,6 +30,20 @@ pub struct FundVault<'info> {
 }
 
 pub fn handler(ctx: Context<FundVault>, amount: u64) -> Result<()> {
+    require!(amount > 0, AegisError::ZeroAmount);
+    // A first fund that lands below the rent-exempt minimum would be rejected
+    // by the runtime as a rent-paying account. Say so here, where the message
+    // names the actual problem.
+    require!(
+        ctx.accounts
+            .vault
+            .lamports()
+            .checked_add(amount)
+            .ok_or(error!(AegisError::MathOverflow))?
+            >= rent_reserve()?,
+        AegisError::VaultRentExemption
+    );
+
     let cpi = CpiContext::new(
         ctx.accounts.system_program.key(),
         Transfer {

@@ -168,6 +168,8 @@ fn read_mint_decimals(acct: &AccountInfo, token_program: &Pubkey) -> Result<u8> 
 }
 
 pub fn handler(ctx: Context<AgentTransferSpl>, amount: u64) -> Result<()> {
+    require!(amount > 0, AegisError::ZeroAmount);
+
     let now = Clock::get()?.unix_timestamp;
     let policy_key = ctx.accounts.policy.key();
 

@@ -103,7 +103,7 @@ export function Footer() {
               aria-hidden
               className="h-1.5 w-1.5 rounded-full bg-[var(--success)]"
             />
-            <span>Aegis T1–T8 passing</span>
+            <span>Aegis T1–T9 passing</span>
           </div>
         </div>
       </Container>

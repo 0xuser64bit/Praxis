@@ -12,8 +12,8 @@ type TrustItem = {
 /**
  * Four facts that can be checked, not four adjectives.
  *
- * The previous strip claimed "T1-T6" (the LiteSVM gate has covered T1–T8 since
- * Token-2022 landed), "Current scope: SOL" (the program has moved SPL and
+ * The previous strip claimed "T1-T6" (the LiteSVM gate has covered T1–T9 since
+ * Token-2022 and the vault invariants landed), "Current scope: SOL" (the program has moved SPL and
  * Token-2022 since f689062), and gave swaps the value "v2", which named no
  * version of anything.
  */
@@ -22,10 +22,10 @@ const TRUST_ITEMS: TrustItem[] = [
     eyebrow: "Enforcement gate",
     value: (
       <>
-        T1<em>–T8</em>
+        T1<em>–T9</em>
       </>
     ),
-    sub: "LiteSVM cases: caps, rollover, signer, revoke, allow-list, SPL, Token-2022",
+    sub: "LiteSVM cases: caps, rollover, signer, revoke, allow-list, SPL, Token-2022, vault invariants",
   },
   {
     eyebrow: "Assets in scope",

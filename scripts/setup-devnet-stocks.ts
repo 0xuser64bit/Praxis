@@ -146,8 +146,8 @@ async function main() {
     )}`,
   );
   console.log(
-    `\nOwner now holds ${SUPPLY} of each. Fund a vault with:\n` +
-      `  bun run praxis:fund-stock-vault -- OPENAI 1000\n`,
+    `\nOwner now holds ${SUPPLY} of each. Fund a vault and run the live buy with:\n` +
+      `  bun run praxis:stocksbuycheck\n`,
   );
 }
 

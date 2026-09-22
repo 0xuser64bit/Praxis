@@ -326,7 +326,7 @@ Full inline docs live in `.env.example`. The variables you actually touch:
 
 | Variable | Default |
 |---|---|
-| `GEMINI_MODEL` | `gemini-2.5-flash` |
+| `GEMINI_MODEL` | `gemini-flash-lite-latest` |
 | `NEXT_PUBLIC_PRAXIS_PROVIDER` | `api` (`mock` is local-only) |
 | `NEXT_PUBLIC_PRAXIS_ALLOW_MOCK` | `0` |
 | `PRAXIS_STATE_BACKEND` | `postgres` if `DATABASE_URL` set, else `fs` |

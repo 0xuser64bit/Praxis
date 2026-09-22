@@ -36,7 +36,7 @@ on-chain ActionLog is the audit trail judges can click.
 - `agent_transfer` / `agent_transfer_spl`: signer, pause, expiry, per-tx cap, daily cap, allow-list, configured mint.
 - Token-2022 is supported (the PreStocks mints are Token-2022): the CPI is
   `TransferChecked`, so the token program re-verifies mint and decimals.
-- LiteSVM gate `bun run aegis:test` (T1–T8, T8 = the Token-2022 envelope) +
+- LiteSVM gate `bun run aegis:test` (T1–T9, T8 = the Token-2022 envelope) +
   offline gate `bun run praxis:stocksgate` + live `bun run praxis:stockscheck`.
 - **`bun run praxis:stocksbuycheck`** — the whole claim in one command against
   a live cluster: the buy lands, the over-cap buy is refused by the program:

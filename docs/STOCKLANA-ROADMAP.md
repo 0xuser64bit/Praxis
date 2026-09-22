@@ -10,7 +10,7 @@ Never skip verification. Never mix two commits in one diff. ~~Never touch
 be Token-2022; see below).
 
 Global verify (every commit): `bun run lint && bun run test && bun run build`
-Program gate (must stay green): `bun run aegis:test` — T1–T8.
+Program gate (must stay green): `bun run aegis:test` — T1–T9.
 
 ---
 
@@ -113,7 +113,7 @@ Exit: `bun run praxis:stockscheck && bun run praxis:swapcheck && bun run praxis:
 ## C09 — Staging deploy + video evidence
 
 Goal: live URL judges can click.
-- Vercel preview with `PRAXIS_STOCKS_ENABLED=1`, devnet program, `PRAXIS_TOKENS` including 8 stocks, Postgres state.
+- Vercel preview with `PRAXIS_STOCKS_ENABLED=1`, devnet program, `PRAXIS_STOCK_MINTS` mirror block for the 8 stocks, Postgres state.
 - Record 90-sec video per STOCKLANA.md demo script; capture Explorer links + over-cap rejection (off-chain + on-chain log).
 - `docs/DEPLOY.md` addendum: stock env values (no secrets).
 

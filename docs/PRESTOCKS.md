@@ -63,8 +63,11 @@ Still open:
 
 ## 2. Token registry design
 
-- Source of truth at runtime: `PRAXIS_TOKENS` env JSON (existing seam in `server/env.ts:parseTokens`),
-  extended with the 8 PreStocks entries once decimals are confirmed.
+- Source of truth at runtime: `PRAXIS_STOCKS_ENABLED=1` merges the 8 PreStocks
+  entries from `PRAXIS_STOCK_MINTS` (mirror mints on devnet, real mints on
+  mainnet) with decimals from `PRAXIS_STOCK_DECIMALS` or the chain. Do NOT list
+  stocks in `PRAXIS_TOKENS` — that seam is for the SPL token envelope only
+  (see docs/DEPLOY.md).
 - Static fallback: `server/env.ts:DEFAULT_TOKENS` keeps SOL/USDC/JUP/BONK; PreStocks entries live
   behind `PRAXIS_STOCKS_ENABLED=1` so `main` behavior is unchanged when the flag is off.
 - Canonical display symbols: `pOPENAI` etc. are UI aliases only; on-chain mint is the PreStocks

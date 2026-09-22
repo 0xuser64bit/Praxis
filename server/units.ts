@@ -1,3 +1,12 @@
+/**
+ * Server-side money math: human decimal amounts ↔ integer base units.
+ *
+ * Intentionally mirrored, not shared: `components/app/lib/units.ts` (display
+ * edge), `sdk/src/units.ts` (published package, no workspace deps) and
+ * `shared/src/serde.ts` (base-unit wire boundary, a different function)
+ * each own their copy so no package boundary is crossed. Keep the
+ * implementations consistent when touching this file.
+ */
 export const SOL_DECIMALS = 9;
 
 export function parseHumanUnits(human: string, decimals: number): bigint {

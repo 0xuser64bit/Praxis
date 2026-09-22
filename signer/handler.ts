@@ -53,6 +53,11 @@ function json(body: unknown, status = 200): Response {
  * Every outcome is logged: this process is the only place that observes every
  * use of the agent key, and the log is what makes "what did the agent sign
  * while the token was leaked" an answerable question.
+ *
+ * Error bodies are intentionally `{ error: string }`, not `PraxisErrorBody`:
+ * the only consumer is `server/agent/agentSigner.ts` (which wraps failures
+ * server-side), never the SDK — sharing the app error taxonomy here would
+ * couple a standalone custody process to it for no reader.
  */
 export function createSignerHandler(config: SignerConfig) {
   const maxPerWindow = config.maxSignaturesPerMinute ?? DEFAULT_MAX_SIGNATURES_PER_MINUTE;

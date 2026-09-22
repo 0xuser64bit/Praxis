@@ -15,6 +15,7 @@ import { useState } from "react";
 import { Button } from "@/components/praxis/Button";
 
 import { useProvider } from "./ProviderContext";
+import { messageFromError } from "./lib/useAsyncAction";
 
 export function PolicyChangeCard({
   patch,
@@ -36,7 +37,7 @@ export function PolicyChangeCard({
     void provider
       .updatePolicy(patch)
       .then(() => setDone(true))
-      .catch((err) => setError(err instanceof Error ? err.message : "Policy change failed."))
+      .catch((err) => setError(messageFromError(err, "Policy change failed.")))
       .finally(() => setBusy(false));
   };
 
@@ -96,7 +97,10 @@ export function PolicyChangeCard({
         )}
 
         {error && (
-          <div className="mt-3 rounded-lg bg-[rgba(199,91,91,0.10)] px-3 py-2 text-[12px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]">
+          <div
+            role="alert"
+            className="mt-3 rounded-lg bg-[rgba(199,91,91,0.10)] px-3 py-2 text-[12px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]"
+          >
             {error}
           </div>
         )}

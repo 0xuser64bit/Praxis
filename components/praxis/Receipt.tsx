@@ -26,13 +26,9 @@ export function Receipt({ children, meta }: ReceiptProps) {
           </div>
         )}
       </div>
-      <button
-        type="button"
-        aria-label="Open in explorer"
-        className="cursor-pointer text-[var(--text-tertiary)]"
-      >
+      <span aria-hidden className="text-[var(--text-tertiary)]">
         <IconExternalLink size={14} />
-      </button>
+      </span>
     </div>
   );
 }

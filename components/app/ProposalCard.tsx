@@ -215,7 +215,10 @@ export function ProposalCard({
         )}
 
         {error && (
-          <div className="mt-3 rounded-lg bg-[rgba(199,91,91,0.10)] px-3 py-2 text-[12px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]">
+          <div
+            role="alert"
+            className="mt-3 rounded-lg bg-[rgba(199,91,91,0.10)] px-3 py-2 text-[12px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]"
+          >
             {error}
           </div>
         )}

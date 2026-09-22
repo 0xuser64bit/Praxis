@@ -615,10 +615,7 @@ export class PraxisServerProvider implements PraxisProvider {
   deleteAgent = async (): Promise<void> => {
     this.assertBackendOwnerSigningAvailable();
     await this.aegis.closePolicy();
-    // The policy account is gone now; drop the cached view so reads 404 and the
-    // app returns to onboarding rather than serving a stale policy.
-    this.state.policy = undefined;
-    await this.commit();
+    await this.forgetTornDownAgent();
   };
 
   updatePolicy = async (patch: PolicyUpdate): Promise<void> => {
@@ -682,14 +679,31 @@ export class PraxisServerProvider implements PraxisProvider {
       // post-submit refresh 404s. That's success — clear the cached policy so
       // subsequent reads 404 and the app returns to onboarding.
       if (error instanceof PraxisNotFoundError) {
-        this.state.policy = undefined;
-        await this.commit();
+        await this.forgetTornDownAgent();
       } else {
         throw error;
       }
     }
     return { sig };
   };
+
+  /**
+   * Drop everything that described the agent that was just closed.
+   *
+   * The policy account is gone, so reads should 404 and the app should land
+   * back on onboarding rather than serve a stale view. The activity feed and
+   * proposals go with it: they describe a vault that no longer exists, and
+   * the on-chain log they were merged against is closed too. Re-initializing
+   * lands on the same deterministic PDA with a counter that restarts at zero,
+   * so keeping the old rows would also let a new action collide with an old
+   * one's identity.
+   */
+  private async forgetTornDownAgent(): Promise<void> {
+    this.state.policy = undefined;
+    this.state.activity = [];
+    this.state.proposals = {};
+    await this.commit();
+  }
 
   addToAllowList = async (kind: AllowListKind, address: string): Promise<void> => {
     this.assertBackendOwnerSigningAvailable();

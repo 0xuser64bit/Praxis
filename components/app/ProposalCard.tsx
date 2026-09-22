@@ -45,9 +45,14 @@ export function ProposalCard({
   const status = proposal.state === "blocked" && proposal.detail.kind === "swap"
     ? SWAP_BLOCKED_STATUS
     : STATUS[proposal.state];
+  // Says what is true of every block, and leaves WHY to the banner directly
+  // above it. That line used to assert "the chain would reject it", which is
+  // right for a cap or allow-list rejection — and the banner already stamps
+  // those with the on-chain reason code — but wrong for the blocks the
+  // backend makes before the chain is ever asked, such as an expired preview.
   const blockedMessage = proposal.detail.kind === "swap"
     ? "Swaps are preview-only in v0.1. Nothing was signed."
-    : "The agent can't sign this — the chain would reject it.";
+    : "Nothing was signed, and nothing moved.";
   const runAction = (kind: "sign" | "cancel", action: () => Promise<void>, fallback: string) => {
     setError(null);
     setBusy(kind);

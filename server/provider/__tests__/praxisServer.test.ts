@@ -82,6 +82,10 @@ class FakeAegis {
     this.calls.push("revokeAgent");
     return "sig";
   }
+  async closePolicy() {
+    this.calls.push("closePolicy");
+    return "sig";
+  }
   async updatePolicy() {
     this.calls.push("updatePolicy");
     return "sig";
@@ -494,5 +498,32 @@ describe("the signature gate", () => {
     await provider.signProposal(proposalId);
     expect(fake.calls).toContain("executeAgentTransfer");
     expect(provider.getProposal(proposalId)!.state).toBe("signed");
+  });
+});
+
+describe("agent teardown", () => {
+  test("forgets the vault it described, so a re-created agent starts clean", async () => {
+    const { provider, fake } = build();
+    await provider.send(null, "send 0.5 SOL to maya");
+    fake.actionLog = [
+      {
+        seq: 0,
+        kind: ActionKind.Transfer,
+        amount: 1n,
+        target: MAYA,
+        result: "allowed",
+        ts: Math.floor(Date.now() / 1000),
+      },
+    ];
+    await provider.refreshActivity();
+    expect(provider.getActivity().length).toBeGreaterThan(0);
+
+    await provider.deleteAgent();
+
+    // Re-initializing lands on the same deterministic PDA with a log counter
+    // that restarts at zero, so a kept row would collide with a new one.
+    expect(provider.getActivity()).toEqual([]);
+    expect(provider.getAllProposals()).toEqual([]);
+    expect(() => provider.getPolicy()).toThrow();
   });
 });

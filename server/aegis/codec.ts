@@ -116,7 +116,7 @@ function readTokenEnvelope(c: Cursor): {
   };
 }
 
-function decodeRecord(c: Cursor, seq: number): ActionLogEntry {
+function decodeRecord(c: Cursor): Omit<ActionLogEntry, "seq"> {
   const kind = c.u8();
   const amount = c.u64();
   const target = c.pubkey();
@@ -126,7 +126,6 @@ function decodeRecord(c: Cursor, seq: number): ActionLogEntry {
   const ts = c.i64();
 
   return {
-    seq,
     kind: decodeKind(kind),
     amount,
     target,
@@ -152,17 +151,22 @@ export function decodeActionLog(data: Buffer): ActionLogEntry[] {
   const count = c.u16();
   const total = c.u64();
 
-  const ring: ActionLogEntry[] = [];
-  for (let i = 0; i < ACTION_LOG_CAP; i++) ring.push(decodeRecord(c, 0));
+  const ring = Array.from({ length: ACTION_LOG_CAP }, () => decodeRecord(c));
   c.u8(); // bump
 
   // Newest first. `total` counts every action ever recorded, so the newest
-  // live entry sits at `total - 1` — a stable identity the ring index is not.
+  // live entry sits at `total - 1` — a stable identity the ring index is not,
+  // because the ring overwrites in place and every entry's index shifts as
+  // new actions land.
+  const newest = Number(total) - 1;
+  if (!Number.isSafeInteger(newest)) {
+    throw new RangeError(`Aegis ActionLog total ${total.toString()} is out of range`);
+  }
   const out: ActionLogEntry[] = [];
   const cappedCount = Math.min(count, ACTION_LOG_CAP);
   for (let i = 0; i < cappedCount; i++) {
     const idx = (head + ACTION_LOG_CAP - 1 - i) % ACTION_LOG_CAP;
-    out.push({ ...ring[idx], seq: Number(total) - 1 - i });
+    out.push({ ...ring[idx], seq: newest - i });
   }
   return out;
 }

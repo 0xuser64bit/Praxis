@@ -252,6 +252,13 @@ account: switching accounts in the extension, or disconnecting, ends it.
   shipping them somewhere durable is the operator's job.
 - Rate limits degrade to a process-local limiter when the shared store is
   unavailable, which is weaker than shared state across instances.
+- Owner policy edits are read-modify-write against the full allow-list vectors:
+  the program takes whole `Vec<Pubkey>`s and has no compare-and-swap, so two
+  owner edits building from the same read would clobber each other. The window
+  is one blockhash lifetime (the draft token expires in five minutes and the
+  blockhash sooner), and the blast radius is a lost allow-list entry rather
+  than lost funds. Closing it properly needs a nonce on `PolicyAccount`, which
+  changes the account layout and so needs a migration.
 - No durable rejected-transaction indexer for failures that happen outside the
   app process.
 - The scheduled-buy job walks every wallet in one tick (bounded at 500). Past

@@ -223,3 +223,27 @@ describe("anchoring to the scheduler's hour", () => {
     }
   });
 });
+
+describe("splitBasket precision", () => {
+  const decimals9 = () => 9;
+
+  test("a cheap token on a 9-decimal mint does not lose precision", () => {
+    // (60 / 0.000001) * 1e9 is 6e16 — past 2^53, where a double silently
+    // rounds. This is the quantity the proposal asks the owner to sign, not
+    // an estimate.
+    const shares = splitBasket(60, ["CHEAP"], new Map([["CHEAP", 0.000001]]), decimals9)!;
+    expect(shares[0].amount).toBe(60_000_000_000_000_000n);
+  });
+
+  test("floors rather than rounding up, so the split never exceeds the total", () => {
+    const shares = splitBasket(10, ["A", "B"], new Map([["A", 3], ["B", 3]]), () => 6)!;
+    // 5 / 3 = 1.666… → 1_666_666 base units at 6dp, floored.
+    expect(shares.map((s) => s.amount)).toEqual([1_666_666n, 1_666_666n]);
+  });
+
+  test("an unpriceable or zero-quantity constituent voids the whole basket", () => {
+    expect(splitBasket(10, ["A", "B"], new Map([["A", 3]]), () => 6)).toBeNull();
+    expect(splitBasket(1, ["A"], new Map([["A", 1000]]), () => 0)).toBeNull();
+    expect(splitBasket(0, ["A"], new Map([["A", 1]]), () => 6)).toBeNull();
+  });
+});

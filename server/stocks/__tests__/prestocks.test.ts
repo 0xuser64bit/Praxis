@@ -30,14 +30,9 @@ function entry(over: Partial<PrestocksEntry> = {}): PrestocksEntry {
   return {
     symbol: "OPENAI",
     name: "OpenAI PreStocks",
-    description: "",
-    image: "",
     externalUrl: "https://www.prestocks.com/openai",
-    mint: "PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF",
     tokenPrice: 1088.5,
     markPrice: 976.27,
-    markValuation: 1209532255249,
-    impliedValuation: 1348581175120,
     supply: 2826.49,
     ...over,
   };
@@ -49,7 +44,6 @@ describe("parsePrestocksBody", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
       symbol: "OPENAI",
-      mint: "PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF",
       tokenPrice: 1088.5,
       markPrice: 976.27,
       externalUrl: "https://www.prestocks.com/openai",
@@ -62,7 +56,7 @@ describe("parsePrestocksBody", () => {
     expect(
       parsePrestocksBody([
         OPENAI_RAW,
-        { symbol: "BROKEN" }, // missing mint + prices
+        { symbol: "BROKEN" }, // missing prices
         { symbol: "ZERO", contract_address: "PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF", tokenPrice: 0, markPrice: 5 },
         "garbage",
       ]),
@@ -73,8 +67,8 @@ describe("parsePrestocksBody", () => {
 describe("findPrestocksEntry", () => {
   test("matches case-insensitively with optional $ prefix", () => {
     const entries = [entry()];
-    expect(findPrestocksEntry(entries, "openai")?.mint).toBe(entry().mint);
-    expect(findPrestocksEntry(entries, " $OPENAI ")?.mint).toBe(entry().mint);
+    expect(findPrestocksEntry(entries, "openai")?.tokenPrice).toBe(entry().tokenPrice);
+    expect(findPrestocksEntry(entries, " $OPENAI ")?.tokenPrice).toBe(entry().tokenPrice);
     expect(findPrestocksEntry(entries, "SOL")).toBeUndefined();
   });
 });

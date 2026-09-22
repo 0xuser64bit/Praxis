@@ -125,6 +125,25 @@ export function advanceCadence(cadence: DcaCadence, fromMs: number): number {
 }
 
 /**
+ * Advance a schedule past `nowMs`, firing once for a missed stretch rather
+ * than once per missed period.
+ *
+ * A schedule that has been due since last month should produce one card, not
+ * thirty. The hop budget is what stops a pathological cadence from spinning;
+ * past it the next fire is computed from now.
+ */
+const MAX_CATCH_UP_HOPS = 1_000;
+
+export function advancePast(cadence: DcaCadence, from: number, nowMs: number): number {
+  let next = from;
+  for (let hops = 0; hops < MAX_CATCH_UP_HOPS; hops++) {
+    if (next > nowMs) return next;
+    next = advanceCadence(cadence, next);
+  }
+  return advanceCadence(cadence, nowMs);
+}
+
+/**
  * The first fire strictly after `nowMs`, on a cadence-matching day, at
  * `hourUtc`.
  *
@@ -233,12 +252,27 @@ export interface BasketShare {
   amount: bigint;
 }
 
+/** Fixed-point scale for USD figures inside the split (8 decimal places). */
+const USD_SCALE = 100_000_000n;
+
+/** A positive USD amount as scaled integer cents-of-cents, or null. */
+function toScaledUsd(value: number): bigint | null {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const scaled = BigInt(Math.round(value * Number(USD_SCALE)));
+  return scaled > 0n ? scaled : null;
+}
+
 /**
  * Split a total USD amount equally across constituents, converting via
  * PreStocks `tokenPrice` (USD per whole token). Returns null when any
  * constituent lacks a positive price — the caller must clarify instead of
  * guessing a split. Floors to whole base units so the sum never exceeds the
  * requested total.
+ *
+ * The division runs in integer space. `(usd / price) * 10 ** decimals` as a
+ * double silently loses precision the moment it crosses 2^53, which a cheap
+ * token on a 9-decimal mint does at around sixty dollars — and the result is
+ * not an estimate, it is the quantity the proposal asks the owner to sign.
  */
 export function splitBasket(
   totalUsd: number,
@@ -246,15 +280,21 @@ export function splitBasket(
   prices: Map<string, number>,
   decimalsFor: (symbol: string) => number,
 ): BasketShare[] | null {
-  if (!Number.isFinite(totalUsd) || totalUsd <= 0 || constituents.length === 0) return null;
-  const perUsd = totalUsd / constituents.length;
+  if (constituents.length === 0) return null;
+  const total = toScaledUsd(totalUsd);
+  if (total === null) return null;
+
+  const perUsd = total / BigInt(constituents.length);
   const out: BasketShare[] = [];
   for (const symbol of constituents) {
-    const price = prices.get(symbol);
-    if (!price || !Number.isFinite(price) || price <= 0) return null;
-    const factor = 10 ** decimalsFor(symbol);
-    out.push({ symbol, amount: BigInt(Math.floor((perUsd / price) * factor)) });
+    const price = toScaledUsd(prices.get(symbol) ?? 0);
+    if (price === null) return null;
+    // Both sides carry USD_SCALE, so it cancels; the token scale is what is
+    // left. Integer division floors, which is the direction that keeps the
+    // sum at or under the requested total.
+    const amount = (perUsd * 10n ** BigInt(decimalsFor(symbol))) / price;
+    if (amount <= 0n) return null;
+    out.push({ symbol, amount });
   }
-  if (out.some((s) => s.amount <= 0n)) return null;
   return out;
 }

@@ -1,7 +1,5 @@
 import type { ResearchMetric } from "@praxis/shared";
 
-import { PublicKey } from "@solana/web3.js";
-
 import { fetchWithTimeout, type FetchLike } from "../api/timeout";
 import { errorFields, logger } from "../observability/logger";
 import { compactAmount } from "../agent/researchFormat";
@@ -27,17 +25,23 @@ import {
  * external URL must be http(s) before it is quoted into agent copy.
  */
 
+/**
+ * The fields of a PreStocks quote that Praxis actually uses. The feed returns
+ * more (contract address, description, logo, valuations); carrying them meant
+ * validating and storing third-party strings nothing ever read.
+ *
+ * The contract address in particular is NOT the mint Praxis transfers: that
+ * comes from the configured universe, which a devnet deploy remaps to mirror
+ * mints. Taking it from the price feed would be a quote source deciding which
+ * token moves.
+ */
 export interface PrestocksEntry {
   symbol: string;
   name: string;
-  description: string;
-  image: string;
+  /** Linked from the research summary; http(s) only. */
   externalUrl: string;
-  mint: string;
   tokenPrice: number;
   markPrice: number;
-  markValuation: number;
-  impliedValuation: number;
   supply: number;
 }
 
@@ -141,45 +145,23 @@ function parsePrestocksEntry(item: unknown): PrestocksEntry | undefined {
   if (!item || typeof item !== "object") return undefined;
   const v = item as Record<string, unknown>;
   const symbol = cleanText(v.symbol, MAX_SYMBOL_LENGTH)?.toUpperCase();
-  // The mint is an address the rest of the system would derive from; a quote
-  // feed does not get to hand us an arbitrary string for one.
-  const mint = asAddress(v.contract_address);
   const tokenPrice = Number(v.tokenPrice);
   const markPrice = Number(v.markPrice);
-  if (!symbol || !mint || !Number.isFinite(tokenPrice) || tokenPrice <= 0 || !Number.isFinite(markPrice) || markPrice <= 0) {
+  if (!symbol || !Number.isFinite(tokenPrice) || tokenPrice <= 0 || !Number.isFinite(markPrice) || markPrice <= 0) {
     return undefined;
   }
+  const supply = Number(v.supply);
   return {
     symbol,
     name: cleanText(v.name, MAX_NAME_LENGTH) ?? `${symbol} PreStocks`,
-    description: cleanText(v.description, MAX_DETAIL_LENGTH) ?? "",
-    image: httpUrl(v.image) ?? "",
-    // This one reaches agent copy (the research summary links it), so an
-    // unbounded or non-http value would be quoting a third party into the
-    // product's own sentence.
+    // This reaches agent copy (the research summary links it), so an unbounded
+    // or non-http value would be quoting a third party into the product's own
+    // sentence.
     externalUrl: httpUrl(v.external_url) ?? "",
-    mint,
     tokenPrice,
     markPrice,
-    markValuation: finite(v.markValuation),
-    impliedValuation: finite(v.impliedValuation),
-    supply: finite(v.supply),
+    supply: Number.isFinite(supply) ? supply : 0,
   };
-}
-
-function finite(value: unknown): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function asAddress(value: unknown): string | undefined {
-  const text = cleanText(value, 64);
-  if (!text) return undefined;
-  try {
-    return new PublicKey(text).toBase58();
-  } catch {
-    return undefined;
-  }
 }
 
 /** An http(s) URL, bounded, or undefined — never `javascript:` or a novel. */

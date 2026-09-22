@@ -53,7 +53,7 @@ import { formatSol, formatUnits, parseHumanUnits, SOL_DECIMALS } from "../units"
 import { getStateRepository, type LoadedState, type StateRepository } from "./stateRepository";
 import type { StoredProviderState } from "./stateSerialization";
 import {
-  advanceCadence,
+  advancePast,
   availableBaskets,
   nextFireAt,
   describeCadence,
@@ -100,8 +100,6 @@ const CLAIM_ATTEMPTS = 3;
 const PROPOSAL_TTL_SECONDS = 24 * 60 * 60;
 
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
-
-let singleton: PraxisServerProvider | undefined;
 
 function ownerKeyForConfig(config: PraxisServerConfig): string {
   return config.ownerAddress?.toBase58() ?? config.policyAddress?.toBase58() ?? "default";
@@ -154,29 +152,14 @@ export function resetOwnerLocksForTests() {
  * fresh, isolated view of it (which also avoids shared mutable state between
  * concurrent requests on the same instance).
  */
-export async function getPraxisServerProvider(walletAddress?: string): Promise<PraxisServerProvider> {
-  const repository = getStateRepository();
-
-  if (walletAddress) {
-    const normalized = validatePublicKey(walletAddress, "walletAddress").toBase58();
-    // Fail closed before doing any work if a shared agent key would span owners
-    // in production without an explicit acknowledgement.
-    assertSharedAgentKeySafe(normalized);
-    const config = configForWalletOwner(new PublicKey(normalized));
-    const loaded = await repository.load(ownerKeyForConfig(config));
-    return new PraxisServerProvider(config, new AegisClient(config), loaded);
-  }
-
-  if (!singleton) {
-    const config = getServerConfig();
-    const loaded = await repository.load(ownerKeyForConfig(config));
-    singleton = new PraxisServerProvider(config, new AegisClient(config), loaded);
-  }
-  return singleton;
-}
-
-export function resetPraxisServerProviderForTests() {
-  singleton = undefined;
+export async function getPraxisServerProvider(walletAddress: string): Promise<PraxisServerProvider> {
+  const normalized = validatePublicKey(walletAddress, "walletAddress").toBase58();
+  // Fail closed before doing any work if a shared agent key would span owners
+  // in production without an explicit acknowledgement.
+  assertSharedAgentKeySafe(normalized);
+  const config = configForWalletOwner(new PublicKey(normalized));
+  const loaded = await getStateRepository().load(ownerKeyForConfig(config));
+  return new PraxisServerProvider(config, new AegisClient(config), loaded);
 }
 
 export class PraxisServerProvider implements PraxisProvider {
@@ -242,16 +225,40 @@ export class PraxisServerProvider implements PraxisProvider {
   /**
    * Fire every due DCA schedule: each emits ONE transfer proposal through the
    * same simulate + policy-check path as a one-off buy. Never signs — every
-   * fire needs a user signature. Advances each schedule past `nowMs` (with a
-   * capped catch-up so a long-dead schedule fires once, not 500 times).
+   * fire needs a user signature.
+   *
+   * The advance is claimed BEFORE any proposal is built, with a
+   * compare-and-swap. The scheduler fans out across wallets and the same
+   * endpoint is reachable from a signed-in session, so two callers could
+   * previously both read a schedule as due, both emit a card, and both write
+   * — last-write-wins, which could also revert the other's advance and leave
+   * the schedule due again on the next tick. Claiming first makes a fire
+   * at-most-once: if the process dies between the claim and the proposal the
+   * fire is missed, which for money is the right direction to fail.
    */
   fireDueSchedules = async (
     nowMs: number = Date.now(),
   ): Promise<Array<{ scheduleId: string; proposalId: string; allowed: boolean }>> => {
     return withOwnerLock(this.ownerKey, async () => {
+      const due = this.state.schedules.filter((schedule) => schedule.nextFireTs <= nowMs);
+      if (due.length === 0) return [];
+
+      for (const schedule of due) {
+        schedule.nextFireTs = advancePast(schedule.cadence, schedule.nextFireTs, nowMs);
+      }
+      try {
+        await this.casSave();
+      } catch (error) {
+        if (!(error instanceof PraxisConflictError)) throw error;
+        // Another writer moved first. Adopt their state and leave this tick
+        // alone rather than racing them for the same fire.
+        logger.warn("praxis.schedule_claim_conflict", { ownerKey: this.ownerKey, due: due.length });
+        await this.reload();
+        return [];
+      }
+
       const fired: Array<{ scheduleId: string; proposalId: string; allowed: boolean }> = [];
-      for (const schedule of this.state.schedules) {
-        if (schedule.nextFireTs > nowMs) continue;
+      for (const schedule of due) {
         const token = this.token(schedule.asset);
         const preview = await this.previewTransfer(token, schedule.amount, schedule.recipientAddress);
         const proposal = this.storeTransferProposal({
@@ -262,37 +269,34 @@ export class PraxisServerProvider implements PraxisProvider {
           usdEstimate: await this.usdEstimateFor(token, schedule.amount),
           preview,
         });
-        const thread = this.getThread(schedule.threadId);
-        if (thread) {
-          const ts = nowSeconds();
-          thread.messages = [
-            ...thread.messages,
-            {
-              id: this.id("m"),
-              role: "agent",
-              ts,
-              blocks: [{
-                type: "proposal",
-                text: `Scheduled buy fired (${describeCadence(schedule.cadence)}): ${schedule.asset} for ${schedule.recipientName}.`,
-                proposalId: proposal.id,
-              }],
-            },
-          ];
-          thread.updatedAt = ts;
-        }
-        let next = schedule.nextFireTs;
-        let hops = 0;
-        while (next <= nowMs && hops < 1000) {
-          next = advanceCadence(schedule.cadence, next);
-          hops++;
-        }
-        schedule.nextFireTs = hops >= 1000 ? advanceCadence(schedule.cadence, nowMs) : next;
+        this.appendScheduleFire(schedule, proposal.id);
         fired.push({ scheduleId: schedule.id, proposalId: proposal.id, allowed: preview.check.allowed });
       }
-      if (fired.length > 0) await this.commit();
+      await this.commit();
       return fired;
     });
   };
+
+  /** Append a fired schedule's proposal card to the thread it was created in. */
+  private appendScheduleFire(schedule: DcaSchedule, proposalId: string) {
+    const thread = this.getThread(schedule.threadId);
+    if (!thread) return;
+    const ts = nowSeconds();
+    thread.messages = [
+      ...thread.messages,
+      {
+        id: this.id("m"),
+        role: "agent",
+        ts,
+        blocks: [{
+          type: "proposal",
+          text: `Scheduled buy fired (${describeCadence(schedule.cadence)}): ${schedule.asset} for ${schedule.recipientName}.`,
+          proposalId,
+        }],
+      },
+    ];
+    thread.updatedAt = ts;
+  }
 
   // --- refresh ---
   async refreshPolicy(): Promise<PolicyView> {

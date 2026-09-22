@@ -187,6 +187,20 @@ describe("DCA schedules", () => {
     expect(provider.getSchedules()[0].nextFireTs).toBeGreaterThan(Date.now());
   });
 
+  test("the advance is claimed before any card exists, so one tick fires once", async () => {
+    const { provider } = build();
+    await provider.send(null, "buy $50 openai every monday");
+    const firstFire = provider.getSchedules()[0].nextFireTs;
+
+    const [first, second] = [
+      await provider.fireDueSchedules(firstFire + 1),
+      await provider.fireDueSchedules(firstFire + 1),
+    ];
+    expect(first).toHaveLength(1);
+    // The second pass sees the advanced schedule, not a second due fire.
+    expect(second).toEqual([]);
+  });
+
   test("nothing due fires nothing and writes nothing", async () => {
     const { provider } = build();
     await provider.send(null, "buy $50 openai every monday");

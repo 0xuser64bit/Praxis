@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  __expirePrestocksCacheForTests,
   __resetPrestocksCacheForTests,
   fetchPrestocksEntries,
   findPrestocksEntry,
@@ -146,6 +147,47 @@ describe("fetchPrestocksEntries", () => {
     const second = await fetchPrestocksEntries("https://stocks.test/api", 1000, ok);
     expect(first).toHaveLength(1);
     expect(second).toHaveLength(1);
+    expect(calls).toBe(1);
+    __resetPrestocksCacheForTests();
+  });
+
+  test("a failed refresh keeps serving the last good prices, not an empty list", async () => {
+    // A basket is all-or-clarify, so caching the empty result of one blip used
+    // to refuse every basket in the product for a full minute.
+    __resetPrestocksCacheForTests();
+    let fail = false;
+    const flaky = async () => {
+      if (fail) throw new Error("network down");
+      return new Response(JSON.stringify([OPENAI_RAW]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    expect(await fetchPrestocksEntries("https://stocks.test/api", 1000, flaky)).toHaveLength(1);
+
+    fail = true;
+    __expirePrestocksCacheForTests();
+    expect(await fetchPrestocksEntries("https://stocks.test/api", 1000, flaky)).toHaveLength(1);
+    __resetPrestocksCacheForTests();
+  });
+
+  test("concurrent callers share one request", async () => {
+    __resetPrestocksCacheForTests();
+    let calls = 0;
+    const slow = async () => {
+      calls++;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return new Response(JSON.stringify([OPENAI_RAW]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const all = await Promise.all([
+      fetchPrestocksEntries("https://stocks.test/api", 1000, slow),
+      fetchPrestocksEntries("https://stocks.test/api", 1000, slow),
+      fetchPrestocksEntries("https://stocks.test/api", 1000, slow),
+    ]);
+    expect(all.every((entries) => entries.length === 1)).toBe(true);
     expect(calls).toBe(1);
     __resetPrestocksCacheForTests();
   });

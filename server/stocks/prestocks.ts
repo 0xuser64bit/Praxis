@@ -3,6 +3,7 @@ import type { ResearchMetric } from "@praxis/shared";
 import { PublicKey } from "@solana/web3.js";
 
 import { fetchWithTimeout, type FetchLike } from "../api/timeout";
+import { errorFields, logger } from "../observability/logger";
 import { compactAmount } from "../agent/researchFormat";
 import {
   cleanText,
@@ -14,9 +15,16 @@ import {
 /**
  * PreStocks quote fetcher (Stocklana C03).
  *
- * Read-only, best-effort, never throws to callers: any fetch/parse failure
- * degrades to `[]` so research falls back to the existing RPC + DexScreener
- * path (docs/PRESTOCKS.md §3). Responses are cached 60s in-memory per API URL.
+ * Read-only and best-effort: it never throws to callers, because research
+ * falls back to the RPC + DexScreener path and a basket refuses itself rather
+ * than guessing (docs/PRESTOCKS.md §3). A successful response is cached 60s
+ * per API URL; a FAILED refresh serves the last good answer for a short grace
+ * period instead of caching "no prices" (see STALE_GRACE_MS). Concurrent
+ * callers share one in-flight request.
+ *
+ * Everything the feed returns is treated as third-party text: symbols and
+ * names are bounded, the contract address is validated as a real key, and the
+ * external URL must be http(s) before it is quoted into agent copy.
  */
 
 export interface PrestocksEntry {
@@ -34,11 +42,42 @@ export interface PrestocksEntry {
 }
 
 const CACHE_TTL_MS = 60_000;
+/**
+ * How long a *failed* refresh may keep serving the last good answer.
+ *
+ * The old cache stored the empty result of a failed fetch for the full TTL,
+ * which meant one network blip removed every price for a minute — and a
+ * basket buy is all-or-clarify, so for that minute every basket in the
+ * product was refused with "PreStocks quotes unavailable". Serving a
+ * few-minute-old mark instead is both more useful and more honest: these are
+ * pre-IPO marks, the figure is shown on the card, and nothing moves until the
+ * owner signs it. Past the grace period there is no answer rather than a
+ * stale one.
+ */
+const STALE_GRACE_MS = 5 * 60_000;
 
-let cache: { url: string; at: number; entries: PrestocksEntry[] } | undefined;
+interface CacheState {
+  url: string;
+  /** When the entries were last successfully refreshed. */
+  freshAt: number;
+  entries: PrestocksEntry[];
+}
+
+let cache: CacheState | undefined;
+/** In-flight refresh, so N concurrent callers make one request, not N. */
+let inflight: { url: string; work: Promise<PrestocksEntry[]> } | undefined;
 
 export function __resetPrestocksCacheForTests() {
   cache = undefined;
+  inflight = undefined;
+}
+
+/**
+ * Test seam: age the cache past its TTL but keep it inside the stale grace
+ * window, i.e. "due for a refresh, still usable if that refresh fails".
+ */
+export function __expirePrestocksCacheForTests() {
+  if (cache) cache.freshAt = Date.now() - CACHE_TTL_MS - 1;
 }
 
 export async function fetchPrestocksEntries(
@@ -47,9 +86,21 @@ export async function fetchPrestocksEntries(
   fetchImpl: FetchLike = fetch,
 ): Promise<PrestocksEntry[]> {
   const now = Date.now();
-  if (cache && cache.url === apiUrl && now - cache.at < CACHE_TTL_MS) return cache.entries;
+  if (cache && cache.url === apiUrl && now - cache.freshAt < CACHE_TTL_MS) return cache.entries;
+  if (inflight && inflight.url === apiUrl) return inflight.work;
 
-  let entries: PrestocksEntry[] = [];
+  const work = refresh(apiUrl, timeoutMs, fetchImpl).finally(() => {
+    if (inflight?.work === work) inflight = undefined;
+  });
+  inflight = { url: apiUrl, work };
+  return work;
+}
+
+async function refresh(
+  apiUrl: string,
+  timeoutMs: number,
+  fetchImpl: FetchLike,
+): Promise<PrestocksEntry[]> {
   try {
     const res = await fetchWithTimeout(
       apiUrl,
@@ -57,13 +108,17 @@ export async function fetchPrestocksEntries(
       { ms: timeoutMs, label: "PreStocks quote lookup" },
       fetchImpl,
     );
-    if (res.ok) entries = parsePrestocksBody(await res.json());
-  } catch {
-    entries = [];
+    if (!res.ok) throw new Error(`PreStocks quote feed answered ${res.status}`);
+    // An empty-but-valid body is an answer, and is cached as one — retrying it
+    // on every call would hammer the provider for the same nothing.
+    const entries = parsePrestocksBody(await res.json());
+    cache = { url: apiUrl, freshAt: Date.now(), entries };
+    return entries;
+  } catch (error) {
+    logger.warn("prestocks.refresh_failed", errorFields(error));
+    const stale = cache && cache.url === apiUrl && Date.now() - cache.freshAt < STALE_GRACE_MS;
+    return stale ? cache!.entries : [];
   }
-
-  cache = { url: apiUrl, at: now, entries };
-  return entries;
 }
 
 export function findPrestocksEntry(entries: PrestocksEntry[], symbol: string): PrestocksEntry | undefined {

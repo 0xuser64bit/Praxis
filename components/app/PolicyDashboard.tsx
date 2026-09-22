@@ -49,10 +49,10 @@ import {
 } from "./lib/units";
 import { useNow } from "./lib/useNow";
 import { effectiveSpentToday, effectiveTokenSpentToday } from "./lib/policyMath";
-import { mintDecimals, mintLabel, programLabel } from "./lib/tokenCatalog";
+import { KNOWN_PROGRAMS, mintDecimals, mintLabel, programLabel } from "./lib/tokenCatalog";
 import { useTokenCatalog } from "./TokenCatalog";
 
-const SYSTEM_PROGRAM = "11111111111111111111111111111111";
+const SYSTEM_PROGRAM = KNOWN_PROGRAMS.system;
 
 /** Distinguish pause (key intact) from revoke (authority zeroed). */
 function agentInactiveState(policy: PolicyView): "live" | "paused" | "revoked" {

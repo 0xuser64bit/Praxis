@@ -21,6 +21,7 @@ import { Eyebrow } from "@/components/praxis/Eyebrow";
 
 import { PolicyCheckBanner } from "./PolicyCheckBanner";
 import { useProposal, useProvider } from "./ProviderContext";
+import { messageFromError } from "./lib/useAsyncAction";
 import { formatSol, formatUnits, formatUsd, shortenAddress, usdDisplay } from "./lib/units";
 import { explorerTxUrl } from "./lib/explorer";
 
@@ -306,8 +307,4 @@ function describe(
       { label: "Simulation", value: proposal.simulation, ok: proposal.check.allowed },
     ],
   };
-}
-
-function messageFromError(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
 }

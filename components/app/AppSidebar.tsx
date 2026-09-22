@@ -10,10 +10,11 @@ import {
 
 import { Dot } from "./ui";
 import { formatSol } from "./lib/units";
+import { KNOWN_PROGRAMS } from "./lib/tokenCatalog";
 import { PraxisLogoMark } from "@/components/praxis/PraxisLogo";
 import type { View } from "./AppShell";
 
-const SYSTEM_PROGRAM = "11111111111111111111111111111111";
+const SYSTEM_PROGRAM = KNOWN_PROGRAMS.system;
 
 export function AppSidebar({
   view,

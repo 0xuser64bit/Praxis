@@ -28,11 +28,12 @@ import {
 } from "./ProviderContext";
 import { Dot, Pill } from "./ui";
 import { messageFromError } from "./lib/useAsyncAction";
-import { formatSol } from "./lib/units";
+import { formatSol, shortenAddress } from "./lib/units";
+import { KNOWN_PROGRAMS } from "./lib/tokenCatalog";
 
 export type View = "chat" | "policy" | "activity";
 
-const SYSTEM_PROGRAM = "11111111111111111111111111111111";
+const SYSTEM_PROGRAM = KNOWN_PROGRAMS.system;
 
 export function AppShell() {
   const provider = useProvider();
@@ -158,7 +159,7 @@ function ReadyAppShell() {
                 title="Sign out"
               >
                 <IconWallet size={14} />
-                <span className="max-[520px]:hidden">{shortAddress(auth.walletAddress)}</span>
+                <span className="max-[520px]:hidden">{shortenAddress(auth.walletAddress)}</span>
                 <IconLogout size={13} className="text-[var(--text-tertiary)]" />
               </button>
             )}
@@ -196,10 +197,6 @@ function ReadyAppShell() {
       </main>
     </div>
   );
-}
-
-function shortAddress(address: string): string {
-  return `${address.slice(0, 4)}...${address.slice(-4)}`;
 }
 
 const FUNDING_PRESETS: { label: string; lamports: bigint }[] = [
@@ -347,7 +344,7 @@ function PolicyOnboarding({
             <span>
               Signed in as{" "}
               <span className="[font-family:var(--font-mono)]">
-                {shortAddress(auth.walletAddress)}
+                {shortenAddress(auth.walletAddress)}
               </span>
             </span>
             <button

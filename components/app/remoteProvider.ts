@@ -520,6 +520,7 @@ const ERROR_CODES: ConnectionErrorCode[] = [
   "not_found",
   "policy_not_found",
   "rate_limited",
+  "conflict",
   "internal_error",
 ];
 

@@ -355,6 +355,8 @@ export type ConnectionErrorCode =
   | "not_found"
   | "policy_not_found"
   | "rate_limited"
+  /** A concurrent writer won (HTTP 409); the call is safe to retry. */
+  | "conflict"
   | "internal_error";
 
 export type ProviderConnectionState =

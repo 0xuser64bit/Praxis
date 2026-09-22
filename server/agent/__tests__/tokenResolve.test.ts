@@ -1,10 +1,25 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { Keypair } from "@solana/web3.js";
 
 import type { PraxisServerConfig } from "../../env";
 import { describeCandidate, resolveResearchTarget } from "../tokenResolve";
 
 const OFFICIAL_TRUMP = "6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN";
 const BONK = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
+
+/**
+ * Readable stand-ins for mint addresses. They have to be REAL base58 keys:
+ * the resolver validates the indexer's `address` at the seam, so a candidate
+ * whose mint is the word "clone" is dropped — which is the point.
+ */
+const mints = new Map<string, string>([[OFFICIAL_TRUMP, OFFICIAL_TRUMP]]);
+function mint(label: string): string {
+  const existing = mints.get(label);
+  if (existing) return existing;
+  const generated = Keypair.generate().publicKey.toBase58();
+  mints.set(label, generated);
+  return generated;
+}
 
 function config(overrides: Partial<PraxisServerConfig> = {}): PraxisServerConfig {
   return {
@@ -24,7 +39,7 @@ function pair(opts: {
   return {
     chainId: opts.chainId ?? "solana",
     liquidity: { usd: opts.liquidity ?? 0 },
-    baseToken: { symbol: opts.symbol, name: opts.name, address: opts.address },
+    baseToken: { symbol: opts.symbol, name: opts.name, address: mint(opts.address) },
   };
 }
 
@@ -90,7 +105,7 @@ describe("an unconfigured ticker goes to the indexer", () => {
     const resolution = await resolveResearchTarget("wif", config());
     expect(resolution.kind).toBe("resolved");
     if (resolution.kind !== "resolved") return;
-    expect(resolution.token.mint).toBe("wifmint");
+    expect(resolution.token.mint).toBe(mint("wifmint"));
     expect(resolution.name).toBe("dogwifhat");
   });
 
@@ -111,7 +126,11 @@ describe("an unconfigured ticker goes to the indexer", () => {
     if (resolution.kind !== "ambiguous") return;
     // Liquidity pools across every pair of the same mint, so the two
     // OFFICIAL TRUMP pairs are one candidate worth $31M, not two.
-    expect(resolution.candidates.map((c) => c.mint)).toEqual([OFFICIAL_TRUMP, "middle", "thin"]);
+    expect(resolution.candidates.map((c) => c.mint)).toEqual([
+      OFFICIAL_TRUMP,
+      mint("middle"),
+      mint("thin"),
+    ]);
     expect(resolution.candidates[0].liquidityUsd).toBe(31_000_000);
   });
 
@@ -122,13 +141,13 @@ describe("an unconfigured ticker goes to the indexer", () => {
       pair({ symbol: "PEPE", address: "dust", liquidity: 4 }),
     ]);
     const resolution = await resolveResearchTarget("pepe", config());
-    expect(resolution.kind === "resolved" && resolution.token.mint).toBe("real");
+    expect(resolution.kind === "resolved" && resolution.token.mint).toBe(mint("real"));
   });
 
   test("an obscure coin with only a thin pool is still the coin asked for", async () => {
     globalThis.fetch = searchReturning([pair({ symbol: "TINY", address: "tinymint", liquidity: 12 })]);
     const resolution = await resolveResearchTarget("tiny", config());
-    expect(resolution.kind === "resolved" && resolution.token.mint).toBe("tinymint");
+    expect(resolution.kind === "resolved" && resolution.token.mint).toBe(mint("tinymint"));
   });
 
   test("a name match is the fallback when no ticker matches exactly", async () => {

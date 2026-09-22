@@ -6,6 +6,7 @@ import { envTimeout, fetchWithTimeout, withTimeout } from "../api/timeout";
 import { logger } from "../observability/logger";
 import { formatBps } from "../units";
 import { compactAmount, compactUsd, formatPrice } from "./researchFormat";
+import { cleanText, MAX_NAME_LENGTH, MAX_SYMBOL_LENGTH } from "./untrusted";
 import {
   fetchPrestocksEntries,
   findPrestocksEntry,
@@ -57,8 +58,13 @@ export async function researchToken(
   // A pasted mint arrives unnamed. The indexer pairs already fetched above
   // carry the ticker and project name, so the card can say "TRUMP / OFFICIAL
   // TRUMP" instead of the old `mint.slice(0, 6)` guess ("6P6XGH").
-  const symbol = token.symbol || primary?.baseToken?.symbol || shortMint(token.mint);
-  const name = resolved.name ?? primary?.baseToken?.name;
+  // `token.symbol` came through token resolution, which already bounded it;
+  // anything read straight off the indexer here has not been.
+  const symbol =
+    token.symbol
+    || cleanText(primary?.baseToken?.symbol, MAX_SYMBOL_LENGTH)
+    || shortMint(token.mint);
+  const name = resolved.name ?? cleanText(primary?.baseToken?.name, MAX_NAME_LENGTH);
 
   const noPairs = indexer.error
     ? `The market-data lookup failed${reason(indexer.error)}.`
@@ -70,7 +76,9 @@ export async function researchToken(
     ...(stock ? stockPriceMetrics(stock) : []),
     {
       label: "Price",
-      ...(primary?.priceUsd ? formatPrice(primary.priceUsd) : { value: "unavailable", note: noPairs }),
+      ...(primary?.priceUsd
+        ? formatPrice(primary.priceUsd)
+        : { value: "unavailable", note: noPairs }),
     },
     {
       label: "24h change",
@@ -196,8 +204,9 @@ function buildSources(input: {
     status: primary ? "ok" : "unavailable",
     detail: primary
       ? `${pairs.length} Solana pair${pairs.length === 1 ? "" : "s"}; price, 24h change, volume and ` +
-        `market cap come from the deepest one (${primary.dexId ?? "unknown dex"}, ` +
-        `${primary.baseToken?.symbol ?? symbol}/${primary.quoteToken?.symbol ?? "?"}).`
+        `market cap come from the deepest one (${cleanText(primary.dexId, MAX_SYMBOL_LENGTH) ?? "unknown dex"}, ` +
+        `${cleanText(primary.baseToken?.symbol, MAX_SYMBOL_LENGTH) ?? symbol}/` +
+        `${cleanText(primary.quoteToken?.symbol, MAX_SYMBOL_LENGTH) ?? "?"}).`
       : indexerError
         // An outage and "this mint has no market" are not the same answer:
         // one is worth trying again in a minute, the other never will be.

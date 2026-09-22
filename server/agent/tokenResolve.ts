@@ -23,6 +23,7 @@ import { envTimeout, fetchWithTimeout } from "../api/timeout";
 import type { PraxisServerConfig } from "../env";
 import { logger } from "../observability/logger";
 import { normalizeStockAlias } from "../stocks/universe";
+import { cleanText, MAX_NAME_LENGTH, MAX_SYMBOL_LENGTH } from "./untrusted";
 
 export interface TokenCandidate {
   symbol: string;
@@ -168,21 +169,27 @@ async function searchCandidates(query: string): Promise<TokenCandidate[]> {
   const byMint = new Map<string, TokenCandidate>();
   for (const pair of pairs) {
     if (pair.chainId !== "solana") continue;
-    const address = pair.baseToken?.address;
-    const symbol = pair.baseToken?.symbol;
+    // The mint is an identifier the rest of the system derives addresses from;
+    // the symbol and name are chosen by whoever minted the token, which is
+    // anyone. Validate the first and bound the others here, at the seam, so
+    // nothing downstream has to wonder which kind of string it is holding.
+    const address = asMint(pair.baseToken?.address?.trim() ?? "");
+    const symbol = cleanText(pair.baseToken?.symbol, MAX_SYMBOL_LENGTH);
     if (!address || !symbol) continue;
 
     const existing = byMint.get(address);
     const candidate: TokenCandidate = existing ?? {
       symbol,
-      name: pair.baseToken?.name,
+      name: cleanText(pair.baseToken?.name, MAX_NAME_LENGTH),
       mint: address,
       liquidityUsd: 0,
-      priceUsd: pair.priceUsd,
+      priceUsd: cleanText(pair.priceUsd, MAX_SYMBOL_LENGTH),
     };
     // Liquidity is pooled across pairs; the price quoted is the deepest pair's.
-    if (!existing || (pair.liquidity?.usd ?? 0) > 0) candidate.priceUsd ??= pair.priceUsd;
-    candidate.liquidityUsd += pair.liquidity?.usd ?? 0;
+    if (!existing || finiteUsd(pair.liquidity?.usd) > 0) {
+      candidate.priceUsd ??= cleanText(pair.priceUsd, MAX_SYMBOL_LENGTH);
+    }
+    candidate.liquidityUsd += finiteUsd(pair.liquidity?.usd);
     byMint.set(address, candidate);
   }
 
@@ -194,6 +201,11 @@ async function searchCandidates(query: string): Promise<TokenCandidate[]> {
 
   const liquid = matched.filter((c) => c.liquidityUsd >= DUST_LIQUIDITY_USD);
   return (liquid.length > 0 ? liquid : matched).slice(0, MAX_CANDIDATES);
+}
+
+/** A non-finite or negative liquidity figure contributes nothing, never NaN. */
+function finiteUsd(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 /** "$31.7M liquidity · 6p6xgH…2jfGiPN" — enough to tell two TRUMPs apart. */

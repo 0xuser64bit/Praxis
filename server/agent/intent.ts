@@ -986,6 +986,24 @@ function matchPolicyQuestion(text: string): "caps" | "expiry" | "allowlist" | "p
   return null;
 }
 
+/**
+ * How many actions one message may decompose into.
+ *
+ * Every action costs simulations and RPC round-trips, and a proposal card the
+ * owner has to read. A model that returns fifty of them — because the input
+ * asked it to, because it looped, or because the input was crafted to make it
+ * loop — is not a request anyone typed; treating it as one turns a single
+ * message into an unbounded amount of work. Real multi-step phrasing ("send X
+ * to ADDR and save it as LABEL") is two.
+ */
+const MAX_ACTIONS_PER_MESSAGE = 5;
+
+/** Long enough for any ticker, label, address or amount; short enough to log. */
+const MAX_FIELD_LENGTH = 256;
+/** Clarify questions and unsupported notes are prose, and still bounded. */
+const MAX_PROSE_LENGTH = 2_000;
+const MAX_CLARIFY_OPTIONS = 8;
+
 function normalizeIntent(input: unknown): ParsedIntent {
   if (!input || typeof input !== "object") {
     throw new PraxisInputError("intent output must be an object");
@@ -997,7 +1015,7 @@ function normalizeIntent(input: unknown): ParsedIntent {
   if (outcome === "clarify") {
     return {
       outcome,
-      question: readRequiredString(value.question, "question"),
+      question: readRequiredString(value.question, "question", MAX_PROSE_LENGTH),
       options: readOptionalStrings(value.options),
     };
   }
@@ -1005,7 +1023,7 @@ function normalizeIntent(input: unknown): ParsedIntent {
   if (outcome === "unsupported") {
     return {
       outcome,
-      message: readRequiredString(value.message, "message"),
+      message: readRequiredString(value.message, "message", MAX_PROSE_LENGTH),
     };
   }
 
@@ -1014,6 +1032,15 @@ function normalizeIntent(input: unknown): ParsedIntent {
   const actions = Array.isArray(value.actions) ? value.actions : [];
   if (actions.length === 0) {
     throw new PraxisInputError("actions outcome requires at least one action");
+  }
+  if (actions.length > MAX_ACTIONS_PER_MESSAGE) {
+    logger.warn("intent.too_many_actions", { actions: actions.length });
+    return {
+      outcome: "clarify",
+      question:
+        `That came back as ${actions.length} separate actions, which is more than I will do from `
+        + "one message. Tell me the one you want first and we will work through them.",
+    };
   }
 
   return {
@@ -1167,15 +1194,32 @@ function readCadence(value: unknown): DcaCadence {
  * "intent field recipient must be a non-empty string" is a sentence for a
  * log; "Who should receive it?" is one for the person who typed the line.
  */
-function readRequiredString(value: unknown, name: string): string {
+function readRequiredString(
+  value: unknown,
+  name: string,
+  maxLength = MAX_FIELD_LENGTH,
+): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new PraxisInputError(`intent field ${name} must be a non-empty string`, { field: name });
   }
-  return value.trim();
+  const trimmed = value.trim();
+  // Model output is untrusted input like any other. A field longer than this
+  // is not a recipient or a ticker, and letting it through only decides how
+  // far downstream it fails.
+  if (trimmed.length > maxLength) {
+    throw new PraxisInputError(
+      `intent field ${name} must be ${maxLength} characters or fewer`,
+      { field: name },
+    );
+  }
+  return trimmed;
 }
 
 function readOptionalStrings(value: unknown): string[] | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) return undefined;
-  return value.filter((item): item is string => typeof item === "string" && Boolean(item.trim()));
+  return value
+    .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+    .slice(0, MAX_CLARIFY_OPTIONS)
+    .map((item) => item.trim().slice(0, MAX_FIELD_LENGTH));
 }

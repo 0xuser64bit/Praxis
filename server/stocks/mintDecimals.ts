@@ -14,8 +14,13 @@ import { errorFields, logger } from "../observability/logger";
  * program to move a thousand times the intended quantity. That is not a value
  * to guess, so it is read from the chain and cached.
  *
- * Mint decimals are immutable, so a process-lifetime cache is exact, never
- * stale.
+ * Mint decimals are immutable, so a process-lifetime cache is exact — but
+ * only WITHIN one cluster. The same address is a different account (or no
+ * account) on devnet than on mainnet, and this process talks to both: the
+ * transfer RPC and the research RPC are separately configured and routinely
+ * point at different clusters. Cache entries are therefore keyed by endpoint,
+ * or a mainnet read would answer "movable" for a mint that does not exist on
+ * the cluster the transfer would run against.
  */
 
 /** SPL Mint layout: `decimals` is a u8 at byte 44 of the 82-byte base account. */
@@ -31,6 +36,12 @@ export interface MintInfo {
 }
 
 const cache = new Map<string, MintInfo>();
+
+/** `<rpc endpoint>|<mint>` — see the module comment on cross-cluster reuse. */
+function cacheKey(connection: Connection, mint: string): string {
+  return `${connection.rpcEndpoint}|${mint}`;
+}
+
 /** Operator-supplied decimals, authoritative over the chain's (never over the program). */
 const decimalsOverrides = new Map<string, number>();
 
@@ -98,7 +109,7 @@ type FetchedAccount = { owner: PublicKey; data: Buffer | Uint8Array } | null;
  * Shared by the single and batched read paths so a mint cannot be judged by
  * two different rules depending on how it was fetched.
  */
-function decodeMintAccount(mint: string, info: FetchedAccount): MintLookup {
+function decodeMintAccount(key: string, mint: string, info: FetchedAccount): MintLookup {
   if (!info) {
     logger.warn("mint.decimals_missing_account", { mint });
     return { status: "unavailable" };
@@ -124,12 +135,13 @@ function decodeMintAccount(mint: string, info: FetchedAccount): MintLookup {
   }
 
   const resolved: MintInfo = { decimals, programId: owner };
-  cache.set(mint, resolved);
+  cache.set(key, resolved);
   return { status: "ok", info: resolved };
 }
 
 async function lookupMint(connection: Connection, mint: string): Promise<MintLookup> {
-  const cached = cache.get(mint);
+  const key = cacheKey(connection, mint);
+  const cached = cache.get(key);
   if (cached !== undefined) return { status: "ok", info: cached };
 
   let address: PublicKey;
@@ -145,7 +157,7 @@ async function lookupMint(connection: Connection, mint: string): Promise<MintLoo
       envTimeout("PRAXIS_RPC_READ_TIMEOUT_MS", 8_000),
       `mint decimals ${mint}`,
     );
-    return decodeMintAccount(mint, info);
+    return decodeMintAccount(key, mint, info);
   } catch (error) {
     logger.warn("mint.decimals_lookup_failed", { mint, ...errorFields(error) });
     return { status: "unavailable" };
@@ -172,7 +184,7 @@ export async function lookupMints(
   const pending: { mint: string; address: PublicKey }[] = [];
 
   for (const mint of new Set(mints)) {
-    const cached = cache.get(mint);
+    const cached = cache.get(cacheKey(connection, mint));
     if (cached !== undefined) {
       out.set(mint, { status: "ok", info: cached });
       continue;
@@ -198,7 +210,10 @@ export async function lookupMints(
         `mint decimals x${chunk.length}`,
       );
       chunk.forEach((entry, index) => {
-        out.set(entry.mint, decodeMintAccount(entry.mint, infos[index] ?? null));
+        out.set(
+          entry.mint,
+          decodeMintAccount(cacheKey(connection, entry.mint), entry.mint, infos[index] ?? null),
+        );
       });
     } catch (error) {
       logger.warn("mint.decimals_batch_lookup_failed", {

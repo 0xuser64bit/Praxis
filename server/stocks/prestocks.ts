@@ -1,7 +1,15 @@
 import type { ResearchMetric } from "@praxis/shared";
 
+import { PublicKey } from "@solana/web3.js";
+
 import { fetchWithTimeout, type FetchLike } from "../api/timeout";
 import { compactAmount } from "../agent/researchFormat";
+import {
+  cleanText,
+  MAX_DETAIL_LENGTH,
+  MAX_NAME_LENGTH,
+  MAX_SYMBOL_LENGTH,
+} from "../agent/untrusted";
 
 /**
  * PreStocks quote fetcher (Stocklana C03).
@@ -77,8 +85,10 @@ export function parsePrestocksBody(body: unknown): PrestocksEntry[] {
 function parsePrestocksEntry(item: unknown): PrestocksEntry | undefined {
   if (!item || typeof item !== "object") return undefined;
   const v = item as Record<string, unknown>;
-  const symbol = typeof v.symbol === "string" ? v.symbol.trim().toUpperCase() : "";
-  const mint = typeof v.contract_address === "string" ? v.contract_address.trim() : "";
+  const symbol = cleanText(v.symbol, MAX_SYMBOL_LENGTH)?.toUpperCase();
+  // The mint is an address the rest of the system would derive from; a quote
+  // feed does not get to hand us an arbitrary string for one.
+  const mint = asAddress(v.contract_address);
   const tokenPrice = Number(v.tokenPrice);
   const markPrice = Number(v.markPrice);
   if (!symbol || !mint || !Number.isFinite(tokenPrice) || tokenPrice <= 0 || !Number.isFinite(markPrice) || markPrice <= 0) {
@@ -86,17 +96,47 @@ function parsePrestocksEntry(item: unknown): PrestocksEntry | undefined {
   }
   return {
     symbol,
-    name: typeof v.name === "string" ? v.name : `${symbol} PreStocks`,
-    description: typeof v.description === "string" ? v.description : "",
-    image: typeof v.image === "string" ? v.image : "",
-    externalUrl: typeof v.external_url === "string" ? v.external_url : "",
+    name: cleanText(v.name, MAX_NAME_LENGTH) ?? `${symbol} PreStocks`,
+    description: cleanText(v.description, MAX_DETAIL_LENGTH) ?? "",
+    image: httpUrl(v.image) ?? "",
+    // This one reaches agent copy (the research summary links it), so an
+    // unbounded or non-http value would be quoting a third party into the
+    // product's own sentence.
+    externalUrl: httpUrl(v.external_url) ?? "",
     mint,
     tokenPrice,
     markPrice,
-    markValuation: Number(v.markValuation) || 0,
-    impliedValuation: Number(v.impliedValuation) || 0,
-    supply: Number(v.supply) || 0,
+    markValuation: finite(v.markValuation),
+    impliedValuation: finite(v.impliedValuation),
+    supply: finite(v.supply),
   };
+}
+
+function finite(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function asAddress(value: unknown): string | undefined {
+  const text = cleanText(value, 64);
+  if (!text) return undefined;
+  try {
+    return new PublicKey(text).toBase58();
+  } catch {
+    return undefined;
+  }
+}
+
+/** An http(s) URL, bounded, or undefined — never `javascript:` or a novel. */
+function httpUrl(value: unknown): string | undefined {
+  const text = cleanText(value, MAX_DETAIL_LENGTH);
+  if (!text) return undefined;
+  try {
+    const url = new URL(text);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** PreStocks price rows, prepended to the standard research metrics. */

@@ -67,7 +67,11 @@ export function compactUsd(value: number): FormattedNumber {
  */
 export function formatPrice(raw: string | number): FormattedNumber {
   const parsed = typeof raw === "number" ? raw : Number(raw);
-  if (!Number.isFinite(parsed) || parsed === 0) return { value: `$${raw}` };
+  // The input is a provider's string. If it is not a number, it is not a
+  // price, and echoing it verbatim onto the card is how "$<whatever they
+  // sent>" gets rendered as a quote.
+  if (!Number.isFinite(parsed)) return { value: "unavailable" };
+  if (parsed === 0) return { value: "$0.00" };
 
   const exact = typeof raw === "string" ? `$${groupDigits(raw)}` : undefined;
   if (Math.abs(parsed) >= ABBREVIATE_ABOVE) {

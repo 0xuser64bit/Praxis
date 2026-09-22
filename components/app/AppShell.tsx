@@ -16,6 +16,7 @@ import { ActivityLog } from "./ActivityLog";
 import { AppSidebar } from "./AppSidebar";
 import { useAuthSession } from "./AuthGate";
 import { Conversation } from "./Conversation";
+import { MobileThreadBar } from "./MobileThreadBar";
 import { PolicyDashboard } from "./PolicyDashboard";
 import {
   useConnectionState,
@@ -169,11 +170,22 @@ function ReadyAppShell() {
           </div>
         </header>
 
-        {/* mobile surface switcher (sidebar is hidden on small screens) */}
-        <div className="hidden gap-1 px-4 py-2 [border-bottom:0.5px_solid_var(--border)] max-[760px]:flex">
-          <MobileTab label="Conversation" icon={<IconMessages size={15} />} active={view === "chat"} onClick={() => setView("chat")} />
-          <MobileTab label="Policy" icon={<IconShieldLock size={15} />} active={view === "policy"} onClick={() => setView("policy")} />
-          <MobileTab label="Activity" icon={<IconHistory size={15} />} active={view === "activity"} onClick={() => setView("activity")} />
+        {/* Mobile surfaces. The sidebar owns view switching AND the thread
+            list on desktop, and is hidden below 760px, so both live here. */}
+        <div className="hidden shrink-0 [border-bottom:0.5px_solid_var(--border)] max-[760px]:block">
+          <div className="flex gap-1 px-4 py-2">
+            <MobileTab label="Conversation" icon={<IconMessages size={15} />} active={view === "chat"} onClick={() => setView("chat")} />
+            <MobileTab label="Policy" icon={<IconShieldLock size={15} />} active={view === "policy"} onClick={() => setView("policy")} />
+            <MobileTab label="Activity" icon={<IconHistory size={15} />} active={view === "activity"} onClick={() => setView("activity")} />
+          </div>
+          {view === "chat" && (
+            <MobileThreadBar
+              threads={threads}
+              activeThreadId={activeThreadId}
+              onSelectThread={selectThread}
+              onNewThread={newThread}
+            />
+          )}
         </div>
 
         {view === "chat" && (

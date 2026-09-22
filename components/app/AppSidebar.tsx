@@ -89,9 +89,6 @@ export function AppSidebar({
       >
         <IconPlus size={14} />
         New thread
-        <span className="ml-auto [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
-          ⌘N
-        </span>
       </button>
 
       {/* threads */}

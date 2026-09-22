@@ -73,7 +73,9 @@ export function Composer({
             }
           }}
           disabled={disabled}
-          placeholder={disabled ? "Praxis is thinking…" : "Tell Praxis what to do…"}
+          // Not "thinking…": the indicator above stops saying that past twelve
+          // seconds, and a placeholder that disagrees with it reads as a stall.
+          placeholder={disabled ? "Praxis is working…" : "Tell Praxis what to do…"}
           aria-label="Message Praxis"
           data-focus-ring="none"
           className="flex-1 bg-transparent [font-family:var(--font-mono)] text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"

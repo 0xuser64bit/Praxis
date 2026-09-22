@@ -39,6 +39,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { Thinking } from "@/components/app/Thinking";
 import { Container } from "@/components/praxis/Container";
 import { Eyebrow } from "@/components/praxis/Eyebrow";
 import { PraxisLogoMark } from "@/components/praxis/PraxisLogo";
@@ -738,30 +739,6 @@ function ChatSurface({
         </div>
       </div>
     </>
-  );
-}
-
-function Thinking() {
-  return (
-    <div className="mb-7" role="status" aria-label="Praxis is thinking">
-      <div className="mb-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
-        Praxis
-      </div>
-      <div className="inline-flex items-center gap-2.5 rounded-lg bg-[var(--bg-card)] px-3 py-2 [border:0.5px_solid_var(--border)]">
-        <span className="flex items-center gap-1">
-          {[0, 1, 2].map((i) => (
-            <span
-              key={i}
-              className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] [animation:thinkingDot_1.2s_ease-in-out_infinite]"
-              style={{ animationDelay: `${i * 0.16}s` }}
-            />
-          ))}
-        </span>
-        <span className="[font-family:var(--font-mono)] text-[11.5px] text-[var(--text-secondary)]">
-          thinking…
-        </span>
-      </div>
-    </div>
   );
 }
 

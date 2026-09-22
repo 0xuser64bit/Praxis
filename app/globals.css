@@ -171,18 +171,92 @@ body::after {
   }
 }
 
-/* Typing/working indicator — staggered bounce + fade so it reads as "busy"
-   (the legacy `pulse` keyframe only animates a green box-shadow ring). */
-@keyframes thinkingDot {
-  0%,
-  80%,
-  100% {
-    opacity: 0.25;
-    transform: translateY(0) scale(0.85);
+/* ------------------------------------------------------------------
+   Working indicator — see components/app/Thinking.tsx.
+
+   A comet laps a 3x3 pixel grid while a highlight crosses the mono label
+   beside it — one 1.9s shimmer to two 950ms laps, so the pair reads as
+   one mechanism. It replaced three bouncing dots, which said "chat app"
+   in a product whose whole voice is ledger and instrument.
+
+   Reduced motion and forced colors both fall back to static marks — the
+   elapsed readout in the component carries the signal instead, which is
+   the more honest half of it anyway.
+   ------------------------------------------------------------------ */
+/* One cell's turn in the lap. The rise is fast and the fall is slower, which
+   is what makes a staggered ring read as a comet with a tail rather than a
+   ring of eight lights breathing together. The lit window is deliberately
+   short of the 110ms stagger's reach — widen it and the whole ring glows. */
+@keyframes pixel-on {
+  0% {
+    opacity: 0.18;
   }
-  40% {
+  12% {
     opacity: 1;
-    transform: translateY(-3px) scale(1);
+  }
+  34% {
+    opacity: 0.18;
+  }
+  100% {
+    opacity: 0.18;
+  }
+}
+
+.thinking-cell {
+  opacity: 0.18;
+  animation: pixel-on 950ms ease-in-out infinite;
+}
+
+/* The centre of the grid: never lit, and dimmer than a cell at rest so the
+   ring reads as a ring. */
+.thinking-cell[data-idle] {
+  opacity: 0.09;
+  animation: none;
+}
+
+@keyframes thinkingShimmer {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -30% 0;
+  }
+}
+
+.thinking-label {
+  background-image: linear-gradient(
+    100deg,
+    var(--text-secondary) 38%,
+    var(--accent) 50%,
+    var(--text-secondary) 62%
+  );
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: thinkingShimmer 1.9s linear infinite;
+}
+
+/* The grid freezes at its dim state rather than mid-lap — a frozen comet is
+   just one brighter cell, which reads as a stuck pixel. The timer keeps
+   ticking, and carries the signal on its own. */
+@media (prefers-reduced-motion: reduce) {
+  .thinking-label {
+    background-image: none;
+    color: var(--text-secondary);
+    animation: none;
+  }
+  .thinking-cell {
+    animation: none;
+  }
+}
+
+/* `background-clip: text` over a transparent color renders as nothing when the
+   OS is substituting its own palette. */
+@media (forced-colors: active) {
+  .thinking-label {
+    background-image: none;
+    color: CanvasText;
   }
 }
 

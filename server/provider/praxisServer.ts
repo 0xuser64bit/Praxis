@@ -484,9 +484,23 @@ export class PraxisServerProvider implements PraxisProvider {
       const recipient = new PublicKey(proposal.detail.recipientAddress);
       const asset = proposal.detail.asset;
       const isSol = asset.symbol === "SOL";
-      const execution = isSol
-        ? await this.aegis.executeAgentTransfer(recipient, proposal.detail.amount)
-        : await this.aegis.executeAgentTransferSpl(recipient, asset, proposal.detail.amount);
+      // Everything before submission is local reads plus signing — nothing has
+      // reached the chain — but the claim above already persisted "signing".
+      // If any of it throws (RPC read, remote-signer round-trip), reset to
+      // pending so the card stays signable instead of stuck, then surface the
+      // failure. Resetting is safe exactly because submission never happened;
+      // the post-broadcast paths below convert failures to rejected statuses.
+      let execution;
+      try {
+        execution = isSol
+          ? await this.aegis.executeAgentTransfer(recipient, proposal.detail.amount)
+          : await this.aegis.executeAgentTransferSpl(recipient, asset, proposal.detail.amount);
+      } catch (error) {
+        proposal.state = "pending";
+        proposal.simulation = "Submission failed before reaching the chain — try signing again.";
+        await this.commit();
+        throw error;
+      }
       proposal.check = execution.check;
       proposal.sig = execution.sig;
       proposal.state = execution.status === "confirmed" ? "signed" : "blocked";

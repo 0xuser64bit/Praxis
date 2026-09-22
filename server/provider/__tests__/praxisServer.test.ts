@@ -513,6 +513,27 @@ describe("the signature gate", () => {
     expect(fake.calls).toContain("executeAgentTransfer");
     expect(provider.getProposal(proposalId)!.state).toBe("signed");
   });
+
+  test("a pre-submission failure leaves the proposal signable instead of stuck", async () => {
+    // The claim persists "signing" before anything reaches the chain. If a
+    // pre-broadcast read or the signer round-trip throws, the card must come
+    // back to pending: the claim only proceeds from pending and cancel ignores
+    // anything else, so a stuck "signing" would make every later tap silently
+    // no-op with no way back.
+    const { provider, fake, proposalId } = await pendingProposal();
+    const retry = Object.getPrototypeOf(fake).executeAgentTransfer.bind(fake);
+    fake.executeAgentTransfer = async () => {
+      throw new Error("rpc down");
+    };
+    await expect(provider.signProposal(proposalId)).rejects.toThrow("rpc down");
+    expect(provider.getProposal(proposalId)!.state).toBe("pending");
+
+    // Nothing was submitted, so retrying after the outage signs exactly once.
+    fake.executeAgentTransfer = retry;
+    await provider.signProposal(proposalId);
+    expect(provider.getProposal(proposalId)!.state).toBe("signed");
+    expect(fake.calls.filter((c) => c === "executeAgentTransfer")).toHaveLength(1);
+  });
 });
 
 describe("agent teardown", () => {

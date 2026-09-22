@@ -25,6 +25,18 @@ export const ACTION_LOG_CAP = 16;
 export const DAY_WINDOW_SECONDS = 86_400;
 
 /**
+ * Lamports a data-less system account must retain to stay rent-exempt —
+ * `Rent::minimum_balance(0)` on every current cluster.
+ *
+ * The vault is such an account, so the Solana runtime refuses any transaction
+ * that would leave it funded below this. The program reads the real figure
+ * from the Rent sysvar and is the authority; this copy exists so a form can
+ * say "that would leave the vault below its rent reserve" before costing a
+ * wallet signature and a fee.
+ */
+export const VAULT_RENT_RESERVE_LAMPORTS = 890_880n;
+
+/**
  * The Aegis program the demo deployment runs (devnet). A base58 string, not a
  * `PublicKey`, so surfaces with no business importing `@solana/web3.js` — the
  * marketing page, for one — can still name and link the program that does the

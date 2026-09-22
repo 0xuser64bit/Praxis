@@ -8,7 +8,7 @@
  */
 
 import type { AllowListKind, PolicyView, TokenEnvelopeConfig } from "@praxis/shared";
-import { remaining as calcRemaining } from "@praxis/shared";
+import { remaining as calcRemaining, VAULT_RENT_RESERVE_LAMPORTS } from "@praxis/shared";
 import {
   IconAlertTriangle,
   IconArrowUp,
@@ -1194,8 +1194,18 @@ function VaultCard({
   useActionCompletion([actionKeys.fund, actionKeys.withdraw], (ok) => {
     if (ok) setMode(null);
   });
+  // The vault is a data-less system account, so the chain refuses to leave it
+  // funded below its rent reserve. Aegis is the authority on that; catching it
+  // here just saves a wallet signature and a fee on a transaction that cannot
+  // land. A full sweep is always fine — the account is simply deallocated.
+  const rentTrap =
+    parsed !== null
+    && (mode === "withdraw"
+      ? parsed < policy.vaultBalance
+        && policy.vaultBalance - parsed < VAULT_RENT_RESERVE_LAMPORTS
+      : policy.vaultBalance + parsed < VAULT_RENT_RESERVE_LAMPORTS);
   const overBalance = mode === "withdraw" && parsed !== null && parsed > policy.vaultBalance;
-  const valid = parsed !== null && !overBalance;
+  const valid = parsed !== null && !overBalance && !rentTrap;
 
   const open = (next: "fund" | "withdraw") => {
     setMode((current) => (current === next ? null : next));
@@ -1277,7 +1287,9 @@ function VaultCard({
             {mode === "withdraw" && (
               <button
                 type="button"
-                onClick={() => setDraft(formatEditableUnits(policy.vaultBalance, 9, 4))}
+                // Exact, not rounded: "Max" means all of it, and a rounded
+                // figure would leave dust the chain refuses to strand.
+                onClick={() => setDraft(formatEditableUnits(policy.vaultBalance, 9))}
                 className="h-9 rounded-md px-2 text-[11px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:text-[var(--accent)]"
               >
                 Max
@@ -1293,9 +1305,13 @@ function VaultCard({
           <p className="mt-2 text-[11px] leading-[1.5] text-[var(--text-tertiary)]">
             {overBalance
               ? "Amount exceeds the vault balance."
-              : mode === "fund"
-                ? "Moves SOL from your wallet into the agent vault."
-                : "Returns SOL from the vault to your wallet. Owner-only — no policy limits apply."}
+              : rentTrap
+                ? mode === "withdraw"
+                  ? `A partial withdrawal has to leave ${formatSol(VAULT_RENT_RESERVE_LAMPORTS, 9)} SOL behind to keep the vault rent-exempt. Use Max to empty it.`
+                  : `A vault needs at least ${formatSol(VAULT_RENT_RESERVE_LAMPORTS, 9)} SOL to exist on-chain.`
+                : mode === "fund"
+                  ? "Moves SOL from your wallet into the agent vault."
+                  : "Returns SOL from the vault to your wallet. Owner-only — no policy limits apply."}
           </p>
         </div>
       )}

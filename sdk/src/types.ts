@@ -131,6 +131,12 @@ export interface TransferDetail {
   recipientNote?: string;
   /** The destination is the owner's own wallet (derived from the address). */
   toSelf?: true;
+  /**
+   * Server-computed USD value of `amount`, as a decimal string, when a real
+   * price is available. Absent means "not known" — display only, and never an
+   * input to base-unit math.
+   */
+  usdEstimate?: string;
 }
 
 export interface SwapDetail {
@@ -174,14 +180,36 @@ export interface ClarifyOption {
 
 export interface ResearchMetric {
   label: string;
+  /** Already display-formatted, and abbreviated where a raw figure is unreadable. */
   value: string;
+  /** The full-precision figure behind an abbreviated `value`, when one was cut. */
+  exact?: string;
+  /** Why the metric is missing, or what it measures. */
+  note?: string;
   trend?: "up" | "down" | "flat";
+}
+
+/**
+ * One step in how a research card was produced. A card whose whole claim is
+ * "data, no advice" has to be able to show its working: "unavailable" means
+ * something different when an indexer has no pair than when an RPC refused
+ * the query.
+ */
+export interface ResearchSource {
+  /** "Solana RPC", "Market data (…)", "PreStocks", "Token resolution". */
+  label: string;
+  status: "ok" | "partial" | "unavailable";
+  detail: string;
 }
 
 export interface ResearchData {
   token: string;
+  /** Project name from the indexer, when it differs from the ticker. */
+  name?: string;
   mint: Address;
   metrics: ResearchMetric[];
+  /** How the card was produced, in the order the steps ran. */
+  sources?: ResearchSource[];
   summary: string;
 }
 

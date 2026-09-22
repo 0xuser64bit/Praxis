@@ -167,7 +167,15 @@ export class PraxisClient {
     const proposalIds = message.blocks
       .filter((b): b is Extract<typeof b, { type: "proposal" }> => b.type === "proposal")
       .map((b) => b.proposalId);
-    const proposals = await Promise.all(proposalIds.map((id) => this.getProposal(id)));
+    if (proposalIds.length === 0) return { threadId: tid, message, proposals: [] };
+
+    // One batch read rather than one request per card: a basket reply carries
+    // eight proposals, and eight round-trips per turn is how a caller hits the
+    // read limit doing nothing wrong.
+    const byId = new Map((await this.getProposals()).map((p) => [p.id, p]));
+    const proposals = proposalIds
+      .map((id) => byId.get(id))
+      .filter((p): p is ActionProposal => p !== undefined);
     return { threadId: tid, message, proposals };
   }
 
@@ -213,6 +221,14 @@ export class PraxisClient {
   }
   getProposal(id: string): Promise<ActionProposal> {
     return this.get<ActionProposal>("/get-proposal", { id });
+  }
+  /**
+   * Every proposal this wallet holds, in one request. Prefer this over a loop
+   * of {@link getProposal}: a per-id fetch is what trips the read rate limit
+   * on a busy thread.
+   */
+  getProposals(): Promise<ActionProposal[]> {
+    return this.get<ActionProposal[]>("/get-proposals");
   }
   getPolicy(): Promise<PolicyView> {
     return this.get<PolicyView>("/get-policy");
@@ -317,7 +333,39 @@ export class PraxisClient {
     return this.request<T>("POST", path, { body, timeoutMs });
   }
 
+  /**
+   * Run a request, and if the session has expired, sign in again and retry it
+   * once.
+   *
+   * Sessions are deliberately short — holding one is enough to move value
+   * within the Aegis envelope — so a long-lived agent process WILL outlive its
+   * cookie. Without this, every caller writes the same catch-401-and-reconnect
+   * block, and the ones who do not simply stop working after a day. Retried
+   * once only, never for the auth endpoints themselves, and only when a signer
+   * is configured; without one there is nothing to re-authenticate with and the
+   * 401 is the honest answer.
+   */
   private async request<T>(
+    method: string,
+    path: string,
+    opts: { body?: unknown; query?: Record<string, string>; timeoutMs?: number } = {},
+  ): Promise<T> {
+    try {
+      return await this.send1<T>(method, path, opts);
+    } catch (error) {
+      const recoverable =
+        error instanceof PraxisApiError
+        && error.isAuth
+        && Boolean(this.signer)
+        && !path.startsWith("/auth/");
+      if (!recoverable) throw error;
+      this.sessionCookie = undefined;
+      await this.connect();
+      return this.send1<T>(method, path, opts);
+    }
+  }
+
+  private async send1<T>(
     method: string,
     path: string,
     opts: { body?: unknown; query?: Record<string, string>; timeoutMs?: number } = {},

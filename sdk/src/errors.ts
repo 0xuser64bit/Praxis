@@ -12,6 +12,8 @@ export type PraxisErrorCode =
   /** The wallet has no Aegis policy account yet — call `bootstrapPolicy`. */
   | "policy_not_found"
   | "rate_limited"
+  /** A concurrent writer changed this wallet's state first; reload and retry. */
+  | "conflict"
   | "internal_error"
   | "client_error";
 
@@ -82,6 +84,10 @@ export class PraxisApiError extends Error {
   get isPolicyNotFound(): boolean {
     return this.code === "policy_not_found";
   }
+  /** A concurrent writer won; the call is safe to retry after a reload. */
+  get isConflict(): boolean {
+    return this.code === "conflict";
+  }
 }
 
 /** Fallback classification for responses from an older backend with no `code`. */
@@ -89,6 +95,7 @@ function codeFromStatus(status: number): PraxisErrorCode {
   if (status === 400) return "invalid_input";
   if (status === 401) return "unauthorized";
   if (status === 404) return "not_found";
+  if (status === 409) return "conflict";
   if (status === 429) return "rate_limited";
   if (status === 503) return "config_error";
   if (status === 0) return "client_error";

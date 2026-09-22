@@ -121,7 +121,7 @@ describe("connect()", () => {
 
 describe("ask()", () => {
   test("returns the agent reply and hydrates proposals", async () => {
-    const { fetch } = fakeServer({
+    const { fetch, calls } = fakeServer({
       "POST /send": () => ({ body: { threadId: "t1" } }),
       "GET /get-thread": () => ({
         body: {
@@ -134,15 +134,28 @@ describe("ask()", () => {
           ],
         },
       }),
-      "GET /get-proposal": () => ({
-        body: {
-          id: "p1",
-          detail: { kind: "transfer", amount: "500000000", recipientName: "Maya", recipientAddress: "Maya111", asset: { symbol: "SOL", mint: "So111", decimals: 9, verified: true } },
-          networkFee: "5000",
-          simulation: "Will succeed",
-          check: { allowed: true, spentToday: "0", dailyLimit: "1000000000", remaining: "1000000000" },
-          state: "pending",
-        },
+      // ask() hydrates cards with ONE batch read, not one request per card.
+      "GET /get-proposals": () => ({
+        body: [
+          {
+            id: "p1",
+            detail: { kind: "transfer", amount: "500000000", recipientName: "Maya", recipientAddress: "Maya111", asset: { symbol: "SOL", mint: "So111", decimals: 9, verified: true } },
+            networkFee: "5000",
+            simulation: "Will succeed",
+            check: { allowed: true, spentToday: "0", dailyLimit: "1000000000", remaining: "1000000000" },
+            state: "pending",
+          },
+          // A proposal from another thread: ask() returns only the cards this
+          // reply actually referenced.
+          {
+            id: "p-other",
+            detail: { kind: "transfer", amount: "1", recipientName: "x", recipientAddress: "X", asset: { symbol: "SOL", mint: "So111", decimals: 9, verified: true } },
+            networkFee: "5000",
+            simulation: "ok",
+            check: { allowed: true, spentToday: "0", dailyLimit: "1", remaining: "1" },
+            state: "pending",
+          },
+        ],
       }),
     });
 
@@ -153,6 +166,7 @@ describe("ask()", () => {
     expect(result.message.role).toBe("agent");
     expect(result.proposals).toHaveLength(1);
     expect(result.proposals[0].id).toBe("p1");
+    expect(calls.filter((c) => c.path === "/get-proposals")).toHaveLength(1);
     expect(result.proposals[0].check.allowed).toBe(true);
     // Money stays a base-unit string on the wire.
     expect(result.proposals[0].detail).toMatchObject({ kind: "transfer", amount: "500000000" });
@@ -497,15 +511,17 @@ describe("stocks (C07)", () => {
           ],
         },
       }),
-      "GET /get-proposal": () => ({
-        body: {
-          id: "p1",
-          detail: { kind: "transfer", amount: "3000000", recipientName: "you", recipientAddress: "Y", asset: { symbol: "OPENAI", mint: "m", decimals: 6, verified: true } },
-          networkFee: "5000",
-          simulation: "ok",
-          check: { allowed: true, spentToday: "0", dailyLimit: "500000000", remaining: "500000000" },
-          state: "pending",
-        },
+      "GET /get-proposals": () => ({
+        body: [
+          {
+            id: "p1",
+            detail: { kind: "transfer", amount: "3000000", recipientName: "you", recipientAddress: "Y", asset: { symbol: "OPENAI", mint: "m", decimals: 6, verified: true } },
+            networkFee: "5000",
+            simulation: "ok",
+            check: { allowed: true, spentToday: "0", dailyLimit: "500000000", remaining: "500000000" },
+            state: "pending",
+          },
+        ],
       }),
     });
     const client = new PraxisClient({ baseUrl: BASE, fetch });
@@ -515,5 +531,50 @@ describe("stocks (C07)", () => {
     const detail = proposals[0].detail;
     expect(detail.kind === "transfer" && typeof detail.amount).toBe("string");
     expect(baseUnitsToHuman((detail as { amount: string }).amount, 6)).toBe("3");
+  });
+});
+
+describe("session recovery", () => {
+  test("re-runs the handshake once when the session has expired, then retries", async () => {
+    // Sessions are short by design, so a long-lived agent process WILL outlive
+    // its cookie. Without this every caller writes the same catch-401 block,
+    // and the ones who do not just stop working after a day.
+    let signedIn = false;
+    const { fetch, calls } = fakeServer({
+      "POST /auth/challenge": () => ({
+        body: { address: ADDRESS, nonce: "n", message: "sign me", expiresAt: "2099-01-01T00:00:00.000Z" },
+      }),
+      "POST /auth/verify": () => {
+        signedIn = true;
+        return { body: { authenticated: true, walletAddress: ADDRESS } };
+      },
+      "GET /get-policy": () =>
+        signedIn
+          ? { body: { address: "pda", owner: ADDRESS, paused: false } }
+          : { status: 401, body: { error: "sign in", type: "PraxisAuthError", code: "unauthorized" } },
+    });
+
+    const client = new PraxisClient({ baseUrl: BASE, signer: keypairSigner(SEED), fetch });
+    const policy = await client.getPolicy();
+    expect(policy.owner).toBe(ADDRESS);
+    expect(calls.filter((c) => c.path === "/get-policy")).toHaveLength(2);
+  });
+
+  test("without a signer, a 401 is the answer rather than a retry loop", async () => {
+    const { fetch, calls } = fakeServer({
+      "GET /get-policy": () => ({ status: 401, body: { error: "sign in", type: "PraxisAuthError" } }),
+    });
+    const client = new PraxisClient({ baseUrl: BASE, fetch });
+    await expect(client.getPolicy()).rejects.toThrow(/sign in/);
+    expect(calls.filter((c) => c.path === "/get-policy")).toHaveLength(1);
+  });
+
+  test("an expired session during sign-in does not recurse", async () => {
+    const { fetch, calls } = fakeServer({
+      "POST /auth/challenge": () => ({ status: 401, body: { error: "nope", type: "PraxisAuthError" } }),
+    });
+    const client = new PraxisClient({ baseUrl: BASE, signer: keypairSigner(SEED), fetch });
+    await expect(client.connect()).rejects.toThrow(/nope/);
+    expect(calls.filter((c) => c.path === "/auth/challenge")).toHaveLength(1);
   });
 });

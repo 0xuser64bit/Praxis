@@ -33,6 +33,11 @@ for (const p of proposals) {
 }
 ```
 
+A proposal is a set of readings taken when it was produced — fee, simulated
+outcome, remaining daily envelope. It stays signable for 24 hours; after that
+the backend refuses it and you ask again. Aegis enforces the envelope either
+way, but it cannot tell whether the card you read is the one you signed.
+
 `ask()` returns once the agent has finished — the API resolves `send` only after
 the reply is ready, so there is no polling.
 
@@ -46,6 +51,12 @@ the reply is ready, so there is no polling.
    cookie jar (Node's `fetch` does not persist cookies between calls).
 
 The signed-in wallet is the **owner** whose Aegis policy PDA scopes everything.
+
+Sessions are short on purpose — holding one is enough to move value *within*
+the Aegis envelope, with no further wallet signature — so a long-running
+process will outlive its cookie. When a signer is configured, the SDK runs the
+handshake again on a `401` and retries the call once; you do not need your own
+reconnect loop. Without a signer, the `401` is returned as-is.
 
 ## Signers
 
@@ -83,7 +94,7 @@ toBaseUnits("500000000");            // 500000000n
 |------|---------|
 | Auth | `connect()`, `session()`, `logout()` |
 | Conversation | `ask()`, `send()`, `newThread()`, `signProposal()`, `cancelProposal()` |
-| Reads | `getPolicy()`, `getThreads()`, `getThread()`, `getProposal()`, `getActivity()`, `getAddressBook()`, `getSchedules()`, `getVersion()` |
+| Reads | `getPolicy()`, `getThreads()`, `getThread()`, `getProposal()`, `getProposals()`, `getActivity()`, `getAddressBook()`, `getSchedules()`, `getVersion()` |
 | Contacts | `addContact()`, `removeContact()` — labels only, no signing power |
 | Recurring | `cancelSchedule()` — stop a recurring buy (fires only ever emit proposals) |
 | Policy (server-key) | `bootstrapPolicy()`, `fundVault()`, `withdrawVault()`, `updatePolicy()`, `configureToken()`, `prepareTokenAccounts()`, `revokeAgent()`, `rotateAgent()`, `addToAllowList()`, `removeFromAllowList()`, `deleteAgent()` |
@@ -98,12 +109,18 @@ toBaseUnits("500000000");            // 500000000n
 > `submitOwnerTransaction()`. The SDK's `keypairSigner` signs the sign-in
 > *message* only, not transactions — so a pure-Node owner-action flow must bring
 > its own transaction signer.
+>
+> Pass the whole draft back. Since **0.5.0** it carries a `draft` token: the
+> backend refuses to relay a transaction it did not build, which is what keeps
+> the server-side checks on an action (a token balance still in the vault, a
+> mint Aegis cannot drive) from being skippable by assembling your own bytes.
+> Mutate `transaction` only; leave the other fields alone.
 
 ## Errors
 
-Non-2xx responses throw `PraxisApiError` with `.status`, `.type`, and helpers
-`.isAuth` / `.isRateLimited` / `.isInput` / `.isNotFound` / `.isConfig` /
-`.isServer`. A client-side timeout or connection failure throws
+Non-2xx responses throw `PraxisApiError` with `.status`, `.type`, a stable
+`.code` to branch on, and helpers `.isAuth` / `.isRateLimited` / `.isInput` /
+`.isNotFound` / `.isConfig` / `.isConflict` / `.isPolicyNotFound` / `.isServer`. A client-side timeout or connection failure throws
 `PraxisApiError` with `.isTimeout` / `.isNetwork` (and `.status === 0`, with the
 original error on `.cause`). SDK-side misconfiguration throws `PraxisConfigError`.
 

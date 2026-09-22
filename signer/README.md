@@ -26,6 +26,7 @@ Env:
   secret key (JSON array or base58), or a path to it.
 - `SIGNER_AEGIS_PROGRAM_ID` (optional) — defaults to the Aegis program id.
 - `SIGNER_PORT` (optional) — defaults to `8787`.
+- `SIGNER_MAX_SIGNATURES_PER_MINUTE` (optional) — defaults to `60`.
 
 ## Wire contract
 
@@ -36,9 +37,16 @@ Authorization: Bearer <SIGNER_TOKEN>
 GET  /                                ->  200 { "ok": true, "agent": "<pubkey>" }
 ```
 
-It refuses (`401`) without the token and (`403`) anything that is not a single
-Aegis agent transfer. The on-chain program remains the authoritative enforcement;
-this is defense in depth at the key boundary.
+It refuses (`401`) without the token, (`403`) anything that is not a single
+Aegis agent transfer, and (`429`) past its per-minute signature ceiling. The
+on-chain program remains the authoritative enforcement; this is defense in
+depth at the key boundary.
+
+**Audit.** Every outcome is logged as one JSON line — refusals, rate-limit
+hits, and each signature with the instruction, the policy PDA and the amount.
+This process is the only component that observes every use of the agent key,
+so "what did the agent sign while the token was leaked" is answerable only
+from here. Ship these lines somewhere durable.
 
 ## Deploy for ~$0 (Oracle Cloud Always Free + Cloudflare Tunnel)
 
@@ -63,7 +71,7 @@ agent public key and the bearer token. Run the VM process under a supervisor
 
 ## Hardening later
 
-The service is intentionally minimal and stateless. To raise the bar without
-changing the app or wire contract, rework its internals to delegate signing to a
-real KMS/HSM (e.g. GCP Cloud KMS `EC_SIGN_ED25519`), add IP allow-listing or
-mTLS, and add per-key rate limits.
+The service is intentionally minimal. To raise the bar without changing the app
+or wire contract, rework its internals to delegate signing to a real KMS/HSM
+(e.g. GCP Cloud KMS `EC_SIGN_ED25519`), add IP allow-listing or mTLS, and make
+the rate limit and audit log per-policy rather than per-process.

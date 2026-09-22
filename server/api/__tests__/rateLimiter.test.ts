@@ -55,18 +55,23 @@ describe("RedisRateLimiter", () => {
     expect(JSON.stringify(calls[0])).toContain("NX");
   });
 
-  test("fails open when the limiter is unavailable", async () => {
+  test("degrades to a local limit when the limiter is unavailable", async () => {
     const { impl } = fakeFetch(() => ({ status: 500, json: {} }));
     const limiter = new RedisRateLimiter("https://redis.example", "token", impl);
+    // Still serves the request — a limiter outage must not take the API down —
+    // but the limit does not evaporate, which on the paths this guards would
+    // be an unmetered LLM and RPC budget.
     expect((await limiter.hit("k", 1, 1000)).allowed).toBe(true);
+    expect((await limiter.hit("k", 1, 1000)).allowed).toBe(false);
   });
 
-  test("fails open when the request throws", async () => {
+  test("degrades to a local limit when the request throws", async () => {
     const impl = (async () => {
       throw new Error("network down");
     }) as unknown as typeof fetch;
     const limiter = new RedisRateLimiter("https://redis.example", "token", impl);
     expect((await limiter.hit("k", 1, 1000)).allowed).toBe(true);
+    expect((await limiter.hit("k", 1, 1000)).allowed).toBe(false);
   });
 });
 
@@ -147,7 +152,7 @@ describe("RespRateLimiter (native RESP)", () => {
     expect(cmds.calls[1]).toBe("EXPIRE praxis:ratelimit:k 60 NX");
   });
 
-  test("fails open when the server throws", async () => {
+  test("degrades to a local limit when the server throws", async () => {
     const limiter = new RespRateLimiter({
       incr: async () => {
         throw new Error("connection refused");
@@ -155,6 +160,7 @@ describe("RespRateLimiter (native RESP)", () => {
       expire: async () => 0,
     });
     expect((await limiter.hit("k", 1, 1000)).allowed).toBe(true);
+    expect((await limiter.hit("k", 1, 1000)).allowed).toBe(false);
   });
 
   test("createRespRateLimiter accepts injected commands without connecting", async () => {

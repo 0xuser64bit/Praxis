@@ -29,8 +29,15 @@ const programId = new PublicKey(
   process.env.SIGNER_AEGIS_PROGRAM_ID?.trim() || DEFAULT_AEGIS_PROGRAM_ID.toBase58(),
 );
 const port = Number(process.env.SIGNER_PORT ?? 8787);
+const maxPerMinute = Number(process.env.SIGNER_MAX_SIGNATURES_PER_MINUTE);
 
-const handle = createSignerHandler({ keypair, programId, token });
+const handle = createSignerHandler({
+  keypair,
+  programId,
+  token,
+  maxSignaturesPerMinute:
+    Number.isInteger(maxPerMinute) && maxPerMinute > 0 ? maxPerMinute : undefined,
+});
 
 Bun.serve({ port, fetch: handle });
 

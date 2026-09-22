@@ -9,10 +9,15 @@ import { DEFAULT_AEGIS_PROGRAM_ID } from "../../server/aegis/constants";
 const TOKEN = "signer-secret-token";
 const BLOCKHASH = Keypair.generate().publicKey.toBase58();
 
-function handler(keypair = Keypair.generate()) {
+function handler(keypair = Keypair.generate(), over: { maxSignaturesPerMinute?: number } = {}) {
   return {
     keypair,
-    handle: createSignerHandler({ keypair, programId: DEFAULT_AEGIS_PROGRAM_ID, token: TOKEN }),
+    handle: createSignerHandler({
+      keypair,
+      programId: DEFAULT_AEGIS_PROGRAM_ID,
+      token: TOKEN,
+      ...over,
+    }),
   };
 }
 
@@ -87,6 +92,14 @@ describe("signer handler", () => {
       }),
     );
     expect(res.status).toBe(400);
+  });
+
+  test("rate-limits signing, so a leaked token meets a ceiling before the daily caps", async () => {
+    const { keypair, handle } = handler(Keypair.generate(), { maxSignaturesPerMinute: 2 });
+    const message = agentTransferMessage(keypair.publicKey);
+    expect((await handle(signRequest(message))).status).toBe(200);
+    expect((await handle(signRequest(message))).status).toBe(200);
+    expect((await handle(signRequest(message))).status).toBe(429);
   });
 
   test("health check returns the agent address", async () => {

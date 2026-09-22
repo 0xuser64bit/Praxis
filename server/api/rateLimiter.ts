@@ -67,10 +67,17 @@ type FetchLike = typeof fetch;
 
 /**
  * Upstash-Redis-compatible REST limiter (works with Vercel KV too). Fixed window
- * via INCR + EXPIRE NX in one pipeline. Fails OPEN on a limiter outage — a rate
- * limiter must never take down the API — and logs the failure.
+ * via INCR + EXPIRE NX in one pipeline.
+ *
+ * A limiter outage must never take down the API, but "allow everything" is a
+ * blank cheque on the expensive paths this guards (LLM calls, RPC fan-out).
+ * A failure degrades to the process-local limiter instead: weaker than shared
+ * state, far better than no limit, and it still cannot reject a request the
+ * shared limiter would have allowed by more than one instance's worth.
  */
 export class RedisRateLimiter implements RateLimiter {
+  private readonly fallback = new MemoryRateLimiter();
+
   constructor(
     private readonly url: string,
     private readonly token: string,
@@ -96,7 +103,7 @@ export class RedisRateLimiter implements RateLimiter {
       );
       if (!res.ok) {
         logger.warn("ratelimit.redis_unavailable", { status: res.status });
-        return { allowed: true, retryAfterMs: 0 };
+        return this.fallback.hit(key, limit, windowMs);
       }
       const data = (await res.json()) as Array<{ result?: unknown }>;
       const count = Number(data?.[0]?.result ?? 0);
@@ -104,7 +111,7 @@ export class RedisRateLimiter implements RateLimiter {
       return { allowed: true, retryAfterMs: 0 };
     } catch (error) {
       logger.warn("ratelimit.redis_error", { error: error instanceof Error ? error.message : String(error) });
-      return { allowed: true, retryAfterMs: 0 };
+      return this.fallback.hit(key, limit, windowMs);
     }
   }
 }
@@ -113,8 +120,8 @@ let cached: RateLimiter | undefined;
 
 /**
  * Native-RESP limiter for self-hosted Redis (local Docker via `REDIS_URL`).
- * Same fixed-window INCR + EXPIRE NX contract and the same fail-OPEN
- * philosophy as the REST limiter. The command surface is injectable so unit
+ * Same fixed-window INCR + EXPIRE NX contract, and the same degrade-to-local
+ * behaviour as the REST limiter. The command surface is injectable so unit
  * tests run without a live server.
  */
 export interface RespCommands {
@@ -123,6 +130,8 @@ export interface RespCommands {
 }
 
 export class RespRateLimiter implements RateLimiter {
+  private readonly fallback = new MemoryRateLimiter();
+
   constructor(private readonly cmds: RespCommands) {}
 
   async hit(key: string, limit: number, windowMs: number): Promise<RateLimitVerdict> {
@@ -135,7 +144,7 @@ export class RespRateLimiter implements RateLimiter {
       return { allowed: true, retryAfterMs: 0 };
     } catch (error) {
       logger.warn("ratelimit.resp_error", { error: error instanceof Error ? error.message : String(error) });
-      return { allowed: true, retryAfterMs: 0 };
+      return this.fallback.hit(key, limit, windowMs);
     }
   }
 }

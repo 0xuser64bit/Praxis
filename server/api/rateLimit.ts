@@ -27,8 +27,20 @@ export async function assertRateLimit(request: Request, options: RateLimitOption
   }
 }
 
+/**
+ * The caller's address, for limits that have no wallet to key on.
+ *
+ * Order matters. `x-forwarded-for` is the header a client can set itself: a
+ * proxy that appends rather than overwrites leaves the attacker's value in
+ * front, and reading the leftmost entry then hands every request a fresh
+ * identity — a rate limit anyone can opt out of. Headers the platform sets
+ * itself come first; XFF is the last resort, and a deployment that relies on
+ * it must front the app with a proxy that overwrites the header.
+ */
 function requestIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  if (forwarded) return forwarded;
-  return request.headers.get("x-real-ip")?.trim() || "local";
+  const trusted =
+    request.headers.get("x-vercel-forwarded-for")?.trim()
+    || request.headers.get("x-real-ip")?.trim();
+  if (trusted) return trusted;
+  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
 }

@@ -166,6 +166,6 @@ already exists. Requires Anchor account resize (`MAX_ALLOWED_MINTS`), LiteSVM ga
 
 - `bun run lint`, `bun run test`, `bun run build`
 - `bun run aegis:test` (program untouched — must stay green)
-- `bun run praxis:tokencheck` + new `praxis:stockscheck` (C01/C03): asserts PreStocks mints resolve,
+- `bun run praxis:tokencheck` + new `praxis:stocksgate` (C01/C03): asserts PreStocks mints resolve,
   research degrades honestly, unauthorized mint blocked with `MintNotAllowed`
 - Manual: devnet OPENAI buy + over-cap block, Explorer links in video

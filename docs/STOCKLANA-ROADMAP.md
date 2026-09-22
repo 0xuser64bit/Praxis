@@ -100,15 +100,15 @@ Goal: builders can automate guarded stock buys; bounty "tools" box checked.
 Files: `sdk/src/*`, `sdk/examples/stocks-dca.ts`, `sdk/README.md`, `sdk/package.json` (version)
 Exit: example runs against local dev (`PRAXIS_LOCAL_INTENT=1`) and prints ALLOWED/BLOCKED honestly. Root + sdk verify green.
 
-## C08 — Demo hardening: tokencheck + stockscheck gates
+## C08 — Demo hardening: tokencheck + stocksgate gates
 
 Goal: CI-grade honesty gates for the video.
-- Extend `scripts/tokencheck.ts` pattern: `scripts/stockscheck.ts` asserts 8 mints resolve, unknown mint -> `MintNotAllowed`, research degrades, swaps stay blocked (unless C01 proved route — then route asserted behind allow-list).
+- Extend `scripts/tokencheck.ts` pattern: `scripts/stocksgate.ts` asserts 8 mints resolve, unknown mint -> `MintNotAllowed`, research degrades, swaps stay blocked (unless C01 proved route — then route asserted behind allow-list).
 - `scripts/praxis-demo.ts` gains `--stocks` mode: research -> buy $40 -> over-cap $500 block -> pause -> resume.
 - Docs: demo runbook appended to PRESTOCKS-SPIKE.md.
 
-Files: `scripts/stockscheck.ts`, `scripts/praxis-demo.ts`, docs append
-Exit: `bun run praxis:stockscheck && bun run praxis:swapcheck && bun run praxis:tokencheck` all green.
+Files: `scripts/stocksgate.ts`, `scripts/praxis-demo.ts`, docs append
+Exit: `bun run praxis:stocksgate && bun run praxis:swapcheck && bun run praxis:tokencheck` all green.
 
 ## C09 — Staging deploy + video evidence
 

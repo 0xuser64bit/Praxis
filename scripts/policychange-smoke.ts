@@ -12,24 +12,17 @@
  *     bun scripts/policychange-smoke.ts
  */
 
-import { readFileSync } from "node:fs";
-
-import { Keypair } from "@solana/web3.js";
-
 import { AegisClient } from "../server/aegis/client";
 import { findPolicyPda } from "../server/aegis/pdas";
 import { getServerConfig, resetConfigForTests, type PraxisServerConfig } from "../server/env";
 import { PraxisNotFoundError } from "../server/errors";
 import { PraxisServerProvider } from "../server/provider/praxisServer";
 import { formatSol, parseHumanUnits, SOL_DECIMALS } from "../server/units";
+import { loadKeypair } from "./lib/keys";
 
 const OWNER = process.env.SMOKE_OWNER ?? "/tmp/praxis-localtest/owner.json";
 const AGENT = process.env.SMOKE_AGENT ?? "keys/agent.json";
 const NEXT = process.env.SMOKE_NEXT_AGENT ?? "/tmp/praxis-localtest/next-agent.json";
-
-function loadKeypair(path: string): Keypair {
-  return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(path, "utf8"))));
-}
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = "") {

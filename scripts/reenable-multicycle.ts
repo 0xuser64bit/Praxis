@@ -8,8 +8,6 @@
  *   CYCLES=3 bun scripts/reenable-multicycle.ts
  */
 
-import { readFileSync } from "node:fs";
-
 import { Keypair } from "@solana/web3.js";
 
 import { AegisClient } from "../server/aegis/client";
@@ -17,14 +15,13 @@ import { findPolicyPda } from "../server/aegis/pdas";
 import { getServerConfig, resetConfigForTests, type PraxisServerConfig } from "../server/env";
 import { PraxisNotFoundError } from "../server/errors";
 import { parseHumanUnits, SOL_DECIMALS } from "../server/units";
+import { loadKeypair } from "./lib/keys";
 
 const OWNER = process.env.SMOKE_OWNER ?? "/tmp/praxis-localtest/owner.json";
 const AGENT = process.env.SMOKE_AGENT ?? "keys/agent.json";
 const NEXT = process.env.SMOKE_NEXT_AGENT ?? "keys/next-agent.json";
 const CYCLES = Number(process.env.CYCLES ?? "3");
 const ZERO = "11111111111111111111111111111111";
-
-const loadKeypair = (p: string) => Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(p, "utf8"))));
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail = "") => {

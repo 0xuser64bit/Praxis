@@ -66,6 +66,11 @@ just within one process — previously two instances could each read the same
 `pending` proposal and both submit an `agent_transfer` (bounded by the Aegis
 caps, but two real transfers).
 
+If the pre-submission steps (policy read, signing) throw after the claim,
+nothing has reached the chain, so the proposal resets to `pending` and the
+error surfaces — otherwise the card would sit in `signing` forever with every
+later tap silently no-op'ing.
+
 Schedule firing claims the same way, and claims *first*: a due schedule's
 `nextFireTs` is advanced and CAS-written before any proposal is built. The
 scheduled-buy job fans out across wallets and the same endpoint is reachable

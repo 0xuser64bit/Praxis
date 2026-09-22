@@ -168,6 +168,9 @@ fn read_mint_decimals(acct: &AccountInfo, token_program: &Pubkey) -> Result<u8> 
 }
 
 pub fn handler(ctx: Context<AgentTransferSpl>, amount: u64) -> Result<()> {
+    // Argument validity, before the policy sequence: a zero transfer is not a
+    // policy question. It moves nothing, pays a fee, and writes an audit-log
+    // row saying an action happened.
     require!(amount > 0, AegisError::ZeroAmount);
 
     let now = Clock::get()?.unix_timestamp;

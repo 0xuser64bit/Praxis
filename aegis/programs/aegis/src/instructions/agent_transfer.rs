@@ -58,6 +58,9 @@ fn emit_rejected(policy: Pubkey, reason: RejectReason, amount: u64, target: Pubk
 }
 
 pub fn handler(ctx: Context<AgentTransfer>, amount: u64) -> Result<()> {
+    // Argument validity, before the policy sequence: a zero transfer is not a
+    // policy question. It moves nothing, pays a fee, and writes an audit-log
+    // row saying an action happened.
     require!(amount > 0, AegisError::ZeroAmount);
 
     let now = Clock::get()?.unix_timestamp;

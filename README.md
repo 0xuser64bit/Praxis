@@ -126,7 +126,10 @@ creates a Token-2022 stand-in per symbol on the demo cluster and prints the
 symbol, 9 decimals, Token-2022 — and not the issuer's permanent-delegate,
 freeze or pause authorities. Prices and research still come from the live
 [PreStocks API](https://prestocks.com/). The app labels a mirrored universe
-wherever it is shown.
+wherever it is shown. A devnet deployment can also run a demo faucet
+(`PRAXIS_DEMO_FAUCET_KEYPAIR`) so any wallet — not just the operator's — can
+put mirror stock in its vault and complete a buy; see
+[docs/SUBMISSION.md](docs/SUBMISSION.md#try-it-yourself-devnet-3-minutes).
 
 **What the issuer can still do.** PreStocks holds `PermanentDelegate`, freeze
 and pause authority on the real mints. Aegis bounds what the *agent* can do

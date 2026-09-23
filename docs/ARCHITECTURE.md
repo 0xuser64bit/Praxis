@@ -274,6 +274,11 @@ account: switching accounts in the extension, or disconnecting, ends it.
   blockhash sooner), and the blast radius is a lost allow-list entry rather
   than lost funds. Closing it properly needs a nonce on `PolicyAccount`, which
   changes the account layout and so needs a migration.
+- `configure_token` resets the token envelope's `token_spent_today` even when
+  the mint is unchanged, so an owner who lowers a stock cap mid-day (Policy →
+  SPL, or "set my daily limit to $100" in chat) restarts that day's count.
+  Owner-signed, so not an agent bypass. The fix — reset only when the mint
+  changes — is a program upgrade, deliberately not shipped days before judging.
 - No durable rejected-transaction indexer for failures that happen outside the
   app process.
 - The scheduled-buy job walks every wallet in one tick (bounded at 500). Past

@@ -8,7 +8,7 @@
  * every policy change, so nothing mutates until the user signs.
  */
 
-import type { PolicyChangeRow, PolicyUpdate } from "@praxis/shared";
+import type { PolicyChangeRow, PolicyUpdate, TokenEnvelopeConfig } from "@praxis/shared";
 import { IconArrowRight, IconCheck, IconShieldCog } from "@tabler/icons-react";
 import { useState } from "react";
 
@@ -19,10 +19,13 @@ import { messageFromError } from "./lib/useAsyncAction";
 
 export function PolicyChangeCard({
   patch,
+  tokenConfig,
   changes,
   applied,
 }: {
   patch: PolicyUpdate;
+  /** A stock-envelope cap change, applied through configureToken instead. */
+  tokenConfig?: TokenEnvelopeConfig;
   changes: PolicyChangeRow[];
   applied: boolean;
 }) {
@@ -34,8 +37,7 @@ export function PolicyChangeCard({
   const apply = () => {
     setError(null);
     setBusy(true);
-    void provider
-      .updatePolicy(patch)
+    void (tokenConfig ? provider.configureToken(tokenConfig) : provider.updatePolicy(patch))
       .then(() => setDone(true))
       .catch((err) => setError(messageFromError(err, "Policy change failed.")))
       .finally(() => setBusy(false));

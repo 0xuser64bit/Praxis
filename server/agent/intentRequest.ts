@@ -61,7 +61,7 @@ export const intentTool = {
             usdSigil: {
               type: "boolean",
               description:
-                "For transfer and schedule_dca: true when the amount is in US dollars ('buy $40 openai', 'buy 40 dollars of spacex every monday'). Keep amountHuman as the bare number; the server converts dollars to a stock quantity at the live price. Omit when the user gave a token quantity ('buy 0.5 openai').",
+                "For transfer, schedule_dca and a policy_change cap: true when the amount is in US dollars ('buy $40 openai', 'buy 40 dollars of spacex every monday', 'set my daily limit to $100'). Keep amountHuman as the bare number; the server converts dollars to a stock quantity at the live price. Omit when the user gave a token or SOL quantity ('buy 0.5 openai', 'set my daily limit to 2 SOL').",
             },
             toSelf: {
               type: "boolean",
@@ -210,7 +210,7 @@ export const INTENT_SYSTEM_PROMPT = [
     "('research about trump coin' -> token 'trump'), and keep the case of a mint exactly.",
   "Never emit buy/sell/hold advice. Research is neutral data only.",
   "policy_question: when the user ASKS ABOUT their own policy, limits, caps, session expiry, pause state, allow-lists, or how Praxis keeps them safe. Pick the closest topic, or 'general'.",
-  "policy_change: when the user wants to CHANGE a policy setting. 'change/raise/lower/set my daily limit to N SOL' -> field=daily_limit, amountHuman=N. 'set max per tx to N SOL' -> field=max_per_tx, amountHuman=N. 'extend my session by N hours/days' or 'set expiry to N hours' -> field=expiry, expiryHours=N (convert days to hours). 'pause/freeze the agent' -> field=pause, paused=true. 'unpause/resume the agent' -> field=pause, paused=false. Distinguish a CHANGE (imperative: change/set/raise/lower/pause) from a QUESTION (what/how/is my...).",
+  "policy_change: when the user wants to CHANGE a policy setting. 'change/raise/lower/set my daily limit to N SOL' -> field=daily_limit, amountHuman=N. 'set max per tx to N SOL' -> field=max_per_tx, amountHuman=N. A dollar cap ('set my daily limit to $100') is the same field with amountHuman=100 and usdSigil=true — it applies to the stock envelope, never read it as SOL. 'extend my session by N hours/days' or 'set expiry to N hours' -> field=expiry, expiryHours=N (convert days to hours). 'pause/freeze the agent' -> field=pause, paused=true. 'unpause/resume the agent' -> field=pause, paused=false. Distinguish a CHANGE (imperative: change/set/raise/lower/pause) from a QUESTION (what/how/is my...).",
   "save_contact: when the user asks to save/remember an address under a name. Extract the base58 address and the label separately.",
   "Decompose multi-step requests in order. 'send X to ADDR and save as LABEL' is TWO actions: a transfer (recipient = ADDR) and a save_contact (address = ADDR, label = LABEL). Never fold 'and save as ...' into the recipient.",
   "Handle misspellings, shorthand, slang, and multiple steps in order.",

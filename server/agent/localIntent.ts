@@ -301,6 +301,7 @@ function matchPolicyChange(text: string): Extract<ParsedAction, { kind: "policy_
       kind: "policy_change",
       field: isPerTx ? "max_per_tx" : "daily_limit",
       amountHuman,
+      ...(hasUsdSigil(text) ? { usdSigil: true as const } : {}),
     };
   }
 

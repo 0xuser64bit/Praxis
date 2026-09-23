@@ -88,6 +88,12 @@ export type ParsedAction =
       field: "daily_limit" | "max_per_tx" | "expiry" | "pause";
       /** For daily_limit / max_per_tx: the new human SOL amount, e.g. "10". */
       amountHuman?: string;
+      /**
+       * The cap was given in dollars ("set my daily limit to $100"): it
+       * applies to the active stock envelope at its PreStocks price, never to
+       * the SOL caps — "$100" read as 100 SOL is a cap raise nobody asked for.
+       */
+      usdSigil?: true;
       /** For expiry: hours from now to extend the agent session, e.g. 24. */
       expiryHours?: number;
       /** For pause: true to pause the agent, false to unpause/resume it. */

@@ -178,6 +178,7 @@ function normalizeAction(input: unknown, index: number): ParsedAction {
       kind: "policy_change",
       field,
       amountHuman: readRequiredString(value.amountHuman, "amountHuman"),
+      ...(value.usdSigil === true ? { usdSigil: true as const } : {}),
     };
   }
 

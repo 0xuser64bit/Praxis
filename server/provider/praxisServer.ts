@@ -897,11 +897,15 @@ export class PraxisServerProvider implements PraxisProvider {
       };
     }
 
-    const built = this.buildPolicyPatch(policy, action);
+    const dollarCap = action.usdSigil && (action.field === "daily_limit" || action.field === "max_per_tx");
+    const built = dollarCap ? await this.stockCapChange(policy, action) : this.buildPolicyPatch(policy, action);
     if ("error" in built) {
       return { blocks: [{ type: "clarify", text: built.error, options: [] }] };
     }
-    const { patch, changes } = built;
+    const { changes } = built;
+    const patch: PolicyUpdate = "patch" in built ? built.patch : {};
+    const tokenConfig = "tokenConfig" in built ? built.tokenConfig : undefined;
+    const token = tokenConfig ? { tokenConfig } : {};
 
     // Honor the "apply immediately" choice when the backend can actually sign an
     // owner transaction (a backend owner key is configured). Under wallet custody
@@ -909,7 +913,8 @@ export class PraxisServerProvider implements PraxisProvider {
     // change to the client as a one-tap, wallet-signed action instead.
     if (this.backendOwnerSigningAvailable()) {
       try {
-        await this.updatePolicy(patch);
+        if (tokenConfig) await this.configureToken(tokenConfig);
+        else await this.updatePolicy(patch);
         return {
           blocks: [{
             type: "policy_change",
@@ -917,6 +922,7 @@ export class PraxisServerProvider implements PraxisProvider {
             patch,
             changes,
             applied: true,
+            ...token,
           }],
           title: "Policy updated",
         };
@@ -937,8 +943,49 @@ export class PraxisServerProvider implements PraxisProvider {
         patch,
         changes,
         applied: false,
+        ...token,
       }],
       title: "Policy change",
+    };
+  }
+
+  /**
+   * "Set my daily limit to $100" → the active stock envelope's cap, converted
+   * at the PreStocks price. Aegis caps are token quantities, so the dollar
+   * figure holds at today's price. With no priced stock envelope there is
+   * nothing a dollar cap can mean here — the SOL caps have no price source —
+   * so it clarifies rather than reading "$100" as 100 SOL.
+   */
+  private async stockCapChange(
+    policy: PolicyView,
+    action: Extract<ParsedAction, { kind: "policy_change" }>,
+  ): Promise<{ tokenConfig: TokenEnvelopeConfig; changes: PolicyChangeRow[] } | { error: string }> {
+    const known = this.config.tokens.find((t) => t.mint === policy.tokenMint);
+    if (!known || !this.pricedInUsd(known)) {
+      return {
+        error: "Dollar limits apply to a stock envelope, and none is active. Your SOL caps are set in SOL — "
+          + "say the amount in SOL (\"set my daily limit to 2 SOL\"), or switch the envelope to a stock in Policy → SPL.",
+      };
+    }
+    const token = await this.withVerifiedDecimals(known);
+    if (!token) return { error: this.unverifiedDecimalsBlock(known.symbol).text };
+    const dollars = await this.dollarsToStock(token, action.amountHuman ?? "");
+    if ("clarify" in dollars) return { error: dollars.clarify };
+
+    const worth = (units: bigint) =>
+      `${formatUnits(units, token.decimals)} ${token.symbol} (≈ $${((Number(units) / 10 ** token.decimals) * dollars.price).toFixed(2)})`;
+    const daily = action.field === "daily_limit";
+    return {
+      tokenConfig: {
+        tokenMint: policy.tokenMint,
+        tokenMaxPerTx: daily ? policy.tokenMaxPerTx : dollars.amount,
+        tokenDailyLimit: daily ? dollars.amount : policy.tokenDailyLimit,
+      },
+      changes: [{
+        label: `${token.symbol} ${daily ? "daily limit" : "max per transaction"}`,
+        from: worth(daily ? policy.tokenDailyLimit : policy.tokenMaxPerTx),
+        to: worth(dollars.amount),
+      }],
     };
   }
 
@@ -1311,7 +1358,7 @@ export class PraxisServerProvider implements PraxisProvider {
     const amount = price === undefined ? null : usdToBaseUnits(usd, price, token.decimals);
     if (price === undefined || amount === null) {
       return {
-        clarify: `I can't price ${token.symbol} right now (PreStocks quote unavailable), so I can't turn $${usdHuman} into a quantity. Try again shortly, or name a quantity instead, e.g. "buy 0.05 ${token.symbol.toLowerCase()}".`,
+        clarify: `I can't price ${token.symbol} right now (PreStocks quote unavailable), so I can't turn $${usdHuman} into a ${token.symbol} quantity. Try again shortly.`,
       };
     }
     if (amount <= 0n) {

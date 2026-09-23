@@ -243,6 +243,8 @@ export type AgentBlock =
       patch: PolicyUpdate;
       changes: PolicyChangeRow[];
       applied: boolean;
+      /** A dollar cap on a stock envelope: apply with configureToken, not updatePolicy. */
+      tokenConfig?: TokenEnvelopeConfig;
     };
 
 export type UserMessage = { id: string; role: "user"; ts: number; text: string };

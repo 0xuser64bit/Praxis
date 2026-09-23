@@ -259,7 +259,9 @@ export type AgentBlock =
    * A parsed, validated change to the owner's Aegis policy. `applied` is true
    * when the backend already committed it on-chain (backend owner key present);
    * otherwise the client renders an "Apply & sign" affordance that submits
-   * `patch` through the wallet-signed owner-action path.
+   * `patch` through the wallet-signed owner-action path. A dollar cap on a
+   * stock envelope comes as `tokenConfig` instead (with an empty `patch`),
+   * applied through `configureToken`.
    */
   | {
       type: "policy_change";
@@ -267,6 +269,7 @@ export type AgentBlock =
       patch: PolicyUpdate;
       changes: PolicyChangeRow[];
       applied: boolean;
+      tokenConfig?: TokenEnvelopeConfig;
     };
 
 export type Message =

@@ -118,6 +118,22 @@ describe("deterministic parser — policy_change", () => {
     expect(r.outcome === "actions" && r.actions[0].kind).toBe("transfer");
   });
 
+  test("a dollar cap is flagged as dollars; a SOL cap is not", () => {
+    const usd = parseIntentLocallyForDemo("set my daily limit to $100");
+    expect(usd.outcome === "actions" && usd.actions[0]).toEqual({
+      kind: "policy_change",
+      field: "daily_limit",
+      amountHuman: "100",
+      usdSigil: true,
+    });
+    const sol = parseIntentLocallyForDemo("set my daily limit to 2 sol");
+    expect(sol.outcome === "actions" && sol.actions[0]).toEqual({
+      kind: "policy_change",
+      field: "daily_limit",
+      amountHuman: "2",
+    });
+  });
+
   test("asking about the limit stays a question, not a change", () => {
     const r = parseIntentLocallyForDemo("what is my daily limit");
     expect(r.outcome === "actions" && r.actions[0]).toEqual({ kind: "policy_question", topic: "caps" });

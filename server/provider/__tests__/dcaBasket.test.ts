@@ -517,3 +517,67 @@ describe("the reply names the reading it took", () => {
     expect(text).not.toMatch(/as a quantity/i);
   });
 });
+
+/**
+ * "Set my daily limit to $100" in a stocks app. The `$` used to be dropped and
+ * the number read as SOL — a 100 SOL cap, usually a raise nobody asked for.
+ */
+describe("a dollar cap change", () => {
+  const openai = STOCK_TOKENS.find((t) => t.symbol === "OPENAI")!;
+
+  function buildWalletCustody(policy: PolicyView) {
+    // No backend owner key: the change comes back as a card to sign.
+    const provider = new PraxisServerProvider(
+      makeConfig({ ownerKeypair: undefined }),
+      new FakeAegis(policy) as unknown as AegisClient,
+    );
+    provider.basketPriceSource = async (symbols) => new Map(symbols.map((s) => [s, 10]));
+    return provider;
+  }
+
+  function policyChange(provider: PraxisServerProvider, threadId: string) {
+    return agentBlocks(provider, threadId).find((b) => b.type === "policy_change");
+  }
+
+  test("sets the active stock envelope's cap at the PreStocks price", async () => {
+    const provider = buildWalletCustody(policyFixture({
+      tokenMint: openai.mint,
+      tokenMaxPerTx: 10_000_000_000n,
+      tokenDailyLimit: 50_000_000_000n,
+    }));
+    const { threadId } = await provider.send(null, "set my daily limit to $100");
+    const block = policyChange(provider, threadId);
+    if (block?.type !== "policy_change") throw new Error("expected a policy change card");
+    // $100 at $10 is 10 OPENAI; the per-tx cap is carried over untouched.
+    expect(block.tokenConfig).toEqual({
+      tokenMint: openai.mint,
+      tokenMaxPerTx: 10_000_000_000n,
+      tokenDailyLimit: 10_000_000_000n,
+    });
+    expect(block.patch).toEqual({});
+    expect(block.applied).toBe(false);
+    expect(block.changes[0]).toEqual({
+      label: "OPENAI daily limit",
+      from: "50 OPENAI (≈ $500.00)",
+      to: "10 OPENAI (≈ $100.00)",
+    });
+  });
+
+  test("with no stock envelope it asks instead of reading $100 as 100 SOL", async () => {
+    const provider = buildWalletCustody(policyFixture());
+    const { threadId } = await provider.send(null, "set my daily limit to $100");
+    expect(policyChange(provider, threadId)).toBeUndefined();
+    expect(
+      agentBlocks(provider, threadId).some((b) => b.type === "clarify" && /set in SOL/.test(b.text)),
+    ).toBe(true);
+  });
+
+  test("a SOL cap is still a SOL cap", async () => {
+    const provider = buildWalletCustody(policyFixture());
+    const { threadId } = await provider.send(null, "set my daily limit to 2 sol");
+    const block = policyChange(provider, threadId);
+    if (block?.type !== "policy_change") throw new Error("expected a policy change card");
+    expect(block.patch).toEqual({ dailyLimit: 2_000_000_000n });
+    expect(block.tokenConfig).toBeUndefined();
+  });
+});

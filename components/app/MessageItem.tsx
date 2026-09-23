@@ -94,6 +94,7 @@ export function MessageItem({
                   <p className="mb-1">{renderRich(block.text)}</p>
                   <PolicyChangeCard
                     patch={block.patch}
+                    tokenConfig={block.tokenConfig}
                     changes={block.changes}
                     applied={block.applied}
                   />

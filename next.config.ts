@@ -9,8 +9,9 @@ import type { NextConfig } from "next";
  *
  * script-src intentionally keeps 'unsafe-inline'/'unsafe-eval' because the App
  * Router injects inline bootstrap scripts; a strict, nonce-based script-src is
- * the follow-up. The browser only ever calls same-origin /api/praxis/*, so
- * connect-src 'self' is safe (Gemini and the Solana RPC are server-side).
+ * the follow-up. connect-src is 'self' plus the two intent hosts, so a key the
+ * owner keeps in this browser can call Gemini or Groq directly. That key is
+ * not sent to Praxis. Solana RPC and the shared model stay server-side.
  */
 const CSP = [
   "default-src 'self'",
@@ -21,7 +22,7 @@ const CSP = [
   "img-src 'self' data: blob:",
   "style-src 'self' 'unsafe-inline'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-  "connect-src 'self'",
+  "connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com",
   "font-src 'self' data:",
 ].join("; ");
 

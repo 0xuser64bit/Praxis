@@ -562,3 +562,46 @@ describe("agent teardown", () => {
     expect(() => provider.getPolicy()).toThrow();
   });
 });
+
+describe("a browser reading", () => {
+  function agentText(provider: PraxisServerProvider, threadId: string): string {
+    const message = provider.getThread(threadId)!.messages.at(-1);
+    return JSON.stringify(message);
+  }
+
+  test("uses the browser's reading and does not keep fields the normalizer drops", async () => {
+    const { provider } = build();
+    const sentinel = "AIzaSySENTINEL-NOT-A-STORED-KEY";
+    const { threadId } = await provider.send(null, "hello there", {
+      ownIntent: {
+        outcome: "clarify",
+        question: "Which asset should I move?",
+        leakedKey: sentinel,
+      },
+    });
+
+    const stored = agentText(provider, threadId);
+    expect(stored).toContain("Which asset should I move?");
+    expect(stored).not.toContain("Do you want to send SOL");
+    expect(stored).not.toContain(sentinel);
+    expect(JSON.stringify(provider.getThread(threadId))).not.toContain(sentinel);
+  });
+
+  test("says so when the browser key did not answer, then uses the shared parser", async () => {
+    const { provider } = build();
+    const { threadId } = await provider.send(null, "hello there", { ownIntentFailed: true });
+    const stored = agentText(provider, threadId);
+    expect(stored).toContain("Your key didn't answer, so this message used the shared parser.");
+    expect(stored).toContain("Do you want to send SOL");
+  });
+
+  test("falls back to the shared parser when the reading is unusable", async () => {
+    const { provider } = build();
+    const { threadId } = await provider.send(null, "hello there", {
+      ownIntent: { outcome: "actions", actions: [{ kind: "transfer" }] },
+    });
+    const stored = agentText(provider, threadId);
+    expect(stored).toContain("couldn't use, so this message used the shared parser.");
+    expect(stored).toContain("Do you want to send SOL");
+  });
+});

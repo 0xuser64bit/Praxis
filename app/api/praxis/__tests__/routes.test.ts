@@ -100,6 +100,30 @@ describe("mutation auth gating", () => {
     const res = await sendRoute(authed("/api/praxis/send", { text: "x".repeat(2_001) }));
     expect(res.status).toBe(400);
   });
+
+  test("refuses a send that includes an API key, and does not echo it", async () => {
+    const secret = "AIzaSyDONT-STORE-THIS-KEY-0001";
+    const res = await sendRoute(authed("/api/praxis/send", { text: "hello", apiKey: secret }));
+    expect(res.status).toBe(400);
+    const raw = await res.text();
+    expect(raw).not.toContain(secret);
+    expect(raw).toMatch(/this browser/i);
+  });
+
+  test("400 when a browser reading is not an object", async () => {
+    const res = await sendRoute(authed("/api/praxis/send", { text: "hello", ownIntent: "send everything" }));
+    expect(res.status).toBe(400);
+  });
+
+  test("refuses a key nested inside the browser reading, without echoing it", async () => {
+    const secret = "AIzaSyNESTED-NOT-A-KEY-0002";
+    const res = await sendRoute(
+      authed("/api/praxis/send", { text: "hello", ownIntent: { outcome: "clarify", apiKey: secret } }),
+    );
+    expect(res.status).toBe(400);
+    const raw = await res.text();
+    expect(raw).not.toContain(secret);
+  });
 });
 
 describe("wallet-signed owner routes", () => {

@@ -4,6 +4,7 @@ import {
   readString,
   withMutationProvider,
 } from "@/server/api/json";
+import { readOwnIntent, readOwnIntentFailed, rejectCredentialFields } from "@/server/api/ownIntent";
 import { assertRateLimit } from "@/server/api/rateLimit";
 
 export const runtime = "nodejs";
@@ -28,8 +29,14 @@ export async function POST(request: Request) {
       windowMs: 3_600_000,
     });
     const body = await readJson(request);
+    rejectCredentialFields(body);
     const threadId = readNullableId(body.threadId, "threadId");
     const text = readString(body.text, "text", { maxLength: 2_000 });
-    return provider.send(threadId, text);
+    const ownIntent = readOwnIntent(body.ownIntent);
+    const ownIntentFailed = readOwnIntentFailed(body.ownIntentFailed);
+    return provider.send(threadId, text, {
+      ...(ownIntent !== undefined ? { ownIntent } : {}),
+      ...(ownIntentFailed ? { ownIntentFailed } : {}),
+    });
   });
 }

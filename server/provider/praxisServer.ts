@@ -33,6 +33,7 @@ import {
   type ParsedAction,
   type ParsedIntent,
 } from "../agent/intent";
+import { normalizeIntent } from "../agent/intentNormalize";
 import { researchToken } from "../agent/research";
 import { describeCandidate, resolveResearchTarget } from "../agent/tokenResolve";
 import { getConnection, getResearchConnection } from "../aegis/client";
@@ -414,7 +415,11 @@ export class PraxisServerProvider implements PraxisProvider {
     return id;
   };
 
-  send = async (threadId: string | null, text: string): Promise<{ threadId: string }> => {
+  send = async (
+    threadId: string | null,
+    text: string,
+    reading?: { ownIntent?: unknown; ownIntentFailed?: boolean },
+  ): Promise<{ threadId: string }> => {
     return withOwnerLock(this.ownerKey, async () => {
       // `newThread` is idempotent: it returns the id if the thread already exists,
       // and creates it otherwise. Passing the caller's id through it (rather than
@@ -432,9 +437,12 @@ export class PraxisServerProvider implements PraxisProvider {
       let blocks: AgentBlock[];
       let title: string | undefined;
       try {
-        const intent = await this.parseIntent(text);
-        const result = await this.blocksForIntent(intent, tid);
-        blocks = result.blocks;
+        // A browser reading is untrusted input, normalized by the same path
+        // as a model reply. The raw object is not stored. The key that
+        // produced it never arrives here.
+        const parsed = await this.intentForSend(text, reading);
+        const result = await this.blocksForIntent(parsed.intent, tid);
+        blocks = parsed.preface ? [parsed.preface, ...result.blocks] : result.blocks;
         title = result.title;
       } catch (error) {
         blocks = this.blocksForFailure(error);
@@ -752,6 +760,41 @@ export class PraxisServerProvider implements PraxisProvider {
    * every reply quietly gets worse — so a second provider with its own
    * bucket sits in front of the floor rather than behind it.
    */
+  private async intentForSend(
+    text: string,
+    reading?: { ownIntent?: unknown; ownIntentFailed?: boolean },
+  ): Promise<{ intent: ParsedIntent; preface?: AgentBlock }> {
+    if (reading?.ownIntent !== undefined) {
+      try {
+        return { intent: normalizeIntent(reading.ownIntent) };
+      } catch (error) {
+        // The browser did answer, but with tool arguments the normalizer
+        // rejects. Fall back to the shared parser rather than leaving the
+        // turn as a validation error — the text is still right there.
+        logger.warn("intent.own_reading_invalid_fallback_shared", errorFields(error));
+      }
+      const intent = await this.parseIntent(text);
+      return {
+        intent,
+        preface: {
+          type: "notice",
+          tone: "info",
+          text: "Your key returned something I couldn't use, so this message used the shared parser.",
+        },
+      };
+    }
+    const intent = await this.parseIntent(text);
+    if (!reading?.ownIntentFailed) return { intent };
+    return {
+      intent,
+      preface: {
+        type: "notice",
+        tone: "info",
+        text: "Your key didn't answer, so this message used the shared parser.",
+      },
+    };
+  }
+
   private async parseIntent(text: string): Promise<ParsedIntent> {
     if (process.env.PRAXIS_LOCAL_INTENT === "1") {
       return parseIntentLocallyForDemo(text);

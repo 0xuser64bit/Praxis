@@ -26,6 +26,8 @@ policy, not by the quality of a prompt.
 2. The agent parses it into a typed action (Gemini, then Groq, then a local
    deterministic parser for $0 demos — free-tier quotas are per-provider, so
    the second one is what keeps parsing working after the first runs out).
+   A signed-in browser can call Gemini or Groq itself with a key that stays
+   in local storage. Praxis receives that reading, not the key.
 3. Recipient names resolve through an off-chain address book.
 4. The action is simulated and checked against the policy, producing a proposal
    card with the fee, the simulation result, and the Aegis verdict.

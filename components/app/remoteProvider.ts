@@ -15,6 +15,7 @@ import type {
   TokenEnvelopeConfig,
 } from "@praxis/shared";
 
+import { intentSendFields, readIntentWithOwnKey } from "./lib/browserIntent";
 import { getOwnerWalletSigner } from "./lib/walletSigner";
 
 /** Client mirror of the server's owner-action request shape (validated server-side). */
@@ -185,7 +186,17 @@ export class RemotePraxisProvider implements PraxisProvider {
     // indicator while the request runs. Cleared in `finally`.
     this.setThinking(threadId, true);
     try {
-      const result = await this.mutate(() => this.post<{ threadId: string }>("/api/praxis/send", { threadId, text }));
+      // The key, when there is one, is used in this browser and never placed
+      // on the request. The server gets the model's reading, or a flag that
+      // the call failed and the shared parser should take the message.
+      const reading = await readIntentWithOwnKey(text);
+      const result = await this.mutate(() =>
+        this.post<{ threadId: string }>("/api/praxis/send", {
+          threadId,
+          text,
+          ...intentSendFields(reading),
+        }),
+      );
       // Clear the pending guard BEFORE the authoritative refresh so it adopts
       // the server's copy of this thread (the real persisted messages).
       if (threadId) this.pendingSends.delete(threadId);

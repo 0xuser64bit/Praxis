@@ -5,6 +5,7 @@ import {
   IconCheck,
   IconChevronDown,
   IconHistory,
+  IconKey,
   IconLogout,
   IconMessages,
   IconShieldLock,
@@ -17,6 +18,9 @@ import { AppSidebar } from "./AppSidebar";
 import { useAuthSession } from "./AuthGate";
 import { Conversation } from "./Conversation";
 import { MobileThreadBar } from "./MobileThreadBar";
+import { OwnKeyDialog } from "./OwnKeyDialog";
+import { OwnKeySuggestion } from "./OwnKeySuggestion";
+import { ownProvider, useOwnKey } from "./lib/ownKey";
 import { PolicyDashboard } from "./PolicyDashboard";
 import {
   useConnectionState,
@@ -28,6 +32,7 @@ import {
 } from "./ProviderContext";
 import { Dot, Pill } from "./ui";
 import { messageFromError } from "./lib/useAsyncAction";
+import { isApiMode } from "./providerMode";
 import { formatSol, shortenAddress } from "./lib/units";
 import { KNOWN_PROGRAMS } from "./lib/tokenCatalog";
 
@@ -96,7 +101,10 @@ function ReadyAppShell() {
   const policy = usePolicy();
   const threads = useThreads();
   const activity = useActivity();
+  const ownKey = useOwnKey();
+  const apiMode = isApiMode();
   const [view, setView] = useState<View>("chat");
+  const [keyOpen, setKeyOpen] = useState(false);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const activeThreadId =
     threads.find((thread) => thread.id === selectedThreadId)?.id ??
@@ -150,6 +158,28 @@ function ReadyAppShell() {
           </div>
 
           <div className="flex shrink-0 items-center gap-2.5">
+            {apiMode && (
+              <button
+                type="button"
+                onClick={() => setKeyOpen(true)}
+                aria-label={
+                  ownKey.problem
+                    ? `Your model key had a problem: ${ownKey.problem}`
+                    : ownKey.provider
+                      ? `Your ${ownProvider(ownKey.provider).label} key is in this browser`
+                      : "Add your model key"
+                }
+                title={ownKey.problem ?? (ownKey.provider ? "Your model key" : "Add your model key")}
+                className={`flex h-7 items-center gap-1.5 rounded-md bg-[var(--bg-card)] px-2 text-[12px] [border:0.5px_solid_var(--border)] [transition:color_0.15s,border-color_0.15s] hover:text-[var(--text-primary)] hover:[border-color:var(--border-strong)] ${
+                  ownKey.problem
+                    ? "text-[var(--warning)]"
+                    : "text-[var(--text-secondary)]"
+                }`}
+              >
+                <IconKey size={14} />
+                <span className="max-[520px]:hidden">{ownKey.provider ? "Your key" : "Model key"}</span>
+              </button>
+            )}
             {auth && (
               <button
                 type="button"
@@ -170,6 +200,9 @@ function ReadyAppShell() {
             <Pill className="max-[760px]:hidden">{formatSol(policy.vaultBalance)} SOL</Pill>
           </div>
         </header>
+
+        {apiMode && <OwnKeySuggestion onManage={() => setKeyOpen(true)} />}
+        {apiMode && keyOpen && <OwnKeyDialog onClose={() => setKeyOpen(false)} />}
 
         {/* Mobile surfaces. The sidebar owns view switching AND the thread
             list on desktop, and is hidden below 760px, so both live here. */}

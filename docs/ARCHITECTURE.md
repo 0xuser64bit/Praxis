@@ -1,6 +1,6 @@
 # Praxis Architecture
 
-Updated: 2026-09-22
+Updated: 2026-09-23
 
 Praxis has two parts:
 
@@ -36,7 +36,12 @@ enforces the spending envelope.
 - Parses intent with the configured LLM providers in order (`PRAXIS_INTENT_PROVIDERS`,
   Gemini then Groq by default), falling back to the local deterministic parser.
   Free-tier quotas are per-provider, so a second name there is what keeps a
-  parse working after the first runs out for the day.
+  parse working after the first runs out for the day. A signed-in browser may
+  instead call Gemini or Groq itself with a key that stays in local storage.
+  The server receives the model's tool arguments, normalizes them with the
+  same checks as its own parse, and does not store the key. If that call
+  fails — or answers with something the normalizer rejects — the message
+  falls back to the shared providers and the thread says so.
 - Resolves address-book labels off-chain.
 - Simulates through `AegisClient`.
 - Signs agent actions with the configured scoped agent key.
@@ -201,7 +206,10 @@ Trusted:
 Not trusted for enforcement:
 
 - Prompt text.
-- LLM output (Gemini, Groq, or the deterministic parser).
+- LLM output (Gemini, Groq, or the deterministic parser), including a reading
+  the browser produced with the owner's own key. That reading is normalized
+  before any proposal is built. The key itself is not a server credential and
+  is not accepted on the request.
 - Mock parser.
 - Server policy mirror.
 - Frontend UI state.

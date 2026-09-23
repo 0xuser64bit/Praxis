@@ -287,14 +287,28 @@ export function splitBasket(
   const perUsd = total / BigInt(constituents.length);
   const out: BasketShare[] = [];
   for (const symbol of constituents) {
-    const price = toScaledUsd(prices.get(symbol) ?? 0);
-    if (price === null) return null;
-    // Both sides carry USD_SCALE, so it cancels; the token scale is what is
-    // left. Integer division floors, which is the direction that keeps the
-    // sum at or under the requested total.
-    const amount = (perUsd * 10n ** BigInt(decimalsFor(symbol))) / price;
-    if (amount <= 0n) return null;
+    const amount = scaledUsdToBaseUnits(perUsd, prices.get(symbol) ?? 0, decimalsFor(symbol));
+    if (amount === null || amount <= 0n) return null;
     out.push({ symbol, amount });
   }
   return out;
+}
+
+/**
+ * A single-stock dollar amount ("buy $40 openai") in token base units, by the
+ * same integer math as a basket share. Null when either figure is not a
+ * positive number; 0n when the dollars are too small for one base unit.
+ */
+export function usdToBaseUnits(usd: number, priceUsd: number, decimals: number): bigint | null {
+  const total = toScaledUsd(usd);
+  return total === null ? null : scaledUsdToBaseUnits(total, priceUsd, decimals);
+}
+
+function scaledUsdToBaseUnits(scaledUsd: bigint, priceUsd: number, decimals: number): bigint | null {
+  const price = toScaledUsd(priceUsd);
+  if (price === null) return null;
+  // Both sides carry USD_SCALE, so it cancels; the token scale is what is
+  // left. Integer division floors, which is the direction that keeps the
+  // result at or under the requested dollars.
+  return (scaledUsd * 10n ** BigInt(decimals)) / price;
 }

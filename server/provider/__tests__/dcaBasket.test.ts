@@ -142,9 +142,8 @@ describe("DCA schedules", () => {
     const schedules = provider.getSchedules();
     expect(schedules).toHaveLength(1);
     expect(schedules[0].asset).toBe("OPENAI");
-    // 50 at the mint's real 9 decimals. The old expectation of 50_000_000n
-    // encoded the 6dp guess, i.e. 0.05 OPENAI on-chain.
-    expect(schedules[0].amount).toBe(50_000_000_000n);
+    // $50 at the stubbed $10 price is 5 OPENAI, at the mint's real 9 decimals.
+    expect(schedules[0].amount).toBe(5_000_000_000n);
     expect(schedules[0].decimals).toBe(9);
     expect(schedules[0].recipientAddress).toBe(config.ownerAddress!.toBase58());
     expect(schedules[0].recipientName).toBe("you");
@@ -172,7 +171,7 @@ describe("DCA schedules", () => {
     expect(proposal.detail.kind).toBe("transfer");
     if (proposal.detail.kind === "transfer") {
       expect(proposal.detail.asset.symbol).toBe("OPENAI");
-      expect(proposal.detail.amount).toBe(50_000_000_000n);
+      expect(proposal.detail.amount).toBe(5_000_000_000n);
     }
     expect(proposal.state).toBe("pending");
     // Advanced past the fire, and the creation thread carries the proposal.
@@ -368,8 +367,8 @@ describe("one-off buy with no recipient", () => {
     expect(proposal.detail.kind).toBe("transfer");
     if (proposal.detail.kind !== "transfer") return;
     expect(proposal.detail.asset.symbol).toBe("OPENAI");
-    // 40 at the mint's real 9 decimals.
-    expect(proposal.detail.amount).toBe(40_000_000_000n);
+    // $40 at the stubbed $10 price, at the mint's real 9 decimals.
+    expect(proposal.detail.amount).toBe(4_000_000_000n);
     expect(proposal.detail.recipientAddress).toBe(config.ownerAddress!.toBase58());
     expect(proposal.detail.recipientName).toBe("you");
     // The card reads this to say "Your wallet" instead of "To: you".
@@ -465,16 +464,47 @@ describe("the audit trail names the owner's own wallet", () => {
 });
 
 describe("the reply names the reading it took", () => {
-  test("a $ amount is called a quantity, with the number spelled out", async () => {
+  test("a $ amount on a stock is converted at the PreStocks price, and says so", async () => {
     const { provider } = build();
     const { threadId } = await provider.send(null, "buy $40 openai");
     const text = agentBlocks(provider, threadId)
       .filter((b) => b.type === "proposal")
       .map((b) => (b.type === "proposal" ? b.text : ""))
       .join(" ");
-    expect(text).toMatch(/as a quantity/i);
-    expect(text).toMatch(/40 OPENAI/);
-    expect(text).toMatch(/not \$40 worth/i);
+    expect(text).toMatch(/\$40 at the PreStocks price of \$10\.00 is 4 OPENAI/);
+  });
+
+  test("no price is a question, never 40 tokens", async () => {
+    // At a four-figure share price, the old reading was a thousand times the ask.
+    const { provider } = build();
+    provider.basketPriceSource = async () => new Map();
+    for (const line of ["buy $40 openai", "buy $50 openai every monday"]) {
+      const { threadId } = await provider.send(null, line);
+      const blocks = agentBlocks(provider, threadId);
+      expect(blocks.some((b) => b.type === "clarify" && /can't price OPENAI/.test(b.text))).toBe(true);
+    }
+    expect(Object.keys(provider.getAllProposals())).toHaveLength(0);
+    expect(provider.getSchedules()).toHaveLength(0);
+  });
+
+  test("a recurring $ buy names the quantity and the price it was fixed at", async () => {
+    const { provider } = build();
+    const { threadId } = await provider.send(null, "buy $50 openai every monday");
+    const notice = agentBlocks(provider, threadId).find((b) => b.type === "notice");
+    expect(notice?.type === "notice" && notice.text).toMatch(
+      /Scheduled 5 OPENAI every Monday .*\$50 at today's PreStocks price of \$10\.00/,
+    );
+  });
+
+  test("a $ amount on an unpriced asset stays a quantity, and says so", async () => {
+    const { provider } = build();
+    await provider.addContact("maya", "ALUMw7kSn9xn67suHr2ti21CXBQVNMuRk7uWSM1WuXEt");
+    const { threadId } = await provider.send(null, "send $5 sol to maya");
+    const text = agentBlocks(provider, threadId)
+      .filter((b) => b.type === "proposal")
+      .map((b) => (b.type === "proposal" ? b.text : ""))
+      .join(" ");
+    expect(text).toMatch(/as a quantity: 5 SOL, not \$5 worth/);
   });
 
   test("no dollar sign, no note", async () => {

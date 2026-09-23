@@ -3,6 +3,7 @@ import { getConnection } from "@/server/aegis/client";
 import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@/server/aegis/constants";
 import { getServerConfig } from "@/server/env";
 import { checkMintsMovable, supportedTokenPrograms } from "@/server/stocks/mintDecimals";
+import { fetchPrestocksEntries, findPrestocksEntry } from "@/server/stocks/prestocks";
 import {
   DEFAULT_STOCK_DECIMALS,
   STOCK_LIST,
@@ -27,12 +28,17 @@ export const dynamic = "force-dynamic";
  * cluster rather than the real PreStocks mint (the real ones are mainnet-only,
  * see `PRAXIS_STOCK_MINTS`). The product labels that rather than implying a
  * devnet demo is moving real pre-IPO tokens.
+ *
+ * `usdPrice` (PreStocks tokenPrice, absent when the feed is down) lets the
+ * policy screen default a stock's caps in dollars.
  */
 export async function GET(request: Request) {
   return withReadProvider(request, async () => {
     const config = getServerConfig();
     if (!config.stocksEnabled) return [];
     const universe = config.stockUniverse;
+    // Never throws: a failed feed is [] (or a recent good answer).
+    const quotes = await fetchPrestocksEntries(config.prestocksApiUrl, config.prestocksTimeoutMs);
 
     const entries = STOCK_LIST.filter((s) => !universe || universe.includes(s.symbol)).map((s) => {
       const configured = config.tokens.find((t) => t.symbol === s.symbol);
@@ -44,6 +50,7 @@ export async function GET(request: Request) {
         mint,
         decimals: configured?.decimals ?? DEFAULT_STOCK_DECIMALS,
         mirrored: isMirroredMint(s.symbol, mint),
+        usdPrice: findPrestocksEntry(quotes, s.symbol)?.tokenPrice,
       };
     });
 

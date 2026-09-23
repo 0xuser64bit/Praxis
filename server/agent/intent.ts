@@ -49,18 +49,17 @@ export type ParsedAction =
        */
       toSelf?: true;
       /**
-       * The user wrote a dollar sign on the amount ("buy $40 openai").
+       * The amount is in US dollars ("buy $40 openai").
        *
-       * It is NOT a unit here — the number is a token quantity, which is what
-       * the program's caps, stored schedules and `praxis:stocksbuycheck` all
-       * already mean by it. Redefining it as dollars would silently change
-       * what every existing schedule buys and would un-break the over-cap
-       * demo that proves the thesis.
+       * For a tokenized stock the server converts it to a quantity at the
+       * live PreStocks price — the same conversion a basket uses — and
+       * clarifies when there is no price. It never falls back to reading "$40"
+       * as 40 tokens: at a four-figure share price that is a thousand times
+       * what was asked for. Stored schedules and the program's caps are
+       * quantities either way; this only decides how the quantity is derived.
        *
-       * But "$40" and "40 tokens" can be two hundred times apart, so the
-       * sigil is carried through rather than dropped at the regex, and the
-       * reply says which reading it took. The number on the card is the truth;
-       * this makes sure nobody has to infer that.
+       * On an asset with no price source (SOL, USDC) the number stays a
+       * quantity and the reply says so.
        */
       usdSigil?: true;
     }
@@ -101,6 +100,8 @@ export type ParsedAction =
       kind: "schedule_dca";
       asset: string;
       amountHuman: string;
+      /** Dollars, not a quantity — same meaning as on `transfer`. */
+      usdSigil?: true;
       /** Saved label/address, or undefined for the owner's own wallet. */
       recipient?: string;
       cadence: DcaCadence;

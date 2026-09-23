@@ -61,6 +61,7 @@ import {
   resolveBasket,
   sameCadence,
   splitBasket,
+  usdToBaseUnits,
   type DcaSchedule,
 } from "../stocks/schedules";
 import { fetchPrestocksEntries, findPrestocksEntry } from "../stocks/prestocks";
@@ -1105,7 +1106,13 @@ export class PraxisServerProvider implements PraxisProvider {
 
     const token = await this.withVerifiedDecimals(known);
     if (!token) return { blocks: [this.unverifiedDecimalsBlock(known.symbol)] };
-    const amount = parseHumanUnits(action.amountHuman, token.decimals);
+    const dollars = action.usdSigil && this.pricedInUsd(token)
+      ? await this.dollarsToStock(token, action.amountHuman)
+      : undefined;
+    if (dollars && "clarify" in dollars) {
+      return { blocks: [{ type: "clarify", text: dollars.clarify, options: [] }] };
+    }
+    const amount = dollars ? dollars.amount : parseHumanUnits(action.amountHuman, token.decimals);
     const preview = await this.previewTransfer(token, amount, resolved.address);
     const proposal = this.storeTransferProposal({
       token,
@@ -1124,13 +1131,15 @@ export class PraxisServerProvider implements PraxisProvider {
     const destination = toSelf
       ? "No recipient named, so this settles into your own wallet."
       : `Resolved ${resolved.name} from the address book.`;
-    // A dollar sign on the amount is not a unit here — "$40 openai" moves 40
-    // OPENAI, which at this price is two hundred times $40. The real figure is
-    // already the biggest text on the card, but nobody should have to notice
-    // that for themselves on the screen where they sign.
-    const reading = action.usdSigil
-      ? ` Reading "$${action.amountHuman}" as a quantity: ${formatUnits(amount, token.decimals)} ${token.symbol}, not $${action.amountHuman} worth of it.`
-      : "";
+    // Say how a dollar amount became the quantity on the card. On an asset
+    // with no price source the "$" cannot be honoured, so say that instead —
+    // nobody should have to work out either reading on the screen where they
+    // sign.
+    const reading = dollars
+      ? ` $${action.amountHuman} at the PreStocks price of $${dollars.price.toFixed(2)} is ${formatUnits(amount, token.decimals)} ${token.symbol} — that quantity is what you sign.`
+      : action.usdSigil
+        ? ` Reading "$${action.amountHuman}" as a quantity: ${formatUnits(amount, token.decimals)} ${token.symbol}, not $${action.amountHuman} worth of it.`
+        : "";
     return {
       blocks: [
         {
@@ -1266,7 +1275,7 @@ export class PraxisServerProvider implements PraxisProvider {
    * degrades to no figure rather than blocking the proposal.
    */
   private async usdEstimateFor(token: TokenInfo, amount: bigint): Promise<string | undefined> {
-    if (!this.config.stocksEnabled || !isStockSymbol(token.symbol)) return undefined;
+    if (!this.pricedInUsd(token)) return undefined;
     try {
       const prices = await this.basketPriceSource([token.symbol]);
       const price = prices.get(token.symbol);
@@ -1277,6 +1286,38 @@ export class PraxisServerProvider implements PraxisProvider {
     } catch {
       return undefined;
     }
+  }
+
+  /** Only tokenized stocks have a price source (PreStocks). */
+  private pricedInUsd(token: TokenInfo): boolean {
+    return this.config.stocksEnabled && isStockSymbol(token.symbol);
+  }
+
+  /**
+   * "$40 openai" → OPENAI base units at the PreStocks price, by the same
+   * integer math as a basket share. No price is a clarify, never a fallback to
+   * reading 40 as a quantity: at these share prices that is a thousand times
+   * what was asked for.
+   */
+  private async dollarsToStock(
+    token: TokenInfo,
+    usdHuman: string,
+  ): Promise<{ amount: bigint; price: number } | { clarify: string }> {
+    const usd = Number(usdHuman);
+    if (!Number.isFinite(usd) || usd <= 0) {
+      return { clarify: `"$${usdHuman}" isn't a dollar amount I can buy. Try e.g. "buy $40 ${token.symbol.toLowerCase()}".` };
+    }
+    const price = (await this.basketPriceSource([token.symbol])).get(token.symbol);
+    const amount = price === undefined ? null : usdToBaseUnits(usd, price, token.decimals);
+    if (price === undefined || amount === null) {
+      return {
+        clarify: `I can't price ${token.symbol} right now (PreStocks quote unavailable), so I can't turn $${usdHuman} into a quantity. Try again shortly, or name a quantity instead, e.g. "buy 0.05 ${token.symbol.toLowerCase()}".`,
+      };
+    }
+    if (amount <= 0n) {
+      return { clarify: `$${usdHuman} is less than the smallest unit of ${token.symbol}. Try a larger amount.` };
+    }
+    return { amount, price };
   }
 
   /** Strict token lookup (no SYSTEM_PROGRAM fallback): DCA/baskets need a real mint. */
@@ -1308,9 +1349,18 @@ export class PraxisServerProvider implements PraxisProvider {
     // per-fire amount in base units, so a wrong exponent is baked in forever.
     const token = await this.withVerifiedDecimals(known);
     if (!token) return { blocks: [this.unverifiedDecimalsBlock(known.symbol)] };
+    // ponytail: dollars are priced once, at creation, into a fixed per-fire
+    // quantity — not true dollar-cost averaging. Store the dollars on the
+    // schedule and convert per fire if that difference starts to matter.
+    const dollars = action.usdSigil && this.pricedInUsd(token)
+      ? await this.dollarsToStock(token, action.amountHuman)
+      : undefined;
+    if (dollars && "clarify" in dollars) {
+      return { blocks: [{ type: "clarify", text: dollars.clarify, options: [] }] };
+    }
     let amount: bigint;
     try {
-      amount = parseHumanUnits(action.amountHuman, token.decimals);
+      amount = dollars ? dollars.amount : parseHumanUnits(action.amountHuman, token.decimals);
     } catch {
       return {
         blocks: [{
@@ -1374,7 +1424,9 @@ export class PraxisServerProvider implements PraxisProvider {
       blocks: [{
         type: "notice",
         tone: "success",
-        text: `Scheduled ${human} ${token.symbol} ${describeCadence(action.cadence)} for ${target.name} — I'll propose each buy for your signature. Nothing moves until you sign.`,
+        text: `Scheduled ${human} ${token.symbol} ${describeCadence(action.cadence)} for ${target.name}`
+          + (dollars ? ` ($${action.amountHuman} at today's PreStocks price of $${dollars.price.toFixed(2)}; each fire proposes that same quantity)` : "")
+          + ` — I'll propose each buy for your signature. Nothing moves until you sign.`,
       }],
       title: `${token.symbol} recurring buy`,
     };

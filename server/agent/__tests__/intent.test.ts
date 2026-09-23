@@ -132,8 +132,7 @@ describe("deterministic parser — stock intents (C04)", () => {
       asset: "OPENAI",
       amountHuman: "40",
       recipient: "maya",
-      // The "$" is a quantity here, not a unit — recorded so the reply can
-      // say so rather than leaving the reader to spot it on the card.
+      // Dollars, converted to a quantity at the PreStocks price server-side.
       usdSigil: true,
     });
   });
@@ -171,6 +170,7 @@ describe("deterministic parser — stock intents (C04)", () => {
       amountHuman: "50",
       recipient: undefined,
       cadence: { type: "weekly", weekday: 1 },
+      usdSigil: true,
     });
   });
 
@@ -182,6 +182,7 @@ describe("deterministic parser — stock intents (C04)", () => {
       amountHuman: "50",
       recipient: "maya",
       cadence: { type: "weekly", weekday: 1 },
+      usdSigil: true,
     });
   });
 
@@ -400,13 +401,11 @@ describe("LLM path — toSelf is explicit, never inferred", () => {
 });
 
 /**
- * The dollar sign is not a unit. "$40 openai" moves 40 OPENAI, which at a
- * three-figure share price is two hundred times $40 — so the sigil is carried
- * through the parse instead of being dropped at the regex, and the reply says
- * which reading it took.
+ * "$40 openai" means $40 of OPENAI. The parser keeps the bare number and flags
+ * it as dollars; the server does the conversion, because only it has a price.
  */
 describe("the $ sigil is recorded, not silently discarded", () => {
-  test("a dollar amount parses as a quantity and says so", () => {
+  test("a dollar amount keeps its number and is flagged as dollars", () => {
     const parsed = parseIntentLocallyForDemo("buy $40 openai");
     expect(parsed.outcome).toBe("actions");
     if (parsed.outcome !== "actions") return;

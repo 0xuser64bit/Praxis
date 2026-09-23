@@ -135,6 +135,7 @@ function normalizeAction(input: unknown, index: number): ParsedAction {
       amountHuman: readRequiredString(value.amountHuman, "amountHuman"),
       recipient,
       cadence: readCadence(value.cadence),
+      ...(value.usdSigil === true ? { usdSigil: true as const } : {}),
     };
   }
 

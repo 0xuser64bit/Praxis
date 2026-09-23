@@ -66,13 +66,13 @@ async function main() {
 }
 
 /**
- * Stocklana C08 --stocks mode: research → buy $40 (honest verdict) →
- * over-cap $500 (always blocked) → pause → resume. Needs the demo keys +
+ * Stocklana C08 --stocks mode: research → buy 40 OPENAI (honest verdict) →
+ * over-cap 500 OPENAI (always blocked) → pause → resume. Needs the demo keys +
  * cluster like the SOL flow, plus PRAXIS_STOCKS_ENABLED=1. Moves no value:
- * the $40 leg only simulates; pause/resume are the only submitted txs.
+ * the 40-OPENAI leg only simulates; pause/resume are the only submitted txs.
  */
 async function stocksMode(client: AegisClient, config: PraxisServerConfig) {
-  console.log("STOCKS DEMO: research → buy $40 → over-cap $500 block → pause → resume");
+  console.log("STOCKS DEMO: research → buy 40 OPENAI → over-cap 500 OPENAI block → pause → resume");
   await ensureDemoPolicy(client);
 
   const openai = config.tokens.find((t) => t.symbol === "OPENAI");
@@ -101,7 +101,7 @@ async function stocksMode(client: AegisClient, config: PraxisServerConfig) {
     parseHumanUnits("40", openai.decimals),
   );
   console.log(
-    `BUY $40: allowed=${buy.check.allowed}` +
+    `BUY 40 OPENAI: allowed=${buy.check.allowed}` +
       (buy.check.reason ? ` reason=${buy.check.reason}` : "") +
       " (honest verdict: needs a funded token vault to pass)",
   );
@@ -111,8 +111,8 @@ async function stocksMode(client: AegisClient, config: PraxisServerConfig) {
     openai,
     parseHumanUnits("500", openai.decimals),
   );
-  console.log(`OVER-CAP $500: allowed=${over.check.allowed} reason=${over.check.reason ?? "none"}`);
-  if (over.check.allowed) throw new Error("Expected the $500 buy to be blocked by the 200/tx cap.");
+  console.log(`OVER-CAP 500 OPENAI: allowed=${over.check.allowed} reason=${over.check.reason ?? "none"}`);
+  if (over.check.allowed) throw new Error("Expected the 500 OPENAI buy to be blocked by the 200/tx cap.");
 
   await client.updatePolicy({ paused: true });
   if (!(await client.getPolicy()).paused) throw new Error("Pause did not take effect.");

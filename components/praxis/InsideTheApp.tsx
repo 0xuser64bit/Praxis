@@ -213,7 +213,7 @@ const SCENES: Scene[] = [
     history: (
       <History command="what's openai doing this week" at="2:12 PM">
         <p className="[&_strong]:font-medium [&_strong]:text-[var(--text-primary)]">
-          <strong>$217.40</strong> · +4.1% over 24h · $2.1M 24h volume, from the
+          <strong>$1,088.50</strong> · +4.1% over 24h · $2.1M 24h volume, from the
           live PreStocks quote. Read-only data — no buy, sell or hold advice.
         </p>
       </History>
@@ -228,13 +228,13 @@ const SCENES: Scene[] = [
     reply: () => (
       <>
         <Prose>
-          No recipient named, so this settles into your own wallet.{" "}
-          <strong>OPENAI</strong> is a Token-2022 mint at 9 decimals, priced from
-          the live PreStocks quote, and its envelope is separate from your SOL one.
+          No recipient named, so this settles into your own wallet. $40 at the
+          PreStocks price of $1,088.50 is <strong>0.0367 OPENAI</strong> — a
+          Token-2022 mint whose envelope is separate from your SOL one.
         </Prose>
         <TxCard
           status={{ label: "Awaiting signature" }}
-          from={{ label: "Send", primary: "40.00", unit: "OPENAI", sub: "≈ $8,696.00" }}
+          from={{ label: "Send", primary: "0.0367", unit: "OPENAI", sub: "≈ $40.00" }}
           to={{ label: "To", primary: "Your wallet", sub: "7xK…Bgh2", compact: true }}
           meta={[
             { label: "Network fee", value: FEE },
@@ -243,7 +243,7 @@ const SCENES: Scene[] = [
           verdict={
             <Verdict
               allowed
-              detail="500 OPENAI daily cap · 500 OPENAI left today · 460 after this"
+              detail="0.4593 OPENAI daily cap · 0.4593 OPENAI left today · 0.4226 after this"
               meter={{ spent: 0, amount: 0.08 }}
             />
           }
@@ -280,15 +280,16 @@ const SCENES: Scene[] = [
           already allows.
         </Prose>
         <Note tone="success">
-          Scheduled 50 SPACEX every Monday for you — I&rsquo;ll propose each buy for
-          your signature. Nothing moves until you sign.
+          Scheduled 0.4112 SPACEX every Monday for you ($50 at today&rsquo;s PreStocks
+          price of $121.59; each fire proposes that same quantity) — I&rsquo;ll propose
+          each buy for your signature. Nothing moves until you sign.
         </Note>
         {settled && (
           <div className="mt-3 flex items-center gap-3 rounded-lg bg-[var(--bg-elevated)] px-3.5 py-3 [border:0.5px_solid_var(--border)]">
         <IconCalendarRepeat size={15} className="shrink-0 text-[var(--text-tertiary)]" />
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-medium text-[var(--text-primary)]">
-            50 SPACEX{" "}
+            0.4112 SPACEX{" "}
             <span className="font-normal text-[var(--text-tertiary)]">· every Monday</span>
           </div>
           <div className="[font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">

@@ -9,6 +9,7 @@ import {
   resolveBasket,
   sameCadence,
   splitBasket,
+  usdToBaseUnits,
 } from "../schedules";
 
 describe("parseCadence", () => {
@@ -239,6 +240,14 @@ describe("splitBasket precision", () => {
     const shares = splitBasket(10, ["A", "B"], new Map([["A", 3], ["B", 3]]), () => 6)!;
     // 5 / 3 = 1.666… → 1_666_666 base units at 6dp, floored.
     expect(shares.map((s) => s.amount)).toEqual([1_666_666n, 1_666_666n]);
+  });
+
+  test("a single-stock dollar amount floors to base units, never guessing a price", () => {
+    // $40 of OPENAI at $1,088.50 on a 9-decimal mint: 0.036747818…, floored.
+    expect(usdToBaseUnits(40, 1088.5, 9)).toBe(36_747_818n);
+    expect(usdToBaseUnits(40, 0, 9)).toBeNull();
+    expect(usdToBaseUnits(0, 1088.5, 9)).toBeNull();
+    expect(usdToBaseUnits(0.0000001, 1088.5, 0)).toBe(0n);
   });
 
   test("an unpriceable or zero-quantity constituent voids the whole basket", () => {

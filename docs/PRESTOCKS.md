@@ -121,9 +121,9 @@ model that merely drops the field on a `send` still lands in the clarify path.
 
 | User says | Parsed as | Notes |
 |---|---|---|
-| `buy $40 openai` / `buy 0.1 openai for maya` | `transfer(asset=pOPENAI…)` | Amount in token base units after decimal lookup — the `$` is **not** a unit, `$40 openai` is 40 OPENAI. The sigil is recorded (`usdSigil`) and the reply names the reading, because the two can be orders of magnitude apart. A named recipient resolves through the address book; no recipient settles into the owner's own wallet (`toSelf`), the same default a recurring buy takes |
+| `buy $40 openai` / `buy 0.1 openai for maya` | `transfer(asset=pOPENAI…)` | A `$` means dollars (`usdSigil`): the server converts $40 to base units at the PreStocks `tokenPrice` with the basket's integer math, names the price in the reply, and clarifies when there is no price — never falls back to reading 40 as a quantity. No `$` is a token quantity. A named recipient resolves through the address book; no recipient settles into the owner's own wallet (`toSelf`), the same default a recurring buy takes |
 | `sell $20 openai` | `transfer` to vault/treasury (direction labeled) or `swap_stub` if route exists | C01 decides; default transfer-only |
-| `buy $50 openai every monday` | `transfer` + DCA schedule metadata (off-chain) | Mechanical cron, same policy checks per fire |
+| `buy $50 openai every monday` | `transfer` + DCA schedule metadata (off-chain) | Mechanical cron, same policy checks per fire. `$50` is priced once at creation into a fixed per-fire quantity |
 | `buy mag7 basket $100` | ordered `transfer[]` (one per constituent) | Sequential proposals, per-stock policy each |
 | `swap 10 usdc for openai` | `swap_stub` (blocked unless C01 proves route) | Honest blocked copy preserved |
 

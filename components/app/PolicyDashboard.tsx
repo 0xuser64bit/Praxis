@@ -733,16 +733,27 @@ function TokenEnvelopeCard({
       .map((stock) => ({ symbol: stock.symbol, mint: stock.mint })),
   ];
 
-  // Default caps when (re)selecting a token: 200 per-tx / 500 daily, in its
-  // units. Returns null when the scale is unknown — a cap written at the wrong
-  // exponent is a wrong cap, so the control is disabled instead.
+  // Default caps when (re)selecting a token. A priced stock gets $100 per buy
+  // and $500 a day at its PreStocks price — buys are asked for in dollars, and
+  // 200 of a four-figure stock is a six-figure cap. Anything else gets 200 /
+  // 500 in its own units. Returns null when the scale is unknown — a cap
+  // written at the wrong exponent is a wrong cap, so the control is disabled
+  // instead.
   const defaultsFor = (mint: string): TokenEnvelopeConfig | null => {
     const scale = scaleFor(mint);
     if (scale === undefined) return null;
+    const price = stocks.find((s) => s.mint === mint)?.usdPrice;
+    const cap = (usd: number, units: string) =>
+      toBaseUnits(
+        typeof price === "number" && Number.isFinite(price) && price > 0
+          ? (usd / price).toFixed(scale)
+          : units,
+        scale,
+      );
     return {
       tokenMint: mint,
-      tokenMaxPerTx: toBaseUnits("200", scale),
-      tokenDailyLimit: toBaseUnits("500", scale),
+      tokenMaxPerTx: cap(100, "200"),
+      tokenDailyLimit: cap(500, "500"),
     };
   };
 

@@ -70,7 +70,7 @@ Funded-cluster demo (devnet keys + SOL for rent, `PRAXIS_STOCKS_ENABLED=1`):
 
 ```bash
 bun run praxis:demo -- --stocks
-# research OPENAI → buy $40 simulate (honest verdict) → $500 blocked by 200/tx
+# research OPENAI → buy 40 OPENAI simulate (honest verdict) → 500 OPENAI blocked by 200/tx
 # cap → pause → resume. Moves no value; pause/resume are the only submitted txs.
 ```
 

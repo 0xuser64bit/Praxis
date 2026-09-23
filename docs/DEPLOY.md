@@ -287,10 +287,15 @@ schedule a DCA → activity filtered by stock.
 
 ### Demo video shot list (90 seconds, human task)
 
+Before recording, check the OPENAI envelope's per-transaction cap is worth
+≈ $100 (≈ 0.077 OPENAI at $1,302.85 on 2026-09-23). Picking a stock envelope defaults it to $100 per
+buy / $500 a day at the PreStocks price; one configured earlier keeps its old
+200 / 500-token caps (six figures) until you edit them in Policy → SPL.
+
 1. Land on `https://app.<preview>/` → connect Phantom (devnet).
 2. `research openai` → PreStocks rows render with attribution.
-3. `buy $40 openai` → proposal with Aegis verdict → sign → Explorer link.
-4. `buy $500 openai` → blocked card citing the 200/tx cap.
+3. `buy $40 openai` → "$40 at the PreStocks price of $… is 0.03… OPENAI" → Aegis verdict → sign → Explorer link.
+4. `buy $500 openai` → blocked card: over the $100 per-transaction cap.
 5. Policy → switch envelope to SPACEX (`vault · i of 8` label changes).
 6. `buy $50 spacex every monday` → schedule notice (no signature asked).
 7. Activity → filter by OPENAI. End on the blocked card (the pitch).

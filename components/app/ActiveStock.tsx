@@ -39,6 +39,8 @@ export interface StockUniverseEntry {
    * must not look like it is moving real pre-IPO tokens.
    */
   mirrored?: boolean;
+  /** PreStocks price per whole token; absent when the feed is down. */
+  usdPrice?: number;
 }
 
 interface ActiveStockApi {

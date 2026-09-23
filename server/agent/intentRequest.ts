@@ -61,7 +61,7 @@ export const intentTool = {
             usdSigil: {
               type: "boolean",
               description:
-                "True when the user wrote a dollar sign on the amount ('buy $40 openai'). The number is still a token quantity — this only records that they typed '$', so the reply can say which reading it took.",
+                "For transfer and schedule_dca: true when the amount is in US dollars ('buy $40 openai', 'buy 40 dollars of spacex every monday'). Keep amountHuman as the bare number; the server converts dollars to a stock quantity at the live price. Omit when the user gave a token quantity ('buy 0.5 openai').",
             },
             toSelf: {
               type: "boolean",
@@ -188,8 +188,9 @@ export const INTENT_SYSTEM_PROMPT = [
   "Stock verbs: buy/purchase/acquire and sell map to transfer with a PreStocks symbol " +
     "(OPENAI, SPACEX, ANTHROPIC, ANDURIL, FIGUREAI, KALSHI, NEURALINK, POLYMARKET); " +
     "accept an optional p- prefix and any case (popenai = OPENAI).",
-  "A '$' on the amount does NOT change the unit: 'buy $40 openai' is 40 OPENAI, not $40 of it. " +
-    "Keep amountHuman as the bare number and set usdSigil=true so the reply can say so.",
+  "A '$' (or 'dollars') on the amount means US dollars: 'buy $40 openai' is $40 worth of OPENAI. " +
+    "Keep amountHuman as the bare number (40) and set usdSigil=true — the server converts it to a " +
+    "quantity at the live PreStocks price. Without it ('buy 0.5 openai') the number is a token quantity.",
   "A BUY with no recipient ('buy $40 openai') is a transfer with toSelf=true and no recipient: " +
     "it settles into the owner's own wallet. Only a buy verb may do this. A send with no " +
     "recipient is a clarify, and a bare sell is a swap idea — never set toSelf for either.",

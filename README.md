@@ -89,12 +89,15 @@ can't break: `buy $40 openai`, `buy $50 spacex every monday`,
 `buy ai basket $60`. Same Aegis envelope — per-stock caps, allow-lists,
 expiry, pause — enforced on-chain by the program, not by the backend.
 
-Two things the phrasing does not say for itself, so the agent does. A buy
-with no recipient settles into your own wallet, the same default a recurring
-buy takes. And the `$` is not a unit for a single buy: `buy $40 openai` moves
-40 OPENAI, not $40 of it — the proposal names that reading next to the button
-you sign. (Baskets are the exception and are genuinely USD-denominated:
-`buy ai basket $60` splits $60 across the constituents.)
+A `$` means dollars: `buy $40 openai` is $40 of OPENAI, converted to a
+quantity at the live PreStocks price (the same math that splits
+`buy ai basket $60`), and the reply names the price it used. With no price
+the agent asks rather than guessing; without a `$`, `buy 0.05 openai` is a
+quantity. A recurring buy fixes its quantity at today's price, and every
+fire is re-checked against the caps. A buy with no recipient settles into
+your own wallet. A stock's envelope defaults to $100 per buy and $500 a day
+at its PreStocks price, and Aegis enforces those caps on-chain as token
+quantities.
 
 The PreStocks mints are **Token-2022**, so Aegis drives both SPL Token and
 Token-2022 (`TransferChecked`). The full path is asserted, not screenshotted:

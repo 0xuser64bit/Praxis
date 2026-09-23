@@ -344,6 +344,7 @@ function matchDca(text: string): Extract<ParsedAction, { kind: "schedule_dca" }>
       amountHuman: m[1],
       recipient: m[shape.recipient]?.trim().replace(/[.?!]+$/, "") || undefined,
       cadence,
+      ...(hasUsdSigil(text) ? { usdSigil: true as const } : {}),
     };
   }
   return null;

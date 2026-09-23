@@ -274,7 +274,10 @@ describe("stocklana C05: stock universe + policy mint view", () => {
 
   test("get-stock-universe: 8 verified PreStocks entries when enabled", async () => {
     const prev = process.env.PRAXIS_STOCKS_ENABLED;
+    const prevApi = process.env.PRAXIS_PRESTOCKS_API_URL;
     process.env.PRAXIS_STOCKS_ENABLED = "1";
+    // Refused at once: no test may reach the real price feed.
+    process.env.PRAXIS_PRESTOCKS_API_URL = "http://127.0.0.1:9/prestocks";
     resetConfigForTests();
     try {
       const res = await getStockUniverse(authed("/api/praxis/get-stock-universe"));
@@ -286,6 +289,8 @@ describe("stocklana C05: stock universe + policy mint view", () => {
     } finally {
       if (prev === undefined) delete process.env.PRAXIS_STOCKS_ENABLED;
       else process.env.PRAXIS_STOCKS_ENABLED = prev;
+      if (prevApi === undefined) delete process.env.PRAXIS_PRESTOCKS_API_URL;
+      else process.env.PRAXIS_PRESTOCKS_API_URL = prevApi;
       resetConfigForTests();
     }
   });

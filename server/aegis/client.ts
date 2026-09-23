@@ -805,10 +805,12 @@ export class AegisClient {
           tokenDailyLimit: action.tokenDailyLimit,
         },
       );
-      // Also create the vault ATA when missing so the agent can move tokens
-      // immediately after the owner configures the envelope.
+      // Also create the vault's and the owner's own ATA when missing: the vault
+      // so the agent can move tokens at once, the owner because a bare
+      // "buy $40 openai" settles into the owner's wallet — without it the
+      // headline buy is refused for a missing recipient account.
       const vault = findVaultPda(policy, this.config.programId);
-      const ataIxs = await this.missingAtaCreateInstructions(ownerPubkey, mint, [vault]);
+      const ataIxs = await this.missingAtaCreateInstructions(ownerPubkey, mint, [vault, ownerPubkey]);
       return [configure, ...ataIxs];
     }
 
@@ -822,7 +824,9 @@ export class AegisClient {
       const recipients = uniquePublicKeys(
         (action.recipientAddresses ?? []).map((address) => validatePublicKey(address)),
       );
-      const ixs = await this.missingAtaCreateInstructions(ownerPubkey, mint, [vault, ...recipients]);
+      // The owner's own wallet is the default buy destination, so it is always
+      // a recipient worth preparing, address book or not.
+      const ixs = await this.missingAtaCreateInstructions(ownerPubkey, mint, [vault, ownerPubkey, ...recipients]);
       if (ixs.length === 0) {
         throw new PraxisInputError("All required token accounts already exist.");
       }

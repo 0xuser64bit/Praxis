@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { ComputeBudgetProgram, Connection, Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import { ComputeBudgetProgram, Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js";
 
 import { AegisClient } from "../client";
 import {
@@ -274,6 +274,8 @@ describe("buildUnsignedOwnerTransaction", () => {
         ix.keys.some((key) => key.pubkey.equals(vault)),
       ),
     ).toBe(true);
+    // So is the owner's own: a bare "buy $40 openai" settles there.
+    expect(tx.instructions.some((ix) => isAtaCreateFor(ix, wallet))).toBe(true);
   });
 
   test("builds prepareTokenAccounts as ATA creates only", async () => {
@@ -310,6 +312,9 @@ describe("buildUnsignedOwnerTransaction", () => {
     expect(tx.instructions.length).toBeGreaterThanOrEqual(1);
     expect(tx.instructions.every((ix) => ix.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID))).toBe(true);
     expect(tx.instructions.every((ix) => ix.data.length === 1 && ix.data[0] === 1)).toBe(true);
+    // The owner's own account is prepared even though it is not in the list.
+    expect(tx.instructions.some((ix) => isAtaCreateFor(ix, wallet))).toBe(true);
+    expect(tx.instructions.some((ix) => isAtaCreateFor(ix, recipient))).toBe(true);
   });
 
   test("prepareTokenAccounts errors when every ATA already exists", async () => {
@@ -581,3 +586,8 @@ describe("submitSignedTransaction", () => {
     expect(await client.submitSignedTransaction(draft, config.ownerAddress!)).toBe("owner-sig");
   });
 });
+
+/** An associated-token-account create whose owning wallet (key 2) is `owner`. */
+function isAtaCreateFor(ix: TransactionInstruction, owner: PublicKey): boolean {
+  return ix.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID) && ix.keys[2]?.pubkey.equals(owner);
+}

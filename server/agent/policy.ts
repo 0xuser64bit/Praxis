@@ -123,10 +123,10 @@ export function checkTokenTransferPolicy(
     return { allowed: false, reason: "The Aegis agent session key has expired. Rotate it before signing agent actions.", reasonCode: RejectReason.Expired, ...base };
   }
   if (policy.tokenMint === DEFAULT_MINT) {
-    return { allowed: false, reason: "SPL token transfers are not configured for this policy (no token mint set).", ...base };
+    return { allowed: false, reason: `Token transfers aren't set up on this policy yet. Switch the envelope to ${token.symbol} in Policy → Token transfers.`, ...base };
   }
   if (token.mint !== policy.tokenMint) {
-    return { allowed: false, reason: `${token.symbol} is not the policy's configured token mint, so Aegis will not move it.`, reasonCode: RejectReason.MintNotAllowed, ...base };
+    return { allowed: false, reason: `${token.symbol} is not the policy's configured token mint, so Aegis will not move it. Switch the envelope to ${token.symbol} in Policy → Token transfers.`, reasonCode: RejectReason.MintNotAllowed, ...base };
   }
   if (policy.allowedRecipients.length > 0 && !policy.allowedRecipients.includes(recipient)) {
     return {

@@ -125,7 +125,7 @@ describe("env stock wiring (flagged)", () => {
 
   test("universe filter narrows to known symbols; unknown entries are ignored", () => {
     process.env.PRAXIS_STOCKS_ENABLED = "1";
-    process.env.PRAXIS_STOCK_UNIVERSE = "openai, spacex, TESSERA, openai";
+    process.env.PRAXIS_STOCK_UNIVERSE = "openai, spacex, NOTASTOCK, openai";
     resetConfigForTests();
     const config = getServerConfig();
     expect(config.stockUniverse).toEqual(["OPENAI", "SPACEX"]);

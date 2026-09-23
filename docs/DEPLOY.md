@@ -222,6 +222,20 @@ deploy a corrupt program. Close it and redeploy.
 Confirm the upgrade landed with `praxis:stocksbuycheck` (below) — it fails
 against the old binary and passes against the new one.
 
+**2026-09-23 upgrade (token window keeps today's spend on a cap change, T10).**
+No extend was needed: the new binary (277,384 bytes) fits the 284,672-byte
+program account. The sequence, with a rollback copy taken first:
+
+```bash
+solana program dump 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd aegis-predeploy.so --url devnet
+solana program deploy aegis/target/deploy/aegis.so \
+  --program-id 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd --url devnet
+bun run praxis:stocksbuycheck    # PASS on the upgraded program
+# rollback, if ever needed: deploy aegis-predeploy.so to the same program id
+```
+
+Account layout and IDL are unchanged, so no client redeploy is coupled to it.
+
 ### Devnet mirror mints (required for a devnet stock demo)
 
 The real PreStocks mints exist on mainnet only. Before a devnet demo:

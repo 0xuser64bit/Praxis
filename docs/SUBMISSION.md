@@ -70,19 +70,23 @@ on-chain ActionLog is the audit trail judges can click.
 - **`bun run praxis:stocksbuycheck`** — the whole claim in one command against
   a live cluster: the buy lands, the over-cap buy is refused by the program:
 
-Run on **devnet** 2026-09-20 (raw token quantities, against its own OPENAI
-mirror `JDQzde3RyKMaJTVNxwR2ocFLrqvcjR2Rq5BZiy6QX3tx`):
+Run on **devnet** 2026-09-23 against the current program build (raw token
+quantities, on the app's OPENAI mirror `AyqfcjmR69FLWhGVDQjTiWv2Gi1CVADxBnaPX8eGoCrx`):
 
 ```
 ✓ mint is Token-2022      TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb
-✓ buy CONFIRMED on-chain  5JLjHAjCy3oH1ejpdAWWoe7jxLaZjGhyLeirTDxzH6gr…
+✓ buy CONFIRMED on-chain  U53wAMhGme5Rh6HG7LtRqp5z6CczwqQj1h6szxvUf1C5…
 ✓ recipient credited exactly 40, vault debited exactly 40
 ✓ over-cap buy REJECTED on-chain — reason code 3 (OverPerTx)
 ✓ vault untouched by the blocked buy
 ```
 
 Explorer (the buy):
-<https://explorer.solana.com/tx/5JLjHAjCy3oH1ejpdAWWoe7jxLaZjGhyLeirTDxzH6grwDRT9WsiCNFZWhte7tdRNYdHmbUUaMuC7bDyXA8rtgg7?cluster=devnet>
+<https://explorer.solana.com/tx/U53wAMhGme5Rh6HG7LtRqp5z6CczwqQj1h6szxvUf1C5PsfeMt8PQHm4j8YVT3HREq1mVdLnhbYLgNQEnhZnKfS?cluster=devnet>
+
+The same run then re-applied the envelope's own caps and read the policy back:
+today's 40 OPENAI stayed spent — a cap change never hands the agent a fresh
+allowance (T10, now enforced on devnet).
 
 The program logs on that transaction are the whole thesis in four lines — the
 agent's instruction enters Aegis, and Aegis is what calls the token program:
@@ -98,7 +102,8 @@ The agent key never touches the token program directly. It can only ask
 Aegis, and Aegis checks the envelope first — which is why the 500-unit
 attempt above never reaches `invoke [2]` at all.
 
-Program: `3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd` (devnet, Token-2022 build).
+Program: `3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd` (devnet; last upgraded
+2026-09-23, slot 503065818, tx `3ZG6G6s8buGpQiz335kxF5MSDXwfMQyBxr8h2s3RU17B6XZMN2N8dgjnakAwsD5eXnj2Y3QHaGGHkeE2yu4UMX2`).
 
 ## Honest scope (read this before judging)
 

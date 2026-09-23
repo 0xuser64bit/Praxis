@@ -105,7 +105,7 @@ Token-2022 (`TransferChecked`). The full path is asserted, not screenshotted:
 ```bash
 PRAXIS_STOCKS_ENABLED=1 bun run dev   # 8 PreStocks symbols, switcher in Policy → SPL
 bun run praxis:stocksgate             # offline honesty gate (CI-grade, no network)
-bun run aegis:test                    # LiteSVM T1–T9, incl. the Token-2022 envelope
+bun run aegis:test                    # LiteSVM T1–T10, incl. the Token-2022 envelope
 bun run praxis:stocksbuycheck         # live cluster: buy lands, over-cap refused on-chain
 ```
 
@@ -192,7 +192,7 @@ signer, see **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 bun run lint
 bun run test       # auth/session, validation, state, Aegis codec, API routes — no network
 bun run build
-bun run aegis:test # rebuild the Anchor program + run the LiteSVM enforcement gate (T1–T9)
+bun run aegis:test # rebuild the Anchor program + run the LiteSVM enforcement gate (T1–T10)
 bun run aegis:idl  # rebuild and re-sync the generated IDL into @praxis/shared
 ```
 

@@ -10,7 +10,7 @@ Never skip verification. Never mix two commits in one diff. ~~Never touch
 be Token-2022; see below).
 
 Global verify (every commit): `bun run lint && bun run test && bun run build`
-Program gate (must stay green): `bun run aegis:test` — T1–T9.
+Program gate (must stay green): `bun run aegis:test` — T1–T10.
 
 ---
 

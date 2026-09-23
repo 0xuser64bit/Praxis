@@ -3,7 +3,8 @@ use anchor_lang::prelude::*;
 
 /// Owner-only. Sets (or re-sets) the single SPL-token envelope: which mint the
 /// agent may move via `agent_transfer_spl`, and its own per-tx / daily caps in
-/// that token's base units. Resets the token rolling window to "now".
+/// that token's base units. Starts a fresh token rolling window only when the
+/// mint changes; re-setting the same mint's caps keeps the live window.
 ///
 /// This is intentionally SEPARATE from `update_policy` (the SOL envelope): the
 /// token caps live in a different unit and must not be conflated with the SOL
@@ -37,14 +38,19 @@ pub fn handler(
         AegisError::InvalidLimits
     );
 
-    let now = Clock::get()?.unix_timestamp;
     let policy = &mut ctx.accounts.policy;
+    // A new mint is a new asset in new units, so its window starts fresh. The
+    // same mint keeps today's spend, as `update_policy` does for SOL: a new cap
+    // applies to the live window. Resetting it let "raise my daily limit"
+    // grant a second full day's allowance today, and let a signature that
+    // LOWERED the limit hand the agent headroom it was meant to remove.
+    if policy.token_mint != token_mint {
+        policy.token_spent_today = 0;
+        policy.token_day_start_ts = Clock::get()?.unix_timestamp;
+    }
     policy.token_mint = token_mint;
     policy.token_max_per_tx = token_max_per_tx;
     policy.token_daily_limit = token_daily_limit;
-    // Fresh window on (re)configuration so a cap change can't be back-dated.
-    policy.token_spent_today = 0;
-    policy.token_day_start_ts = now;
 
     emit!(TokenConfigured {
         policy: policy.key(),

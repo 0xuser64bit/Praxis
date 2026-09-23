@@ -156,6 +156,12 @@ The SPL path also enforces:
 2. source and destination token accounts use the configured mint
 3. source token account is owned by the vault PDA
 
+`configure_token` starts a fresh token window only when the mint changes.
+Re-setting the same mint's caps applies them to today's spend, exactly as
+`update_policy` does for SOL — otherwise raising a cap would grant a second
+full allowance the same day, and a signature that *lowered* it would hand the
+agent headroom it was meant to remove (LiteSVM T10).
+
 `agent_transfer_spl` drives **SPL Token or Token-2022**, hand-parsing the
 token accounts and constructing the CPI raw (no `anchor-spl` dependency). The
 CPI is `TransferChecked`, so the token program re-verifies the mint and
@@ -274,11 +280,6 @@ account: switching accounts in the extension, or disconnecting, ends it.
   blockhash sooner), and the blast radius is a lost allow-list entry rather
   than lost funds. Closing it properly needs a nonce on `PolicyAccount`, which
   changes the account layout and so needs a migration.
-- `configure_token` resets the token envelope's `token_spent_today` even when
-  the mint is unchanged, so an owner who lowers a stock cap mid-day (Policy →
-  SPL, or "set my daily limit to $100" in chat) restarts that day's count.
-  Owner-signed, so not an agent bypass. The fix — reset only when the mint
-  changes — is a program upgrade, deliberately not shipped days before judging.
 - No durable rejected-transaction indexer for failures that happen outside the
   app process.
 - The scheduled-buy job walks every wallet in one tick (bounded at 500). Past
@@ -291,7 +292,7 @@ account: switching accounts in the extension, or disconnecting, ends it.
 bun run lint          # eslint
 bun run test          # TypeScript suite: auth, validation, state, Aegis codec, routes
 bun run build         # production Next.js build
-bun run aegis:test    # rebuild the Anchor program + LiteSVM enforcement gate (T1–T9)
+bun run aegis:test    # rebuild the Anchor program + LiteSVM enforcement gate (T1–T10)
 bun run aegis:idl     # rebuild and re-sync the generated IDL into @praxis/shared
 ```
 

@@ -1094,6 +1094,90 @@ fn t9_vault_invariants() -> Result<String, String> {
     ))
 }
 
+// --------------------------------------------------------------------------
+// T10 — Re-setting a token envelope's caps keeps the live window. Resetting
+// it let a raised cap grant a second full allowance the same day, and let a
+// LOWERED cap hand the agent headroom it was meant to remove. A new mint is
+// a new asset in new units, so only a mint change starts a fresh window.
+// --------------------------------------------------------------------------
+fn t10_token_window_survives_reconfigure() -> Result<String, String> {
+    let far = 10_000_000_000i64;
+    let mut c = Ctx::setup(sol(2), sol(5), vec![], far, 1_000, sol(10));
+    let agent = c.agent.insecure_clone();
+
+    let mint = Pubkey::new_unique();
+    let other_mint = Pubkey::new_unique();
+    let recipient = Pubkey::new_unique();
+    let vault_ta = Pubkey::new_unique();
+    let recipient_ta = Pubkey::new_unique();
+    let vault_pda = c.vault;
+    c.svm.airdrop(&vault_pda, sol(1)).unwrap();
+    c.set_mint(mint, TOKEN_DECIMALS, spl_token_id());
+    c.set_mint(other_mint, TOKEN_DECIMALS, spl_token_id());
+    c.set_token_account(vault_ta, &mint, &vault_pda, tok(1000));
+    c.set_token_account(recipient_ta, &mint, &recipient, 0);
+
+    expect_ok(&c.configure_token(mint, tok(100), tok(250)), "T10 configure")?;
+    expect_ok(
+        &c.agent_transfer_spl(tok(100), vault_ta, recipient_ta, &agent),
+        "T10 spend 100",
+    )?;
+    expect_ok(
+        &c.agent_transfer_spl(tok(99), vault_ta, recipient_ta, &agent),
+        "T10 spend 99",
+    )?; // token_spent = 199
+    let day_start = c.policy_state().token_day_start_ts;
+
+    // (a) Raising the cap applies to the live window: 199 spent stays spent.
+    expect_ok(&c.configure_token(mint, tok(100), tok(300)), "T10 raise cap")?;
+    let st = c.policy_state();
+    if st.token_spent_today != tok(199) || st.token_day_start_ts != day_start {
+        return Err(format!(
+            "T10 same-mint reconfigure reset the window: spent {} (want {}), day_start {} (want {day_start})",
+            st.token_spent_today,
+            tok(199),
+            st.token_day_start_ts
+        ));
+    }
+    expect_reject(
+        &c.agent_transfer_spl(tok(100) + 1, vault_ta, recipient_ta, &agent),
+        ecode(AegisError::ExceedsPerTxLimit),
+        "ExceedsPerTxLimit",
+        "T10 per-tx still enforced",
+    )?;
+    expect_ok(
+        &c.agent_transfer_spl(tok(100), vault_ta, recipient_ta, &agent),
+        "T10 spend to 299 under the raised cap",
+    )?;
+    expect_reject(
+        &c.agent_transfer_spl(tok(2), vault_ta, recipient_ta, &agent),
+        ecode(AegisError::ExceedsDailyLimit),
+        "ExceedsDailyLimit",
+        "T10 raised cap is one allowance, not a second one",
+    )?;
+
+    // (b) Lowering the cap below today's spend grants nothing.
+    expect_ok(&c.configure_token(mint, tok(50), tok(150)), "T10 lower cap")?;
+    expect_reject(
+        &c.agent_transfer_spl(tok(1), vault_ta, recipient_ta, &agent),
+        ecode(AegisError::ExceedsDailyLimit),
+        "ExceedsDailyLimit",
+        "T10 lowered cap hands out no headroom",
+    )?;
+
+    // (c) A different mint is a different asset: its window starts at zero.
+    expect_ok(&c.configure_token(other_mint, tok(50), tok(150)), "T10 switch mint")?;
+    if c.policy_state().token_spent_today != 0 {
+        return Err("T10 switching mint kept the old mint's spend".into());
+    }
+
+    Ok(format!(
+        "raise: 199 spent kept, 299 then +2→Custom({}); lower below spend: +1→Custom({}); new mint: window reset to 0",
+        ecode(AegisError::ExceedsDailyLimit),
+        ecode(AegisError::ExceedsDailyLimit),
+    ))
+}
+
 #[test]
 fn aegis_enforcement_gate() {
     let cases: Vec<(&str, &str, fn() -> Result<String, String>)> = vec![
@@ -1106,6 +1190,7 @@ fn aegis_enforcement_gate() {
         ("T7", "SPL token envelope", t7_spl_token),
         ("T8", "Token-2022 envelope", t8_token_2022),
         ("T9", "Vault invariants", t9_vault_invariants),
+        ("T10", "Token window on reconfigure", t10_token_window_survives_reconfigure),
     ];
 
     let mut results: Vec<(&str, &str, bool, String)> = Vec::new();

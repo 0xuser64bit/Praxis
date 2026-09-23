@@ -322,15 +322,15 @@ export class MockPraxisProvider implements PraxisProvider {
 
   configureToken = async (config: TokenEnvelopeConfig): Promise<void> => {
     await delay(250);
-    // Mirror on-chain configure_token: set the token + caps and start a fresh
-    // token daily window.
+    // Mirror on-chain configure_token: set the token + caps, and start a fresh
+    // token daily window only when the mint changes.
+    const newMint = config.tokenMint !== this.state.policy.tokenMint;
     this.state.policy = {
       ...this.state.policy,
       tokenMint: config.tokenMint,
       tokenMaxPerTx: config.tokenMaxPerTx,
       tokenDailyLimit: config.tokenDailyLimit,
-      tokenSpentToday: 0n,
-      tokenDayStartTs: this.now(),
+      ...(newMint ? { tokenSpentToday: 0n, tokenDayStartTs: this.now() } : {}),
     };
     this.notify();
   };

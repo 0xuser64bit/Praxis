@@ -43,6 +43,7 @@ import {
   formatEditableUnits,
   formatSol,
   formatUnits,
+  formatUsdAmount,
   percentOf,
   shortenAddress,
   toBaseUnits,
@@ -732,6 +733,7 @@ function TokenEnvelopeCard({
   const decimals = scaleFor(policy.tokenMint);
   const symbol = stockSymbol ?? mintLabel(policy.tokenMint) ?? "TOKEN";
   const universeIndex = stocks.findIndex((s) => s.mint === policy.tokenMint);
+  const stockEntry = universeIndex >= 0 ? stocks[universeIndex] : undefined;
   // Everything an envelope could actually be pointed at on this cluster: the
   // verified token catalog plus whichever stock mints the server confirmed are
   // movable here. A symbol that fails either check is never offered.
@@ -913,6 +915,7 @@ function TokenEnvelopeCard({
                 value={policy.tokenMaxPerTx}
                 decimals={decimals}
                 unit={symbol}
+                usdPrice={stockEntry?.usdPrice}
                 onSave={(v) =>
                   onConfigure({
                     tokenMint: policy.tokenMint,
@@ -926,6 +929,7 @@ function TokenEnvelopeCard({
                 value={policy.tokenDailyLimit}
                 decimals={decimals}
                 unit={symbol}
+                usdPrice={stockEntry?.usdPrice}
                 onSave={(v) =>
                   onConfigure({
                     tokenMint: policy.tokenMint,
@@ -966,7 +970,7 @@ function TokenEnvelopeCard({
               )}
               prepare accounts
             </button>
-            {stocks.find((s) => s.mint === policy.tokenMint)?.demoFaucet && (
+            {stockEntry?.demoFaucet && (
               <button
                 type="button"
                 disabled={busy}
@@ -1033,12 +1037,15 @@ function CapRow({
   onSave,
   decimals = 9,
   unit = "SOL",
+  usdPrice,
 }: {
   label: string;
   value: bigint;
   onSave: (v: bigint) => void;
   decimals?: number;
   unit?: string;
+  /** Price per whole `unit`; shows the cap's dollar value beside it (stocks). */
+  usdPrice?: number;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -1111,6 +1118,11 @@ function CapRow({
           className="group flex items-center gap-2 [font-family:var(--font-mono)] text-[15px] text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {formatUnits(value, decimals, { maxFrac: 4 })} {unit}
+          {usdPrice !== undefined && (
+            <span className="text-[12px] text-[var(--text-tertiary)]">
+              {formatUsdAmount((Number(value) / 10 ** decimals) * usdPrice)}
+            </span>
+          )}
           <IconPencil
             size={13}
             className="text-[var(--text-quaternary)] [transition:color_0.15s] group-hover:text-[var(--accent)]"

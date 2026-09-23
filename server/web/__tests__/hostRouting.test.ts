@@ -70,10 +70,10 @@ describe("routeByHost — apex", () => {
 
 describe("routeByHost — non-production hosts", () => {
   test("preview deployments are never redirected", () => {
-    expect(routeByHost("praxis-git-stocklana-acme.vercel.app", "/app", APEX)).toEqual({
+    expect(routeByHost("praxis-git-feature-acme.vercel.app", "/app", APEX)).toEqual({
       type: "passthrough",
     });
-    expect(routeByHost("praxis-git-stocklana-acme.vercel.app", "/", APEX)).toEqual({
+    expect(routeByHost("praxis-git-feature-acme.vercel.app", "/", APEX)).toEqual({
       type: "passthrough",
     });
   });

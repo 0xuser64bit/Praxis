@@ -34,7 +34,7 @@ export function ActivityLog() {
   const activity = useActivity();
   const [filter, setFilter] = useState<Filter>("all");
   const now = useNow();
-  // Stocklana C05: the feed follows the active stock. Entries carry the asset
+  // The feed follows the active stock. Entries carry the asset
   // symbol (SPL rows resolve it from the on-chain mint), so filtering by symbol
   // is exact without a schema change.
   const { stocksEnabled, activeMint, symbolFor } = useActiveStock();

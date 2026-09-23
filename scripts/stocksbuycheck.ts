@@ -2,7 +2,7 @@
  * The money shot, end to end, against a live cluster: a Token-2022 tokenized
  * stock is bought through Aegis, and an over-cap buy is refused ON-CHAIN.
  *
- * This is the claim the whole submission rests on — "text to invest in stocks
+ * This is the product's core claim — "text to invest in stocks
  * on Solana, with limits even a hacked AI can't break" — so it is asserted by
  * a script rather than a screenshot. Everything runs through the same
  * AegisClient the product uses; nothing is special-cased for the demo.

@@ -8,7 +8,7 @@ import { findAssociatedTokenAddress } from "../aegis/pdas";
  *
  * The real PreStocks mints are mainnet-only, so a devnet deployment runs on
  * mirror mints the operator created — and only the operator's wallet ever
- * held any. A judge connecting their own wallet could configure an envelope
+ * held any. Anyone connecting their own wallet could configure an envelope
  * and read a proposal, but never complete a buy: their vault had no stock.
  * This mints a fixed dollar amount of the active mirror stock into the
  * signed-in wallet's vault, creating the vault's and the owner's token

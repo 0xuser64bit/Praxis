@@ -33,7 +33,7 @@ impl RejectReason {
     }
 }
 
-/// The on-chain spending envelope (spec §5). PDA seeded by `owner`.
+/// The on-chain spending envelope. PDA seeded by `owner`.
 ///
 /// The `owner` key is unconstrained elsewhere (deposit/withdraw/update/revoke);
 /// the `agent_authority` session key may only move funds within this envelope.
@@ -52,7 +52,7 @@ pub struct PolicyAccount {
     pub day_start_ts: i64,
     #[max_len(MAX_ALLOWED_PROGRAMS)]
     pub allowed_programs: Vec<Pubkey>,
-    /// Empty == any recipient allowed (spec §5).
+    /// Empty == any recipient allowed.
     #[max_len(MAX_ALLOWED_RECIPIENTS)]
     pub allowed_recipients: Vec<Pubkey>,
     #[max_len(MAX_ALLOWED_MINTS)]

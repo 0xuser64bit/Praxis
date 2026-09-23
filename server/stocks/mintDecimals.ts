@@ -8,8 +8,7 @@ import { errorFields, logger } from "../observability/logger";
  * On-chain facts about an SPL mint: its scale, and which token program owns it.
  *
  * The PreStocks API does not report decimals, and the universe shipped a
- * hard-coded `6` for all eight pre-IPO mints — a value the spike report itself
- * lists as an open question. Decimals are the exponent on every amount the
+ * hard-coded `6` for all eight pre-IPO mints — a value nobody had verified. Decimals are the exponent on every amount the
  * agent moves: if a mint is 9-dp, "buy 40 OPENAI" parsed at 6-dp asks the
  * program to move a thousand times the intended quantity. That is not a value
  * to guess, so it is read from the chain and cached.

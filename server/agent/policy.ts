@@ -167,8 +167,8 @@ export function checkTokenFromAegisReason(
 }
 
 /**
- * Agent-layer swap allow-list check, mirrored from the mock so API mode is
- * faithful to demo §9 #3 ("the allow-list holds"). Order matches the mock:
+ * Agent-layer swap allow-list check, mirrored from the mock so API mode gives
+ * the same "the allow-list holds" verdict. Order matches the mock:
  * paused → program (Jupiter) → mint (verified set).
  *
  * IMPORTANT (thesis): `agent_swap` is NOT on-chain yet (v2), so a swap verdict

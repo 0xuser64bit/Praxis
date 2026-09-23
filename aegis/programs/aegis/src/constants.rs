@@ -20,5 +20,5 @@ pub const MAX_ALLOWED_MINTS: usize = 16;
 pub const ACTION_LOG_CAP: usize = 16;
 
 /// Rolling daily-limit window, in seconds (24h). The reset comparison is
-/// `now >= day_start_ts + DAY_WINDOW_SECONDS` (spec §5).
+/// `now >= day_start_ts + DAY_WINDOW_SECONDS`.
 pub const DAY_WINDOW_SECONDS: i64 = 86_400;

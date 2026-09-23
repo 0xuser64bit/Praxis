@@ -1,7 +1,6 @@
 use anchor_lang::prelude::*;
 
-/// One typed error per distinct failure reason (spec §5: "return a typed error,
-/// distinct error per failure reason"). Anchor assigns codes from 6000 in
+/// One typed error per distinct failure reason. Anchor assigns codes from 6000 in
 /// declaration order — the first seven mirror the `agent_transfer` enforcement
 /// order so the wire codes are stable and self-documenting.
 #[error_code]

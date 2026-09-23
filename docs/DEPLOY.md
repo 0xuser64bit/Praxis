@@ -1,38 +1,22 @@
-# Deploying Praxis
+# Deploying and operating Praxis
 
-This is the operational runbook: run locally, ship a live devnet build, and
-move the agent key into production custody. Everything here runs on free tiers
-and devnet faucet SOL, so the baseline cost is **$0**.
+This runbook covers four things: running Praxis locally against a real
+cluster, hosting it on Vercel, enabling stocks, and moving the agent key into
+production custody. Everything runs on free tiers and devnet SOL. For the
+system design, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-For the system design behind it, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+`.env.example` is the complete, commented variable reference. This document
+covers only the variables you actually set.
 
----
+## Local API mode on devnet
 
-## Modes
+Mock mode needs none of this (see the [README](../README.md#development)).
 
-| Mode | What it proves | Setup |
-|---|---|---|
-| **Mock** (`NEXT_PUBLIC_PRAXIS_PROVIDER=mock`) | UI and policy-preview ergonomics, no chain or keys | local only |
-| **API** (`NEXT_PUBLIC_PRAXIS_PROVIDER=api`) | Real Aegis enforcement on a live cluster | the rest of this doc |
+### 1. Prerequisites
 
-Production builds default to API mode. Mock mode is local/dev-only unless
-`NEXT_PUBLIC_PRAXIS_ALLOW_MOCK=1` is set at build time.
-
-```bash
-# Mock — no RPC, keys, or LLM key needed
-NEXT_PUBLIC_PRAXIS_PROVIDER=mock bun run dev
-# open http://localhost:3000/app
-```
-
----
-
-## Live API on devnet
-
-### 1. Prerequisites (all free)
-
-- [Bun](https://bun.sh), the [Solana CLI](https://docs.solana.com/cli/install),
-  and [Anchor](https://www.anchor-lang.com/docs/installation). This repo pins
-  `anchor 1.0.1` / `solana 3.1.15` in `aegis/Anchor.toml`.
+- [Bun](https://bun.sh), the [Solana CLI](https://docs.solana.com/cli/install)
+  and [Anchor](https://www.anchor-lang.com/docs/installation), at the versions
+  pinned in `aegis/Anchor.toml`.
 - A browser wallet (Phantom) switched to **devnet**.
 
 ```bash
@@ -41,6 +25,10 @@ solana config set --url https://api.devnet.solana.com
 
 ### 2. Deploy the Aegis program
 
+You can skip this step and use the existing devnet deployment
+(`3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd`, the default
+`AEGIS_PROGRAM_ID`). To deploy your own:
+
 ```bash
 cd aegis
 anchor build
@@ -48,24 +36,22 @@ anchor keys sync                       # align declare_id! with your program key
 anchor build
 solana airdrop 2                       # fund the deploy wallet (~/.config/solana/id.json)
 anchor deploy --provider.cluster devnet
-anchor keys list                       # note the deployed program id
+anchor keys list                       # the deployed program id → AEGIS_PROGRAM_ID
 cd ..
+bun run aegis:idl                      # re-sync the IDL into shared/ if the id changed
 ```
-
-Use that program id as `AEGIS_PROGRAM_ID` below.
 
 ### 3. Create and fund the agent keypair
 
 ```bash
 mkdir -p keys
 solana-keygen new --no-bip39-passphrase -o keys/agent.json
-solana-keygen new --no-bip39-passphrase -o keys/next-agent.json   # only if demoing rotate
+solana-keygen new --no-bip39-passphrase -o keys/next-agent.json   # only for rotate / re-enable
 solana airdrop 2 $(solana-keygen pubkey keys/agent.json) --url devnet
 ```
 
-The agent is the fee payer for `agent_transfer`, and the connected browser
-wallet pays for policy init + vault funding — fund both. `keys/` is gitignored;
-never commit keypairs.
+The agent pays the fees for agent transfers. The connected browser wallet pays
+for policy initialization and vault funding. Fund both. `keys/` is gitignored.
 
 ### 4. Configure `.env`
 
@@ -73,321 +59,214 @@ never commit keypairs.
 cp .env.example .env
 ```
 
-Local dependencies (Docker — Postgres + Redis for prod-parity state):
-
-```bash
-docker compose up -d   # postgres on :5433 (brew owns :5432), redis on :6379
-bun run praxis:localcheck   # proves both backends against the live containers
-```
-
-Point `.env` at them: `DATABASE_URL=postgresql://praxis:praxis@localhost:5433/praxis`
-with `PRAXIS_STATE_BACKEND=postgres`, plus `REDIS_URL=redis://localhost:6379` with
-`PRAXIS_RATE_LIMITER=redis`. Hosted deploys keep Neon + Upstash REST — see
-"Hosting on Vercel" below.
-
-The only values you usually hand-edit:
+The values you usually edit:
 
 ```bash
 NEXT_PUBLIC_PRAXIS_PROVIDER=api
 SOLANA_RPC_URL=https://api.devnet.solana.com
-AEGIS_PROGRAM_ID=<your program id from step 2>
+AEGIS_PROGRAM_ID=<program id>
 PRAXIS_AGENT_KEYPAIR_PATH=./keys/agent.json
-PRAXIS_NEXT_AGENT_KEYPAIR_PATH=./keys/next-agent.json   # only if demoing rotate
+PRAXIS_NEXT_AGENT_KEYPAIR_PATH=./keys/next-agent.json   # only for rotate / re-enable
 PRAXIS_SESSION_SECRET=<openssl rand -base64 32>
-PRAXIS_LOCAL_INTENT=1                                    # $0 — deterministic parser, no LLM key
-PRAXIS_STATE_BACKEND=fs                                  # local; use postgres on a real deploy
+PRAXIS_LOCAL_INTENT=1                                    # deterministic parser, no LLM key
 ```
 
-### 5. Verify locally
+To parse with an LLM instead, leave `PRAXIS_LOCAL_INTENT` unset and set
+`GEMINI_API_KEY` and/or `GROQ_API_KEY`.
+
+**Optional: production-like state.** `compose.yml` runs Postgres and Redis
+locally:
+
+```bash
+docker compose up -d        # postgres on host port 5433, redis on 6379
+bun run praxis:localcheck   # proves both backends, including write-conflict rejection
+```
+
+Then set `DATABASE_URL=postgresql://praxis:praxis@localhost:5433/praxis` with
+`PRAXIS_STATE_BACKEND=postgres` (the copied `.env` pins `fs`), and
+`REDIS_URL=redis://localhost:6379`. Without them, state goes to `.praxis/state`
+and rate limits stay in memory.
+
+### 5. Run it
 
 ```bash
 bun run dev
 ```
 
-Open `http://localhost:3000/app`, connect a devnet wallet, and click
-**Initialize devnet policy** if prompted — the wallet signs a transaction that
-creates its Aegis policy PDA and funds the vault with 1 SOL. Then try
-`send 0.5 sol to maya`.
-
----
+Open <http://localhost:3000/app>, connect a devnet wallet and create your vault
+when prompted. The wallet signs a transaction that creates its Aegis policy
+PDA and funds the vault. Then try `send 0.5 sol to maya`.
 
 ## Hosting on Vercel
 
-### App subdomain (`app.`)
+Import the repo and set the environment variables below. **Keys go in as
+values, not file paths.** Vercel has no writable key files.
 
-One project serves both hosts; `proxy.ts` routes by `Host` header
-(routing table unit-tested in `server/web/__tests__/hostRouting.test.ts`):
+| Variable | Value |
+|---|---|
+| `NEXT_PUBLIC_PRAXIS_PROVIDER` | `api` |
+| `NEXT_PUBLIC_SITE_URL` | The apex origin, e.g. `https://usepraxis.fun` |
+| `SOLANA_RPC_URL` | Devnet public endpoint, or a Helius/QuickNode URL |
+| `AEGIS_PROGRAM_ID` | Your program id |
+| `PRAXIS_SESSION_SECRET` | Random string, at least 32 characters. Required in production. |
+| `DATABASE_URL` | Neon (Vercel Marketplace) or any Postgres URL. The schema creates itself. |
+| `UPSTASH_REDIS_REST_URL` / `_TOKEN` | Shared rate limits and single-use sign-in nonces across instances |
+| `GEMINI_API_KEY` / `GROQ_API_KEY` | Intent parsing. Otherwise set `PRAXIS_LOCAL_INTENT=1`. |
+| Agent key | See [agent-key custody](#production-agent-key-custody) |
+
+Production refuses to fall back silently. With no `DATABASE_URL`, it requires
+an explicit `PRAXIS_STATE_BACKEND=fs`, and filesystem state is per-instance and
+ephemeral on Vercel. With no custody setup, it refuses a raw in-process agent
+key.
+
+### App subdomain
+
+One project serves both hosts. `proxy.ts` routes each request by its `Host`
+header. The routing table is unit-tested in
+`server/web/__tests__/hostRouting.test.ts`.
 
 | Request | Result |
 |---|---|
-| `app.usepraxis.fun/` | serves the product app (`/app` rewrite, URL stays clean) |
-| `app.usepraxis.fun/app/*` | 308 strips to `/*` (one canonical URL) |
-| `usepraxis.fun/app*` | 308 redirects to `app.usepraxis.fun/*` (old links keep working) |
-| `www.usepraxis.fun/*` | 308 canonicalizes to the apex |
-| `/api/*` on any host | passes through (app + API stay same-origin — no cookie/CORS changes) |
-| `*.vercel.app` previews, `localhost` | untouched (path routing, except `app.localhost` which previews the split) |
+| `app.usepraxis.fun/` | Serves the product app (rewritten from `/app`; the URL stays clean) |
+| `app.usepraxis.fun/app/*` | 308 to `/*`, the one canonical URL |
+| `usepraxis.fun/app*` | 308 to `app.usepraxis.fun/*`, so old links keep working |
+| `www.usepraxis.fun/*` | 308 to the apex |
+| `/api/*` on any host | Passes through. App and API stay same-origin, so cookies and CORS need no changes. |
+| `*.vercel.app`, `localhost` | Untouched (`app.localhost` previews the split) |
 
-Setup (no code changes, no new env vars):
-
-1. Vercel project → Settings → Domains → add `app.usepraxis.fun` (keep `usepraxis.fun`).
-2. DNS: `CNAME app → cname.vercel-dns.com`.
-3. `NEXT_PUBLIC_SITE_URL` stays the apex (`https://usepraxis.fun`) — the middleware
-   derives the apex from it, and OG images keep one canonical base.
-
-Verify:
+To set it up, add `app.usepraxis.fun` under Settings → Domains, and add the DNS
+record `CNAME app → cname.vercel-dns.com`. Keep `NEXT_PUBLIC_SITE_URL` on the
+apex. The proxy derives the apex host from it.
 
 ```bash
 curl -sI https://usepraxis.fun/app | grep -i location   # → https://app.usepraxis.fun/
-curl -sI https://app.usepraxis.fun/ | grep -i "200\|rewrite"  # 200, product app HTML
-curl -sI https://app.usepraxis.fun/api/health | head -1      # 200, same-origin API
+curl -sI https://app.usepraxis.fun/api/health | head -1  # 200
 ```
 
-Existing `/app` links (Nav CTA, README, SDK docs) need no edits — they redirect.
-Point new external links (hackathon submission, socials) at `https://app.usepraxis.fun/`.
-Import the repo and set Environment Variables. **Keys go in as values, not file
-paths** — Vercel has no writable key files.
+## Enabling stocks
 
-| Key | Value |
+| Variable | Value |
 |---|---|
-| `NEXT_PUBLIC_PRAXIS_PROVIDER` | `api` |
-| `SOLANA_RPC_URL` | devnet public, or a free Helius/QuickNode devnet URL |
-| `AEGIS_PROGRAM_ID` | your program id |
-| `PRAXIS_SESSION_SECRET` | random 32+ char string |
-| `PRAXIS_AGENT_KEYPAIR` | **contents** of `keys/agent.json` (the JSON array) — or use the signer below |
-| `PRAXIS_ALLOW_LOCAL_AGENT_KEY` | `1` for devnet judging only; unset for production |
-| `PRAXIS_STATE_BACKEND` | `postgres` |
-| `DATABASE_URL` | Neon or any Postgres-compatible URL |
-| `PRAXIS_ADDRESS_BOOK` | optional JSON array of saved contacts |
+| `PRAXIS_STOCKS_ENABLED` | `1`. This merges the eight PreStocks mints into the token list. |
+| `PRAXIS_STOCK_MINTS` | Devnet only: the mirror-mint block described below |
+| `CRON_SECRET` | Required, or recurring buys never fire (see below) |
+| `PRAXIS_DEMO_FAUCET_KEYPAIR` | Optional, devnet only (see below) |
 
-> On Vercel, `fs` state is per-instance and ephemeral. Use a free **Neon**
-> database (Vercel Marketplace), set `PRAXIS_STATE_BACKEND=postgres` +
-> `DATABASE_URL`, and the schema self-creates.
+Do not list the stock symbols in `PRAXIS_TOKENS`. The flag adds them.
 
-### Stocklana staging (submission preview)
+### Devnet mirror mints
 
-Same project, these additions (values, not secrets — nothing sensitive here):
-
-| Key | Value |
-|---|---|
-| `PRAXIS_STOCKS_ENABLED` | `1` (merges the 8 PreStocks mints; off = default app) |
-| `PRAXIS_PRESTOCKS_API_URL` | default (`https://prestocks.com/api/prestocks`) — leave unset |
-| `PRAXIS_STOCK_UNIVERSE` | leave unset (full universe) |
-| `GEMINI_API_KEY` | set for free-form phrasing, or `PRAXIS_LOCAL_INTENT=1` for the deterministic parser |
-| `NEXT_PUBLIC_PRAXIS_ALLOW_MOCK` | `0` (judges must hit the real API path) |
-
-The 8 stock symbols come from the flag — do NOT list them in `PRAXIS_TOKENS`.
-
-### Upgrade the program first (required — Token-2022 support)
-
-The Aegis program deployed before Token-2022 support cannot move a stock mint,
-and the instruction's account list changed (`agent_transfer_spl` now takes the
-mint), so an old program with a new client fails too. **Deploy the program and
-the app together.**
-
-Done on devnet 2026-09-20 — this is the sequence that actually worked, including
-the three ways it fails first:
+The real PreStocks mints exist only on mainnet. On devnet, create Token-2022
+stand-ins:
 
 ```bash
-cd aegis && NO_DNA=1 anchor build && cd ..
-ls -l aegis/target/deploy/aegis.so                                             # 272,408 bytes
-solana program show 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd --url devnet  # 268,288 deployed
-
-# 1. The account is too small. Extending is mandatory, and the loader enforces
-#    a MINIMUM of 10,240 additional bytes — asking for less fails with
-#    "ExtendProgram requires a minimum of 10240 additional bytes".
-solana program extend 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd 16384 --url devnet
-
-# 2. A plain deploy times out under devnet congestion ("Max retries exceeded")
-#    and strands a part-written buffer. A priority fee gets it through.
-solana program deploy aegis/target/deploy/aegis.so \
-  --program-id 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd --url devnet \
-  --with-compute-unit-price 50000 --max-sign-attempts 60
+SOLANA_RPC_URL=https://api.devnet.solana.com \
+PRAXIS_OWNER_KEYPAIR_PATH=./keys/owner.json \
+  bun run praxis:setup-devnet-stocks     # creates 8 mints, prints the env block
 ```
 
-**3. Reclaim stranded buffers.** Every failed deploy leaves a buffer holding
-~1.4 SOL. Check before topping the wallet up — ours held 6.5 SOL across four
-abandoned attempts:
+Paste the printed `PRAXIS_STOCK_MINTS` / `PRAXIS_STOCK_DECIMALS` into the
+deployment environment, then prove the path end to end with
+`bun run praxis:stocksbuycheck`. A mirror mint reproduces the symbol, the 9
+decimals and the Token-2022 program. It does not reproduce the issuer's
+authorities. The UI labels a mirrored universe.
+
+**Demo faucet.** Only the operator's wallet holds mirror stock, so any other
+wallet can configure an envelope but never complete a buy. Set
+`PRAXIS_DEMO_FAUCET_KEYPAIR` to the contents of `keys/owner.json`, which holds
+the mint authority. Policy → Token transfers then offers
+**$1,000 demo \<STOCK\>**, which mints the active mirror into the signed-in
+wallet's vault. The faucet refuses real mints and refuses mainnet. It allows 3
+grants per wallet per day. Its key pays rent, so keep it funded with devnet
+SOL.
+
+### Scheduled recurring buys
+
+`vercel.json` schedules `/api/cron/stocks` daily at 09:00 UTC. The Vercel Hobby
+plan allows only daily crons, and runs them anywhere within the hour. The
+runner fires everything due up to the current time, so that delay is harmless.
+
+- **`PRAXIS_SCHEDULE_HOUR_UTC` must match the cron hour** (default `9`). New
+  schedules anchor their fire time to it. A schedule timed after the tick is
+  not due when the tick runs, so "every Monday" would fire on Tuesday. If you
+  move the cron, move this setting with it.
+- **Set `CRON_SECRET`** (16+ characters). Vercel Cron sends it as
+  `Authorization: Bearer $CRON_SECRET`. Without it the endpoint is disabled,
+  not open. That is safe, but the UI will have promised schedules that never
+  fire.
+
+The job fans out across every wallet with stored state. It emits one proposal
+per due schedule and never signs. Failures are isolated per wallet and counted.
+
+```bash
+curl -s -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/stocks
+# {"scope":"all-wallets","wallets":N,"walletsFired":0,"proposals":0,"failures":0}
+# 401 = secret mismatch, 503 = no secret configured
+```
+
+## Upgrading the Aegis program
+
+When an upgrade changes an instruction's account list, deploy the program and
+the app together. An old program with a new client fails, and so does a new
+program with an old client. Take a rollback copy first:
+
+```bash
+PROGRAM=3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd
+cd aegis && NO_DNA=1 anchor build && cd ..
+solana program dump $PROGRAM aegis-predeploy.so --url devnet   # rollback copy
+solana program show $PROGRAM --url devnet                      # compare with aegis/target/deploy/aegis.so size
+```
+
+If the new binary is larger than the program account, extend it first. The
+loader requires **at least 10,240 additional bytes**. The extension costs rent
+that is not refunded.
+
+```bash
+solana program extend $PROGRAM 16384 --url devnet
+```
+
+Deploy with a priority fee. Under devnet congestion, a plain deploy fails with
+"Max retries exceeded" and leaves a partly written buffer behind.
+
+```bash
+solana program deploy aegis/target/deploy/aegis.so --program-id $PROGRAM --url devnet \
+  --with-compute-unit-price 50000 --max-sign-attempts 60
+bun run praxis:stocksbuycheck   # passes only against the new binary
+```
+
+Every failed deploy strands a buffer holding the rent for a program-sized
+account, about 1.4 SOL for Aegis. Budget about 2 SOL of working room, and
+reclaim stranded buffers before topping up the wallet. **Never** resume
+from a partly written buffer. It may be incomplete, and deploying it would
+install a corrupt program. Close it and deploy again.
 
 ```bash
 solana program show --buffers --url devnet
 solana program close <BUFFER_ADDRESS> --url devnet --bypass-warning
 ```
 
-Budget ~2 SOL of working room: the deploy buffer is about the size of the
-program and is refunded on success; the 16 KiB extend costs ~0.11 SOL and is
-not. Do **not** resume from a part-written buffer with `solana program
-upgrade` — if the writes failed, the buffer is incomplete and you would
-deploy a corrupt program. Close it and redeploy.
-
-Confirm the upgrade landed with `praxis:stocksbuycheck` (below) — it fails
-against the old binary and passes against the new one.
-
-**2026-09-23 upgrade (token window keeps today's spend on a cap change, T10).**
-No extend was needed: the new binary (277,384 bytes) fits the 284,672-byte
-program account. The sequence, with a rollback copy taken first:
-
-```bash
-solana program dump 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd aegis-predeploy.so --url devnet
-solana program deploy aegis/target/deploy/aegis.so \
-  --program-id 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd --url devnet
-bun run praxis:stocksbuycheck    # PASS on the upgraded program
-# rollback, if ever needed: deploy aegis-predeploy.so to the same program id
-```
-
-Account layout and IDL are unchanged, so no client redeploy is coupled to it.
-
-### Devnet mirror mints (required for a devnet stock demo)
-
-The real PreStocks mints exist on mainnet only. Before a devnet demo:
-
-```bash
-SOLANA_RPC_URL=https://api.devnet.solana.com \
-PRAXIS_OWNER_KEYPAIR_PATH=./keys/owner.json \
-  bun run praxis:setup-devnet-stocks     # creates 8 Token-2022 mints, prints the env block
-```
-
-Paste the printed `PRAXIS_STOCK_MINTS` / `PRAXIS_STOCK_DECIMALS` into the
-deployment env. Then prove the path end to end:
-
-```bash
-bun run praxis:stocksbuycheck            # buy lands; over-cap refused on-chain
-```
-
-Mirrors reproduce symbol, decimals (9) and token program (Token-2022) — the
-whole buy path — and not the issuer's permanent-delegate/freeze/pause
-authorities. The app labels a mirrored universe in the UI.
-
-**Let judges fund their own vault.** Only the operator's wallet holds mirror
-stock, so any other wallet can configure an envelope but never complete a buy.
-Set `PRAXIS_DEMO_FAUCET_KEYPAIR` to the contents of `keys/owner.json` (the
-mirrors' mint authority) and Policy → Token transfers shows
-**$1,000 demo \<STOCK\>**: it mints that much of the active mirror into the
-signed-in wallet's vault and creates the vault's and owner's token accounts.
-Mirror mints only, never on mainnet (checked by genesis hash), 3 grants per
-wallet per day; the key pays rent, so keep it in devnet SOL. A judge's path is
-then: connect → initialize policy → switch envelope to OPENAI →
-**$1,000 demo OPENAI** → `buy $40 openai` → sign.
-
-### Scheduled recurring buys
-
-`vercel.json` schedules `/api/cron/stocks` daily at 09:00 UTC. (Hobby plan
-allows once-per-day crons only — an hourly expression fails deployment with
-"Hobby accounts are limited to daily cron jobs." Hobby timing is ±59 min, so
-the run lands 09:00–09:59; the runner fires everything due up to now, so the
-jitter is harmless.)
-
-**`PRAXIS_SCHEDULE_HOUR_UTC` must match that cron hour** (default `9`). New
-schedules anchor their fire time to it, because firing is a single daily
-tick: a schedule whose time-of-day sits *after* the tick is never due when
-the tick runs, so it slips to the next day and "every Monday" fires on
-Tuesday. If you move the cron, move this with it.
-
-The job authenticates with
-`Authorization: Bearer $CRON_SECRET` (Vercel Cron sends this automatically from
-the project's `CRON_SECRET`) and fans out across every wallet with stored
-state, emitting one proposal per due schedule. It never signs — the owner still
-signs every fire.
-
-**Set `CRON_SECRET` whenever `PRAXIS_STOCKS_ENABLED=1`.** With no secret the
-endpoint is disabled rather than open, which is the safe failure — but it also
-means a user who schedules "buy $50 spacex every monday" will never receive a
-proposal, and the UI will have promised them one.
-
-Verify after deploy:
-
-```bash
-curl -s -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/stocks
-# {"scope":"all-wallets","wallets":N,"walletsFired":0,"proposals":0,"failures":0}
-```
-
-A `401` means the secret does not match; a `503` means none is configured.
-Per-wallet failures are isolated and counted, so one wallet with an
-unreachable RPC cannot stop the rest of the run. The same endpoint still
-answers a session cookie, firing only the signed-in wallet's schedules
-(useful for manual catch-up and for SDK callers).
-
-Cold-browser check before recording: research OPENAI → propose a buy →
-over-cap buy blocked (off-chain card AND on-chain log) → switch envelope →
-schedule a DCA → activity filtered by stock.
-
-### Demo video shot list (90 seconds, human task)
-
-Before recording, check the OPENAI envelope's per-transaction cap is worth
-≈ $100 (≈ 0.077 OPENAI at $1,302.85 on 2026-09-23). Picking a stock envelope defaults it to $100 per
-buy / $500 a day at the PreStocks price; one configured earlier keeps its old
-200 / 500-token caps (six figures) until you edit them in Policy → SPL.
-
-1. Land on `https://app.<preview>/` → connect Phantom (devnet).
-2. `research openai` → PreStocks rows render with attribution.
-3. `buy $40 openai` → "$40 at the PreStocks price of $… is 0.03… OPENAI" → Aegis verdict → sign → Explorer link.
-4. `buy $500 openai` → blocked card: over the $100 per-transaction cap.
-5. Policy → switch envelope to SPACEX (`vault · i of 8` label changes).
-6. `buy $50 spacex every monday` → schedule notice (no signature asked).
-7. Activity → filter by OPENAI. End on the blocked card (the pitch).
-
----
-
-## Environment reference
-
-Full inline docs live in `.env.example`. The variables you actually touch:
-
-### You provide
-
-| Variable | Notes |
-|---|---|
-| `SOLANA_RPC_URL` | Target cluster. Defaults to public devnet; use a paid endpoint for prod traffic. |
-| `AEGIS_PROGRAM_ID` | The deployed Aegis program. |
-| `PRAXIS_SESSION_SECRET` | Stable signed wallet sessions. Required in production. |
-| `DATABASE_URL` | Durable prod state (threads/proposals/activity). Without it, state falls back to the filesystem (local/devnet only). |
-| `GEMINI_API_KEY` | Intent parsing via the Google Gemini API. Omit and set `PRAXIS_LOCAL_INTENT=1` for the deterministic parser. |
-| `GROQ_API_KEY` / `GROQ_MODEL` | Second intent parser (OpenAI-compatible), own free-tier quota, no card. Defaults to `openai/gpt-oss-120b`. Scores the same 17/17 as flash-lite on the intent sweep. Its 30 RPM/1000 RPD headline does not apply to this workload: a ~1.8K-token request is bound by the 8K TPM / 200K TPD budgets to roughly 4/min and 100/day. |
-| `PRAXIS_INTENT_PROVIDERS` | Comma-separated parse order before the offline regex fallback; default `gemini,groq`. Gemini leads on burst (15 RPM vs ~4/min); Groq is the independent bucket for when Gemini's day is spent. Providers without a key are skipped. |
-| `GEMINI_MODEL` | Defaults to `gemini-flash-lite-latest`. Use a `-latest` alias, not a pin: a retired model 404s and intent parsing degrades silently to the regex fallback. On the free tier stay on flash-**lite** — plain flash allows 20 requests/day/model, and request 21 falls into that same fallback. Watch `intent.gemini_failed_fallback_local` in the logs. |
-| `PRAXIS_RESEARCH_RPC_URL` | Read-only RPC for token research. Tokens are mainnet mints, so this stays on **mainnet-beta** even when transfers run on devnet. Use a provider RPC in production: the public endpoint rate-limits `getTokenLargestAccounts`, so the card's "Top 10 concentration" row stays empty on it. |
-
-### Agent key (one of)
-
-| Variable | Notes |
-|---|---|
-| `PRAXIS_AGENT_KEYPAIR` / `PRAXIS_AGENT_KEYPAIR_PATH` | In-process agent key. Allowed in prod only with `PRAXIS_ALLOW_LOCAL_AGENT_KEY=1`. |
-| `PRAXIS_AGENT_SIGNER_URL` + `PRAXIS_AGENT_PUBLIC_KEY` + `PRAXIS_AGENT_SIGNER_TOKEN` | Remote signer custody (below). The private key never lives in the app. |
-
-### Safe defaults — leave alone unless you have a reason
-
-| Variable | Default |
-|---|---|
-| `GEMINI_MODEL` | `gemini-flash-lite-latest` |
-| `NEXT_PUBLIC_PRAXIS_PROVIDER` | `api` (`mock` is local-only) |
-| `NEXT_PUBLIC_PRAXIS_ALLOW_MOCK` | `0` |
-| `PRAXIS_STATE_BACKEND` | `postgres` if `DATABASE_URL` set, else `fs` |
-| `PRAXIS_RATE_LIMITER` | `redis` if Upstash creds set, else in-memory |
-| `PRAXIS_LOCAL_INTENT` | `1` locally — deterministic parser, no LLM key |
-| `SOLANA_COMMITMENT` | `confirmed` |
-
-Optional production toggles (no code changes): `PRAXIS_RATE_LIMITER=redis` +
-`UPSTASH_REDIS_REST_URL/_TOKEN` for cross-instance rate limits.
-
----
+To roll back, deploy `aegis-predeploy.so` to the same program id.
 
 ## Production agent-key custody
 
-In production you do **not** want the agent private key sitting in Vercel env,
-where any function invocation can read it. Move signing behind the standalone
-**signer service** (`signer/`): it accepts a transaction message, signs it only
-if it is a single Aegis agent transfer to the configured program, and returns
-the signature. The private key never leaves that process.
+Do not keep the agent private key in the Vercel environment, where any function
+invocation can read it. Move signing behind the standalone signer
+([signer/README.md](../signer/README.md)). The signer signs only single Aegis
+agent transfers to the configured program, and the key never leaves its
+process. The on-chain policy is still the authoritative enforcement. The signer
+makes the key impossible to extract from the app host.
 
-The cheapest durable home is an **Oracle Cloud Always-Free ARM VM** behind a
-**Cloudflare Tunnel** (free HTTPS, no open inbound ports). A one-shot,
-idempotent setup script does the whole thing:
+The cheapest durable home is an Oracle Cloud Always-Free VM behind a
+Cloudflare Tunnel, which gives free HTTPS with no open inbound ports. The setup
+script is idempotent:
 
 ```bash
-# on a fresh Oracle Always-Free VM
+# on a fresh Oracle Always-Free Ubuntu VM
 git clone <your-repo-url> praxis && cd praxis
-bash scripts/oracle-vm-setup.sh        # installs Bun, generates keys, systemd + tunnel
+bash scripts/oracle-vm-setup.sh   # installs Bun, generates key + token, systemd unit, tunnel
 ```
 
-It prints the exact Vercel env vars to paste back:
+It prints the values to set on Vercel:
 
 ```
 PRAXIS_AGENT_SIGNER_URL=https://<your-tunnel-host>/sign
@@ -395,24 +274,77 @@ PRAXIS_AGENT_PUBLIC_KEY=<agent pubkey — not secret>
 PRAXIS_AGENT_SIGNER_TOKEN=<same value as SIGNER_TOKEN on the VM>
 ```
 
-Then on Vercel: **remove** `PRAXIS_AGENT_KEYPAIR` / `PRAXIS_AGENT_KEYPAIR_PATH`
-and leave `PRAXIS_ALLOW_LOCAL_AGENT_KEY` unset, so a raw in-process key is
-refused. Fund the agent address with a little SOL for fees.
+Then remove `PRAXIS_AGENT_KEYPAIR` / `PRAXIS_AGENT_KEYPAIR_PATH` from Vercel and
+leave `PRAXIS_ALLOW_LOCAL_AGENT_KEY` unset, so a raw in-process key is refused.
+Fund the agent address with a little SOL for fees. For rotation under remote
+custody, set `PRAXIS_NEXT_AGENT_PUBLIC_KEY`.
 
-This is defense-in-depth — the on-chain Aegis program is still the authoritative
-enforcement. The signer just makes the key impossible to exfiltrate from the
-host app. See [`signer/README.md`](../signer/README.md) for the wire contract
-and how to delegate to a KMS/HSM later.
+For a devnet-only deployment, you can instead set `PRAXIS_AGENT_KEYPAIR` to the
+JSON array from `keys/agent.json` together with `PRAXIS_ALLOW_LOCAL_AGENT_KEY=1`.
 
----
+## Verifying a cluster
+
+CI runs `bun run check` and `bun run praxis:stocksgate`, both offline. The
+scripts below need more than CI has.
+
+| Command | Needs | Checks |
+|---|---|---|
+| `praxis:moneyshots` | nothing | The five core demo flows against the mock provider |
+| `praxis:swapcheck` | nothing | The server rejects unverified-mint swaps |
+| `praxis:tokencheck` | nothing | The off-chain SPL envelope check agrees with the program |
+| `praxis:stockscheck` | network | The live PreStocks API still matches the pinned universe |
+| `praxis:localcheck` | `docker compose up -d` | Postgres state (including write-conflict rejection) and the Redis limiter |
+| `praxis:demo` | funded cluster | A SOL send, then an over-cap rejection. With `-- --stocks`: research, stock buy simulation, block, pause/resume |
+| `praxis:stocksbuycheck` | funded cluster, stocks env | A stock buy lands, and an over-cap buy is refused on-chain |
+| `praxis:policycheck` | local validator | A policy change made in chat lands on-chain |
+| `praxis:reenablecheck` | local validator | Revoke, then re-enable. Signing follows the on-chain authority. |
+| `praxis:reenablecycles` | local validator | The same, repeated (`CYCLES=3`) |
+
+Setup helpers:
+
+- `praxis:setup-token-accounts` creates the vault and recipient token accounts
+  for the configured mint. With `PRAXIS_TOKEN_VAULT_FUND_AMOUNT=<n>` it also
+  funds the token vault.
+- `praxis:stocks-dca -- --list` / `-- --fire` inspects or fires the owner
+  wallet's schedules without going through HTTP.
+
+The local-validator smoke scripts read keypairs from `SMOKE_OWNER`,
+`SMOKE_AGENT` and `SMOKE_NEXT_AGENT`.
+
+## Environment variables you set
+
+| Variable | Notes |
+|---|---|
+| `SOLANA_RPC_URL` | Target cluster. Use a paid endpoint for production traffic. |
+| `AEGIS_PROGRAM_ID` | Defaults to the devnet deployment |
+| `PRAXIS_SESSION_SECRET` | Required in production |
+| `PRAXIS_SESSION_TTL_HOURS` | Default 24. A session can spend within the envelope, so keep it short. |
+| `DATABASE_URL` | Postgres state. When set, the default backend is `postgres`. |
+| `REDIS_URL` or `UPSTASH_REDIS_REST_URL`/`_TOKEN` | Shared rate limits and nonces. When set, the limiter defaults to Redis. |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | Model defaults to `gemini-flash-lite-latest`. Use a `-latest` alias, because a retired pinned model returns 404. On the free tier stay on flash-lite, because plain flash allows 20 requests a day. |
+| `GROQ_API_KEY`, `GROQ_MODEL` | A second parser with its own free quota. Defaults to `openai/gpt-oss-120b`, which realistically gives about 4 parses a minute and about 100 a day. |
+| `PRAXIS_INTENT_PROVIDERS` | Parse order before the local fallback (default `gemini,groq`). Providers without a key are skipped. |
+| `PRAXIS_LOCAL_INTENT` | `1` skips the LLMs entirely (off by default) |
+| `PRAXIS_RESEARCH_RPC_URL` | Read-only RPC for research. Stays on mainnet-beta, where the mints are. The public endpoint rate-limits `getTokenLargestAccounts`, so "Top 10 concentration" shows as unavailable there. |
+| `PRAXIS_ADDRESS_BOOK` | JSON array of saved contacts. Empty in production unless `PRAXIS_ALLOW_DEMO_DATA=1`. |
+
+Watch the logs for `intent.provider_failed` and
+`intent.all_providers_failed_fallback_local`. Parsing keeps working when every
+LLM fails, just worse, so these events are the only signal that it happened.
 
 ## Troubleshooting
 
-- **"Aegis policy account not found"** → click **Initialize devnet policy** from
-  `/app`; confirm the wallet supports transaction signing and is on devnet.
-- **`PRAXIS_SESSION_SECRET is required in production`** → set it in Vercel env.
-- **Transfers fail before confirmation locally** → the agent keypair has no SOL
-  for fees; airdrop to it.
-- **Threads disappear on Vercel** → expected with `fs`; use Neon + `postgres`.
-- **Program deploy fails** → ensure the deploy wallet has SOL and `anchor keys
-  sync` was run so `declare_id!` matches your program keypair.
+- **"Aegis policy account not found"**: create the vault from `/app`, and
+  confirm the wallet is on devnet and supports transaction signing.
+- **`PRAXIS_SESSION_SECRET is required in production`**: set it in the Vercel
+  environment.
+- **"No durable state backend in production"**: set `DATABASE_URL`, or
+  explicitly set `PRAXIS_STATE_BACKEND=fs`.
+- **Transfers fail before confirmation**: the agent keypair has no SOL for
+  fees.
+- **Threads disappear on Vercel**: filesystem state is per-instance. Use
+  Postgres.
+- **Program deploy fails**: the deploy wallet needs SOL, and `anchor keys sync`
+  must have run so that `declare_id!` matches your program keypair. See
+  [Upgrading the Aegis program](#upgrading-the-aegis-program) for failures
+  under congestion.

@@ -1,5 +1,5 @@
 /**
- * Coverage for the SPL token-transfer wiring (roadmap #4 tail):
+ * Coverage for the SPL token-transfer wiring:
  *   A) the server-side token policy check (`checkTokenTransferPolicy`), and
  *   B) the mock provider's USDC send end-to-end (parse → token-envelope check →
  *      sign → independent token counter).

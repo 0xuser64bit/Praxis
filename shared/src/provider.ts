@@ -23,7 +23,7 @@ import type {
 
 // ---------------------------------------------------------------------------
 // Address book — labels → addresses. Resolving a name that is ambiguous or
-// unknown must ASK (a clarifying question), never guess (spec §12.ii).
+// unknown must ASK (a clarifying question), never guess.
 // ---------------------------------------------------------------------------
 
 export interface AddressBookEntry {
@@ -188,7 +188,7 @@ export interface ClarifyOption {
   hint?: string;
 }
 
-/** Read-only research, distilled. Data only — never buy/sell/hold advice (§12.iv). */
+/** Read-only research, distilled. Data only — never buy/sell/hold advice. */
 export interface ResearchData {
   token: string;
   /**

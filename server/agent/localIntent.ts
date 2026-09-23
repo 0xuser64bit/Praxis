@@ -12,7 +12,7 @@ const TOKEN_ALIASES: Record<string, string> = {
   jup: "JUP",
   jupiter: "JUP",
   bonk: "BONK",
-  // Stocklana C04: PreStocks symbols, bare and p-prefixed, for research + transfer phrasing.
+  // PreStocks symbols, bare and p-prefixed, for research + transfer phrasing.
   ...Object.fromEntries(
     STOCK_SYMBOLS.flatMap((s) => {
       const lower = s.toLowerCase();
@@ -120,11 +120,11 @@ function matchResearch(text: string): string | null {
 export function parseIntentLocallyForDemo(text: string): ParsedIntent {
   const cleaned = text.trim().replace(/\s+/g, " ");
 
-  // Stocklana C06: mechanical recurring buy → schedule (fires emit proposals).
+  // Mechanical recurring buy → schedule (fires emit proposals).
   const dca = matchDca(cleaned);
   if (dca) return { outcome: "actions", actions: [dca] };
 
-  // Stocklana C06: atomic basket buy → per-constituent proposals, all-or-clarify.
+  // Atomic basket buy → per-constituent proposals, all-or-clarify.
   const basket = matchBasket(cleaned);
   if (basket) return { outcome: "actions", actions: [basket] };
 
@@ -308,7 +308,7 @@ function matchPolicyChange(text: string): Extract<ParsedAction, { kind: "policy_
   return null;
 }
 
-/** Stocklana C06: mechanical recurring buy ("buy $50 openai every monday", "dca 10 openai weekly"). */
+/** Mechanical recurring buy ("buy $50 openai every monday", "dca 10 openai weekly"). */
 function matchDca(text: string): Extract<ParsedAction, { kind: "schedule_dca" }> | null {
   const CADENCE = "every\\s+[a-z]+|daily|weekly|monthly";
   // People put the recipient on either side of the cadence, and both read
@@ -352,7 +352,7 @@ function matchDca(text: string): Extract<ParsedAction, { kind: "schedule_dca" }>
 }
 
 /**
- * Stocklana C06: atomic basket buy. "buy ai basket $50 [for maya]",
+ * Atomic basket buy. "buy ai basket $50 [for maya]",
  * "buy $100 [of] index [for maya]". Only known baskets parse — anything else
  * falls through to the clarify menu (never a guessed split).
  */
@@ -381,7 +381,7 @@ function isBasketRequest(text: string): boolean {
 }
 
 /**
- * Stocklana C04: recurring-buy phrasing has no scheduler yet (C06 builds it).
+ * Recurring-buy phrasing that `matchDca` did not turn into a schedule.
  * Note: "daily" is included, so this gate must run AFTER the policy_change /
  * policy_question matchers — "change my daily limit" is a cap edit, not DCA.
  */

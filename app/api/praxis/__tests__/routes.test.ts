@@ -250,7 +250,7 @@ describe("contacts", () => {
   });
 });
 
-describe("stocklana C05: stock universe + policy mint view", () => {
+describe("stock universe + policy mint view", () => {
   const OPENAI_MINT = "PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF";
 
   test("get-stock-universe: 401 without a session", async () => {

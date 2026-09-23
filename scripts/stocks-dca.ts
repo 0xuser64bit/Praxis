@@ -1,5 +1,5 @@
 /**
- * Stocklana C06: DCA schedule inspector + manual fire.
+ * DCA schedule inspector + manual fire.
  *
  *   bun scripts/stocks-dca.ts --list   # print schedules for the owner wallet
  *   bun scripts/stocks-dca.ts --fire    # fire due schedules (emits proposals, never signs)

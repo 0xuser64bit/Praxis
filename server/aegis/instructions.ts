@@ -225,7 +225,7 @@ export function buildFundVaultIx(
 
 /**
  * Owner-only vault withdrawal back to the owner wallet. Same account layout as
- * `fund_vault`; unconstrained by policy caps (it's the owner's money — spec §5).
+ * `fund_vault`; unconstrained by policy caps (it's the owner's money).
  */
 export function buildWithdrawVaultIx(
   addresses: AegisAddresses & { owner: PublicKey },

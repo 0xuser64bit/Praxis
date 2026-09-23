@@ -1,6 +1,6 @@
 /**
  * The Aegis enforcement check, mirrored off-chain for simulation-first previews.
- * Order matches `agent_transfer` (spec §5): signer/paused → expiry → per-tx →
+ * Order matches `agent_transfer`: signer/paused → expiry → per-tx →
  * daily (with rolling-window reset) → recipient allow-list. This is what lets
  * the UI show the chain's verdict in plain language BEFORE anything is signed.
  */

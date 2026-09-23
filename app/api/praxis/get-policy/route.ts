@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   return withReadProvider(request, (provider) => {
-    // Stocklana C05: optional view selector for the active-stock switcher.
+    // Optional view selector for the active-stock switcher.
     // Derivation is intentionally identical with or without `mint`: the policy
     // PDA is `[policy, owner]` — one policy per wallet, one SPL envelope at a
     // time. `mint` selects the *view* (the client labels "OPENAI vault · 6 of

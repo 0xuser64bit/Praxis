@@ -1,313 +1,320 @@
-# Praxis Architecture
-
-Updated: 2026-09-23
+# Praxis architecture
 
 Praxis has two parts:
 
-- A Next.js product app that turns user intent into typed proposals.
-- An Anchor program, Aegis, that enforces what the scoped agent key can do.
+- A Next.js app that turns user intent into typed proposals.
+- An Anchor program, **Aegis**, that enforces what the scoped agent key can do.
 
-The product claim is simple: the agent may interpret intent, but the program
-enforces the spending envelope.
+The agent may interpret intent, but the program enforces the spending envelope.
+Everything below is arranged around that split.
 
-## Runtime Modes
+## Runtime modes
 
-### Mock Mode
+`NEXT_PUBLIC_PRAXIS_PROVIDER` picks the `PraxisProvider` that the UI talks to.
 
-`NEXT_PUBLIC_PRAXIS_PROVIDER=mock` uses `MockPraxisProvider`.
+**Mock** (`mock`) uses `MockPraxisProvider` (`components/app/mock/`). It runs
+entirely in memory with a deterministic parser. It uses the same proposal,
+policy and activity UI as API mode, and it refuses to sign swaps just as API
+mode does. It exists for local development. Production builds disable it
+unless `NEXT_PUBLIC_PRAXIS_ALLOW_MOCK=1` is set at build time.
 
-- Runs fully in memory.
-- Uses a deterministic rule-based parser.
-- Exercises the same proposal, policy, and activity UI as API mode.
-- Refuses to sign swaps, matching API mode.
-- Intended for local development and smoke testing. Production builds disable
-  mock mode unless `NEXT_PUBLIC_PRAXIS_ALLOW_MOCK=1` is deliberately set.
+**API** (`api`, the default) uses `RemotePraxisProvider` against the
+`/api/praxis/*` routes, which are backed by `PraxisServerProvider`
+(`server/provider/praxisServer.ts`):
 
-### API Mode
+- Sign-in is a Solana wallet message signature that produces a signed,
+  HTTP-only session cookie. The policy PDA is derived from the signed-in wallet.
+- Threads, proposals, activity, contacts and schedules are stored per wallet in
+  the configured state repository: `postgres` in production, `fs` for
+  local/devnet.
+- Intent is parsed by the LLM providers in `PRAXIS_INTENT_PROVIDERS` order
+  (default `gemini,groq`), falling back to the local deterministic parser
+  (`server/agent/localIntent.ts`). `PRAXIS_LOCAL_INTENT=1` skips the LLMs.
+- A signed-in browser can call Gemini or Groq itself with a key kept in local
+  storage. The server receives the model's tool arguments and normalizes them
+  with the same checks as its own parse. It never receives or stores the key.
+  If that call fails, or the normalizer rejects the reading, the message falls
+  back to the shared providers, and the thread says so.
+- Agent actions are simulated through `AegisClient` (`server/aegis/client.ts`)
+  and signed with the scoped agent key, which lives either in-process or in the
+  remote signer (`signer/`). Owner actions are built server-side and signed by
+  the wallet (see [the owner relay](#trust-boundaries)).
 
-`NEXT_PUBLIC_PRAXIS_PROVIDER=api` uses `RemotePraxisProvider` and
-`/api/praxis/*` route handlers.
+## Request flow
 
-- Reads policy and activity through `PraxisServerProvider`.
-- Requires Solana wallet message signing and a signed HTTP-only session cookie.
-- Derives the live policy PDA from the signed-in wallet address.
-- Persists off-chain threads, proposals, and activity through the configured
-  state repository (`postgres` for production, `fs` for local/devnet).
-- Parses intent with the configured LLM providers in order (`PRAXIS_INTENT_PROVIDERS`,
-  Gemini then Groq by default), falling back to the local deterministic parser.
-  Free-tier quotas are per-provider, so a second name there is what keeps a
-  parse working after the first runs out for the day. A signed-in browser may
-  instead call Gemini or Groq itself with a key that stays in local storage.
-  The server receives the model's tool arguments, normalizes them with the
-  same checks as its own parse, and does not store the key. If that call
-  fails — or answers with something the normalizer rejects — the message
-  falls back to the shared providers and the thread says so.
-- Resolves address-book labels off-chain.
-- Simulates through `AegisClient`.
-- Signs agent actions with the configured scoped agent key.
-- Builds wallet-signed owner/admin transactions when a signing wallet is present.
-
-The filesystem state adapter is for local/devnet durability. Production should
-use managed Postgres storage.
-
-### Concurrency Model
-
-The provider is reconstructed per request from the repository (no cross-request
-in-memory cache), so concurrent `send` / `signProposal` / `cancelProposal`
-calls for the same wallet are serialized by a per-wallet async mutex
-(single-instance).
-
-Across instances the mutex is useless, so durable state uses **optimistic
-concurrency**: the stored document carries a monotonic `rev`, and every write
-compare-and-swaps against the revision it was read at. A wallet's own writes
-are chained inside the provider, so a surfaced conflict always means a genuinely
-concurrent writer elsewhere.
-
-`signProposal` **claims** the proposal before it signs anything: it flips
-`pending → signing` and CAS-writes at the loaded revision. Only one writer can
-win that swap; the loser reloads, sees a non-`pending` proposal, and returns
-without submitting. That makes execution exactly-once across instances, not
-just within one process — previously two instances could each read the same
-`pending` proposal and both submit an `agent_transfer` (bounded by the Aegis
-caps, but two real transfers).
-
-If the pre-submission steps (policy read, signing) throw after the claim,
-nothing has reached the chain, so the proposal resets to `pending` and the
-error surfaces — otherwise the card would sit in `signing` forever with every
-later tap silently no-op'ing.
-
-Schedule firing claims the same way, and claims *first*: a due schedule's
-`nextFireTs` is advanced and CAS-written before any proposal is built. The
-scheduled-buy job fans out across wallets and the same endpoint is reachable
-from a signed-in session, so two callers could otherwise both read a schedule
-as due, both emit a card, and the loser's write revert the winner's advance —
-leaving it due again next tick. Claiming first makes a fire at-most-once: a
-crash between the claim and the card misses a fire, which for money is the
-right direction to fail.
-
-For the conversational document (threads, activity, contacts) a conflict
-resolves as a deliberate, logged last-write-wins: reload the newer revision and
-rewrite. Wallet challenge nonces are claimed through a shared nonce store (`SET NX EX`
-on Redis when `REDIS_URL` or Upstash credentials are configured, in-memory
-otherwise), so a captured signature cannot be replayed against a second
-instance. Unlike the rate limiter, which fails OPEN, the nonce store fails
-CLOSED: if a configured store cannot answer, sign-in is refused rather than
-degraded to per-instance nonces.
-
-## Core Data Flow
-
-1. User enters text in the conversation surface.
-2. The selected `PraxisProvider` parses the text into a typed action.
-3. Recipient names are resolved through the address book.
-4. The provider builds a proposal with simulation, fee, and policy verdict.
-5. The UI renders the proposal card.
-6. On confirm, API mode signs an Aegis instruction with the scoped agent key.
-   A proposal is signable for a week. Its amount is fixed when the card is
-   built and Aegis enforces the envelope live at submit, so an older card
-   still moves exactly what it says; what drifts is the reading — fee,
-   simulated outcome, remaining envelope, the USD figure on a stock buy. The
-   bar is therefore forgetting rather than drift: long enough that a weekly
-   recurring buy fired on Monday is still signable on Sunday, short enough
-   that nobody signs a preview from last month. A freshness contract,
-   deliberately not a second copy of the policy check.
+1. The user types a message in the conversation.
+2. The provider parses it into typed actions.
+3. Recipient names resolve through the off-chain address book. A name that is
+   ambiguous or unknown triggers a clarifying question, never a guess.
+4. For each action the provider builds a proposal with the simulation, the fee
+   and a policy verdict from the off-chain mirror of Aegis
+   (`server/agent/policy.ts`).
+5. The UI renders the proposal cards.
+6. When the user confirms, the backend signs an Aegis instruction with the
+   agent key and submits it.
 7. Aegis enforces the policy on-chain before any value leaves the vault.
-8. Policy and activity are refreshed into the UI.
-9. Threads, proposals, and off-chain rejected activity are persisted by wallet.
+8. The policy and activity views refresh, and the result is persisted.
 
-## On-Chain Model
+A proposal stays signable for **one week** (`PROPOSAL_TTL_SECONDS`). Its amount
+is fixed when the card is built, and Aegis checks the envelope again when it
+lands, so an old card still moves exactly what it says. What goes stale is the
+card's reading: fee, simulated outcome, remaining envelope, and the USD figure
+on a stock buy. A week is long enough for a weekly recurring buy fired on
+Monday to still be signable on Sunday. It is short enough that nobody signs a
+preview they no longer remember. This is a freshness contract. It is
+deliberately not a second policy check.
 
-Aegis stores:
+## On-chain model (Aegis)
 
-- `PolicyAccount`: owner, agent authority, SOL caps, SPL token caps,
-  allow-lists, expiry, pause state, and rolling spend counters.
-- Vault PDA: native SOL custody.
-- Token vault account: associated token account owned by the vault PDA for the
-  configured SPL mint.
-- `ActionLog`: fixed-size ring buffer of allowed actions, including the mint
-  moved by each record. Native SOL records use the default pubkey as mint.
+Source: `aegis/programs/aegis/src/`. Accounts:
 
-Supported agent instructions:
+- `PolicyAccount`, a PDA seeded by owner. It holds the owner, agent
+  authority, SOL caps, SPL token envelope (one mint and its caps), allow-lists,
+  expiry, pause flag and rolling spend counters.
+- The vault PDA, which holds native SOL.
+- A token vault: the vault PDA's associated token account for the configured
+  mint.
+- `ActionLog`: a fixed-size ring buffer of allowed actions, including the
+  mint each one moved. Native SOL records use the default pubkey as the mint.
 
-- `agent_transfer`: native SOL transfer from the vault.
-- `agent_transfer_spl`: SPL token transfer from the vault token account.
+Agent instructions:
 
-Both value paths enforce:
+- `agent_transfer` moves native SOL from the vault.
+- `agent_transfer_spl` moves the configured SPL Token or Token-2022 mint from
+  the token vault.
 
-1. signer is `agent_authority`
-2. policy is not paused
-3. session is not expired
-4. value is within per-transaction cap
-5. rolling daily cap is not exceeded
-6. recipient allow-list, when non-empty
+Both refuse a zero amount, then check in this order:
 
-and refuse a zero amount outright — it moved nothing, paid a fee, and wrote an
-audit-log row saying an action happened.
+1. The signer is `agent_authority`.
+2. The policy is not paused.
+3. The session has not expired.
+4. The amount is within the per-transaction cap.
+5. The rolling daily cap would not be exceeded.
+6. The recipient is on the allow-list, when the allow-list is non-empty.
 
-The vault is a data-less system PDA, so the runtime rejects any transaction
-that leaves it funded below the rent-exempt minimum. "The vault holds N" is
-therefore not "N is spendable": the agent may only spend above the reserve and
-can never deallocate the vault, while the owner may either leave it rent-exempt
-or sweep it to zero. Measuring against `lamports()` instead produced an opaque
-`InsufficientFundsForRent` where a typed Aegis error belongs.
+The SPL path also requires three things. A token envelope must be configured.
+The source and destination accounts must use the configured mint. The source
+account must be owned by the vault PDA.
 
-The SPL path also enforces:
+**Vault rent.** The vault is a data-less system PDA, so the runtime rejects
+any transaction that leaves it funded below the rent-exempt minimum. The agent
+may spend only the balance above that reserve, and it can never close the
+vault. The owner can leave the vault rent-exempt or sweep it to zero.
 
-1. token envelope is configured
-2. source and destination token accounts use the configured mint
-3. source token account is owned by the vault PDA
+**Cap changes keep today's spend.** `configure_token` starts a fresh token
+window only when the mint changes. Setting new caps on the same mint applies
+them to today's spend, exactly as `update_policy` does for SOL. Otherwise
+raising a cap would grant a second full allowance the same day, and lowering
+one would hand the agent headroom it was meant to lose (LiteSVM T10).
 
-`configure_token` starts a fresh token window only when the mint changes.
-Re-setting the same mint's caps applies them to today's spend, exactly as
-`update_policy` does for SOL — otherwise raising a cap would grant a second
-full allowance the same day, and a signature that *lowered* it would hand the
-agent headroom it was meant to remove (LiteSVM T10).
+**Token-2022.** `agent_transfer_spl` parses token accounts by hand and builds
+the `TransferChecked` CPI itself, with no `anchor-spl` dependency. The token
+program re-verifies the mint and decimals, so the mint is an account of the
+instruction and must equal `policy.token_mint`. Token accounts must be at
+least 165 bytes. An extended account must declare `AccountType::Account`,
+which stops a mint being passed where a token account belongs. Two limits are
+deliberate:
 
-`agent_transfer_spl` drives **SPL Token or Token-2022**, hand-parsing the
-token accounts and constructing the CPI raw (no `anchor-spl` dependency). The
-CPI is `TransferChecked`, so the token program re-verifies the mint and
-decimals rather than trusting a caller-supplied number; the mint is therefore
-an account of the instruction and must equal `policy.token_mint`. Token
-accounts must be `>= 165` bytes — Token-2022 appends a type byte and TLV
-extensions to the classic base — and an extended account must declare
-`AccountType::Account`, which is what stops a mint being passed where a token
-account belongs.
+- A mint with an active **transfer hook** needs accounts this instruction does
+  not pass, so the transaction reverts. No value moves, and no untrusted hook
+  runs.
+- A **transfer fee** debits the vault by the capped amount and credits the
+  recipient less.
 
-Two deliberate limits: a mint with an active **transfer hook** needs accounts
-this instruction does not pass, so the CPI fails and the transaction reverts
-(safe — no value moves, no untrusted hook runs); and a **transfer fee** debits
-the vault by the capped amount while crediting the recipient less, which is
-correct for a spending policy but means the recipient may receive slightly
-less than the card showed.
+Off-chain, the provider resolves each mint's owning program before building
+anything. It refuses up front, with distinct messages, when a mint belongs to
+an unsupported token program or is missing from the cluster
+(`checkMintMovable`). The token program is also a seed of the associated-token
+address, so it is passed through every ATA derivation.
+`PRAXIS_ALLOW_UNVERIFIED_MINTS=1` skips this pre-flight for offline tests only.
 
-Off-chain, the provider resolves each mint's owning program on the transfer
-cluster and refuses up front — with distinct messages for "unsupported token
-program" and "not on this cluster" — instead of failing deep in simulation.
-The token program id is also a *seed* of the associated-token address, so it
-is threaded through every ATA derivation; a wrong default computes an address
-that would never hold the tokens. `PRAXIS_ALLOW_UNVERIFIED_MINTS=1` skips the
-pre-flight check for offline tests and demos — never set it in production.
+**Owner instructions** are fund, withdraw, update policy, configure token,
+revoke, rotate and close. They are deliberately not limited by the agent caps.
 
-Owner instructions are intentionally unconstrained by agent caps. The owner can
-fund, withdraw, update policy, configure token envelope, revoke, and rotate.
+**Swaps are not executable.** A swap intent is parsed and previewed against an
+agent-layer allow-list, but the proposal is always blocked. There is no
+`agent_swap` instruction and no Jupiter CPI. A real swap path must enforce
+mint and program allow-lists and value caps inside the program, not in a quote
+or the backend.
 
-## Swap Status
+Enforcement tests: `aegis/programs/aegis/tests/enforcement.rs` (LiteSVM,
+T1–T10). They cover cap boundaries, day rollover, signer checks, revoke,
+allow-lists, admin invariants, SPL, Token-2022, vault invariants, and the
+token window surviving a cap change.
 
-Swaps are not executable.
+## Stocks (PreStocks)
 
-The app can parse a swap intent and run an agent-layer allow-list preview, but
-the resulting proposal is always blocked. There is no Jupiter CPI and no
-`agent_swap` instruction in the program.
+Code: `server/stocks/`. Stocks are enabled by `PRAXIS_STOCKS_ENABLED=1`. When
+the flag is off, the token list and behavior are unchanged.
 
-This is deliberate. A real swap path must enforce mint/program allow-lists and
-value caps inside the program instruction, not only in a quote or backend.
+**Universe.** `server/stocks/universe.ts` pins the eight PreStocks mints. These
+are the only pre-IPO tokens in the product. Do not list them in
+`PRAXIS_TOKENS`. The flag merges them in. `PRAXIS_STOCK_UNIVERSE` filters and
+orders them for display. It never bypasses enforcement.
+`PRAXIS_STOCK_MINTS` swaps in mirror mints on a cluster where the real mints
+do not exist. `bun run praxis:stockscheck` checks the live API against the
+pinned mints.
 
-## Trust Boundaries
+**What the real mints are.** These facts were read from the mint accounts on
+mainnet, not taken from the API:
 
-Trusted:
+- 9 decimals. The API does not report decimals, so amount math resolves the
+  scale from the chain (`server/stocks/mintDecimals.ts`), unless
+  `PRAXIS_STOCK_DECIMALS` pins it. When the scale cannot be confirmed, the
+  agent refuses the buy.
+- Token-2022, with extensions such as `PermanentDelegate`,
+  `DefaultAccountState`, `TransferFeeConfig`, `TransferHook`,
+  `PausableConfig` and metadata. The values that matter today are: the default
+  account state is initialized, the transfer fee is 0 bps, and no transfer
+  hook program is set. That is why the mints move like plain tokens. If
+  PreStocks enables a hook or a fee, the limits above apply.
+- The issuer (`WV9PJN7XTmTLVwbutCLFxp8TyePee6Xq5mRq6Fti5Wc`) holds
+  permanent-delegate, freeze and pause authority. The research card discloses
+  this.
+- The mints exist on mainnet only, so devnet uses mirror mints
+  (`bun run praxis:setup-devnet-stocks`).
 
-- Solana consensus.
-- Aegis program enforcement.
-- Owner wallet signatures for owner/admin actions.
+**Envelope model.** A wallet has one policy PDA, and a policy holds one SPL
+envelope at a time. The active-stock switcher (`components/app/ActiveStock.tsx`)
+reconfigures that envelope to the selected stock's mint with one owner
+signature. `get-policy?mint=` only selects the *view*. It never changes which
+account is read. A priced stock's envelope defaults to $100 per buy and $500
+a day, converted to token quantities at the current price.
 
-Not trusted for enforcement:
+**Dollar amounts.** When a request carries a `$` (`buy $40 openai`,
+`set my daily limit to $100`), the server converts it to base units at the
+PreStocks `tokenPrice` with integer math, and says which price it used. With
+no price, it asks for clarification rather than reading the number as a
+quantity. Aegis only ever sees token quantities.
 
-- Prompt text.
-- LLM output (Gemini, Groq, or the deterministic parser), including a reading
-  the browser produced with the owner's own key. That reading is normalized
-  before any proposal is built. The key itself is not a server credential and
-  is not accepted on the request.
-- Mock parser.
-- Server policy mirror.
-- Frontend UI state.
-- Swap preview logic.
+**Research** (`server/agent/research.ts`, `server/stocks/prestocks.ts`)
+starts with the PreStocks rows (token and mark price, labeled separately),
+then adds on-chain supply and DexScreener data. If the PreStocks API fails,
+the research card is still built from the other sources. It is never replaced
+by an error. Research never produces buy, sell or hold advice.
 
-The off-chain policy mirrors exist for explainability and simulation previews.
-They are not the source of truth for value movement.
+**Recurring buys** (`server/stocks/schedules.ts`, `scheduleRunner.ts`). A
+schedule has a daily, weekly or monthly cadence. Its quantity is fixed when
+it is created. Each fire emits a proposal through the same policy check as a
+one-off buy and never signs. Firing is driven by `/api/cron/stocks` (see
+[DEPLOY.md](DEPLOY.md#scheduled-recurring-buys)). The same endpoint also
+answers a session cookie for the signed-in wallet's own schedules. Fire times
+are anchored to `PRAXIS_SCHEDULE_HOUR_UTC`, because a schedule timed after the
+single daily tick would slip a day.
 
-Not trusted as *data* either — bounded and normalized at the seam
-(`server/agent/untrusted.ts`) before reaching any surface:
+**Baskets** split a dollar total across their constituents at live prices,
+using integer math. They are all-or-clarify. Every constituent is simulated
+first. If any is blocked, unmovable or unpriceable, the whole basket becomes a
+clarification and nothing is stored.
 
-- Market-indexer fields. A token's `symbol` and `name` are chosen by whoever
-  minted it, which is anyone. React escapes markup, so this is not about XSS:
-  it is a 4KB "ticker" that destroys the card it lands on, and bidi overrides
-  and zero-width marks that let a value rewrite the line it sits in. Addresses
-  from an indexer are validated as real keys at the same point, rather than
-  carried as identifiers until something downstream happens to parse one.
-- PreStocks quote fields, including an http(s) check on the URL the research
-  summary quotes into its own sentence.
-- LLM output, which is bounded in both field length and action count — each
-  action costs a simulation, RPC round-trips, and a card to read.
+**Demo faucet** (`server/stocks/demoFaucet.ts`). This is devnet only and is
+enabled by `PRAXIS_DEMO_FAUCET_KEYPAIR`. It mints $1,000 of the active mirror
+stock into the signed-in wallet's vault, so any wallet can complete a buy.
+Three independent guards stop it running anywhere else. It refuses a
+non-mirror mint. It refuses mainnet, detected by genesis hash. It refuses
+unless its key is the mint authority. It is limited to 3 grants per wallet
+per day.
 
-Research informs; it never authorizes. Conversation history is not replayed to
-the model — each turn sends only the current line — so text an indexer returns
+## Concurrency and state
+
+The provider is rebuilt from the repository on every request. Nothing is
+cached in memory across requests. Within one instance, a per-wallet async
+mutex serializes `send`, `signProposal` and `cancelProposal`.
+
+Across instances, durable state uses **optimistic concurrency**. The stored
+document carries a monotonic `rev`, and every write compares against the
+revision it read and only swaps if it still matches. A wallet's own writes are
+chained inside the provider, so a conflict always means a genuinely concurrent
+writer elsewhere.
+
+- **Signing is exactly-once.** `signProposal` first *claims* the proposal: it
+  changes it from `pending` to `signing` and writes that at the loaded
+  revision. Only one writer wins the swap. The loser reloads, sees a
+  non-pending proposal and returns without submitting. If signing fails before
+  submission, nothing has reached the chain, so the proposal goes back to
+  `pending` and the error is shown.
+- **Schedule fires are at-most-once.** A due schedule's `nextFireTs` is
+  advanced and written *before* any proposal is built. A crash between the
+  claim and the card misses one fire, and for money that is the right way to
+  fail.
+- **Conversation data** (threads, activity, contacts) resolves conflicts by
+  deliberate, logged last-write-wins. It reloads the newer revision and
+  rewrites.
+- **Sign-in nonces** are claimed through a shared store: `SET NX EX` on Redis
+  when `REDIS_URL` or Upstash is configured, or in memory otherwise. The nonce
+  store fails **closed**: if a configured store cannot answer, sign-in is
+  refused. The rate limiter fails **open**, to a process-local limiter.
+
+## Trust boundaries
+
+**Trusted:** Solana consensus, Aegis enforcement, and owner wallet signatures
+on owner actions.
+
+**Not trusted for enforcement:** prompt text; LLM output, including a reading
+the browser produced with the owner's own key; the deterministic parser; the
+server policy mirror; frontend state; swap preview logic. The off-chain
+mirrors exist to explain and preview. They are not the source of truth for
+value movement.
+
+**Not trusted as data.** Several inputs are length-limited and normalized in
+`server/agent/untrusted.ts` before they reach any surface:
+
+- Market-indexer fields. Anyone who mints a token chooses its `symbol` and
+  `name`. React escapes markup, so the concern is a 4 KB "ticker" that breaks
+  its card, or bidi and zero-width characters that rewrite the line they sit
+  in. Indexer addresses are validated as real keys at this same point.
+- PreStocks quote fields, including an http(s) check on any URL quoted into
+  the research summary.
+- LLM output, which is limited in both field length and action count. Every
+  action costs a simulation, RPC round-trips and a card for the user to read.
+
+Research informs. It never authorizes. Conversation history is not replayed to
+the model. Each turn sends only the current line, so text an indexer returns
 cannot steer a later parse.
 
 **The owner relay.** `/owner/build` returns an unsigned transaction plus a
-backend-signed fingerprint of it; `/owner/submit` refuses anything that is not
-that transaction, signed by the session's wallet. Without that binding the
-program allow-list was the only real check, and the server-side preconditions
-attached to an action — the "your vault still holds tokens" refusal on close,
-the movable-mint check on configure — were skippable by assembling your own
-bytes. On-chain `has_one = owner` remains the enforcement of record; this is
-what makes the layer above it coherent.
+backend-signed fingerprint of it (`server/aegis/ownerDraft.ts`).
+`/owner/submit` accepts only that exact transaction, signed by the session's
+wallet. This means users cannot skip the server-side preconditions on owner
+actions by assembling their own bytes. Examples are the refusal to close a
+vault that still holds tokens, and the movable-mint check on configure.
+The on-chain `has_one = owner` check remains the enforcement of record.
 
 **The session is a spending credential.** Praxis signs agent transfers with its
-own scoped key, so holding a valid session is enough to move value *within* the
-envelope with no further wallet signature. It is therefore short-lived
+own key, so a valid session is enough to move value *within* the envelope with
+no further wallet signature. Sessions are therefore short-lived
 (`PRAXIS_SESSION_TTL_HOURS`, default 24) and bound to the connected wallet
-account: switching accounts in the extension, or disconnecting, ends it.
+account. Switching accounts in the extension, or disconnecting, ends the
+session.
 
-## Current Production Gaps
+**Shared agent key.** The configured agent key is the on-chain authority on
+every wallet's policy. In production the backend refuses to serve more than
+the one configured owner under an in-process key, unless
+`PRAXIS_ALLOW_SHARED_AGENT_KEY=1` is set or the key sits behind the remote
+signer.
 
-- Self-serve policy initialization is still script/bootstrap driven.
-- The in-process agent signer is local/devnet oriented; production should use
-  `PRAXIS_AGENT_SIGNER_URL`.
-- Filesystem state is local/devnet durability; production should use
-  `PRAXIS_STATE_BACKEND=postgres`.
-- The in-memory rate limiter is process-local; production should use
-  `PRAXIS_RATE_LIMITER=redis` plus platform/WAF controls.
-- Without Redis configured, nonce single-use is per instance only — multi-
-  instance deployments should set `REDIS_URL` (or Upstash credentials).
-- The remote signer enforces a per-process signature ceiling and logs every
-  outcome; those lines are the only record of what the agent key signed, and
-  shipping them somewhere durable is the operator's job.
-- Rate limits degrade to a process-local limiter when the shared store is
-  unavailable, which is weaker than shared state across instances.
-- Owner policy edits are read-modify-write against the full allow-list vectors:
-  the program takes whole `Vec<Pubkey>`s and has no compare-and-swap, so two
-  owner edits building from the same read would clobber each other. The window
-  is one blockhash lifetime (the draft token expires in five minutes and the
-  blockhash sooner), and the blast radius is a lost allow-list entry rather
-  than lost funds. Closing it properly needs a nonce on `PolicyAccount`, which
-  changes the account layout and so needs a migration.
-- No durable rejected-transaction indexer for failures that happen outside the
-  app process.
-- The scheduled-buy job walks every wallet in one tick (bounded at 500). Past
-  that it needs partitioning or a work queue.
-- No managed setup/funding product flow for SPL token vault balances.
+## Known gaps
 
-## Verification Commands
-
-```bash
-bun run lint          # eslint
-bun run test          # TypeScript suite: auth, validation, state, Aegis codec, routes
-bun run build         # production Next.js build
-bun run aegis:test    # rebuild the Anchor program + LiteSVM enforcement gate (T1–T10)
-bun run aegis:idl     # rebuild and re-sync the generated IDL into @praxis/shared
-```
-
-Demo / scripted checks against a funded cluster:
-
-```bash
-bun run praxis:demo                  # end-to-end SOL send + over-cap rejection
-bun run praxis:setup-token-accounts  # prepare vault/recipient ATAs for SPL
-bun run praxis:moneyshots            # capture proposal/policy/activity states
-bun run praxis:swapcheck             # assert swaps stay blocked
-bun run praxis:tokencheck            # assert SPL envelope enforcement
-bun run praxis:reenablecheck         # revoke -> re-enable, signing follows the chain
-bun run praxis:reenablecycles        # the same, repeated N times (CYCLES=3)
-bun run praxis:policycheck           # chat-driven policy change lands on-chain
-bun run praxis:localcheck            # docker Postgres + Redis, incl. CAS rejection
-bun run praxis:setup-devnet-stocks   # create Token-2022 mirror mints on the demo cluster
-bun run praxis:stocksbuycheck        # stock buy lands; over-cap refused on-chain
-```
+- **Agent key custody.** The in-process agent key is meant for local and
+  devnet use. Production should use the remote signer
+  (`PRAXIS_AGENT_SIGNER_URL`). The signer logs every outcome, and those lines
+  are the only record of what the agent key signed. Shipping them somewhere
+  durable is the operator's job.
+- **State backend.** Filesystem state lives on one instance and does not
+  survive redeploys. Production should use `PRAXIS_STATE_BACKEND=postgres`.
+- **Redis.** Without Redis, rate limits and nonce single-use hold per instance
+  only. A multi-instance deployment should set `REDIS_URL` or Upstash
+  credentials.
+- **Concurrent owner edits.** Owner policy edits read the full allow-list
+  vectors, modify them and write them back. The program takes whole
+  `Vec<Pubkey>` values and cannot compare-and-swap, so two edits built from
+  the same read clobber each other. The window is one blockhash lifetime, and
+  the worst case is a lost allow-list entry, not lost funds. Fixing it needs a
+  nonce on `PolicyAccount`, which means a change to the account layout and a
+  migration.
+- **Rejected actions.** No durable indexer records transactions rejected
+  outside the app process.
+- **Cron scale.** The scheduled-buy job walks at most 500 wallets per tick.
+  Beyond that it needs partitioning or a work queue.
+- **Token-vault funding** has no product UI (see
+  [DEPLOY.md](DEPLOY.md#verifying-a-cluster) for the script).

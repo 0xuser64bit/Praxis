@@ -96,8 +96,8 @@ export interface PraxisServerConfig {
   addressBook: AddressBookEntry[];
   tokens: TokenInfo[];
   indexerUrl?: string;
-  /** Stocklana C02: PreStocks universe seam. Off by default — `main` behavior is
-   *  unchanged unless `PRAXIS_STOCKS_ENABLED=1`. */
+  /** PreStocks universe seam. Off by default — behavior is unchanged unless
+   *  `PRAXIS_STOCKS_ENABLED=1`. */
   stocksEnabled: boolean;
   prestocksApiUrl: string;
   prestocksTimeoutMs: number;
@@ -124,7 +124,7 @@ export interface PraxisServerConfig {
   /**
    * Devnet demo only: the mint authority of the mirror stock mints
    * (`PRAXIS_DEMO_FAUCET_KEYPAIR[_PATH]`). When set, a signed-in wallet can
-   * mint demo stock into its own vault, so a judge's wallet can complete a
+   * mint demo stock into its own vault, so any wallet can complete a
    * buy. Refused on mainnet and on any non-mirror mint.
    */
   demoFaucetKeypair?: Keypair;

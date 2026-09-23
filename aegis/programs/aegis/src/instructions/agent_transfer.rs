@@ -8,7 +8,7 @@ use anchor_lang::{
 ///
 /// `agent_authority` is a `Signer`, but that only proves *someone* signed — the
 /// handler still explicitly checks the signer IS the registered agent key
-/// (check 1). This is the single most important line in the program (spec §5).
+/// (check 1). This is the single most important line in the program.
 #[derive(Accounts)]
 pub struct AgentTransfer<'info> {
     /// The agent's scoped session key. Must equal `policy.agent_authority`.
@@ -67,7 +67,7 @@ pub fn handler(ctx: Context<AgentTransfer>, amount: u64) -> Result<()> {
     let policy_key = ctx.accounts.policy.key();
     let target = ctx.accounts.recipient.key();
 
-    // ---- Enforcement, in the EXACT spec §5 order ----
+    // ---- Enforcement, in this EXACT order (mirrored off-chain) ----
 
     // 1. signer == agent_authority (explicit, beyond the Signer constraint).
     if ctx.accounts.agent_authority.key() != ctx.accounts.policy.agent_authority {

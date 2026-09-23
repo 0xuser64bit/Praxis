@@ -1,15 +1,14 @@
 import type { TokenInfo } from "@praxis/shared";
 
 /**
- * PreStocks stock universe (Stocklana C02).
+ * PreStocks stock universe.
  *
- * Source of truth for the 8 pre-IPO mints in docs/PRESTOCKS.md §1, verified by
- * `bun run praxis:stockscheck` (see docs/PRESTOCKS-SPIKE.md). Pure module —
- * no `process.env` reads here, so intent/research code stays unit-testable.
- * Env wiring lives in `server/env.ts`.
+ * Source of truth for the 8 pre-IPO mints; `bun run praxis:stockscheck` checks
+ * them against the live PreStocks API. Pure module — no `process.env` reads
+ * here, so intent/research code stays unit-testable. Env wiring lives in
+ * `server/env.ts`.
  *
- * Bounty exclusivity (binding): only PreStocks pre-IPO mints may appear here.
- * Never add a non-PreStocks pre-IPO mint in the submission branch.
+ * Only PreStocks pre-IPO mints may appear here.
  */
 
 export interface StockEntry {
@@ -32,8 +31,8 @@ export const STOCK_LIST: StockEntry[] = [
 /**
  * Verified scale for the PreStocks mints: **9**, not the 6 this shipped with.
  *
- * The PreStocks API does not report decimals and the spike left it an open
- * question, so the universe filled in 6 — and that value reached
+ * The PreStocks API does not report decimals, so the universe originally
+ * filled in 6 — and that value reached
  * `parseHumanUnits`, the token-envelope cap defaults, and every amount the UI
  * rendered. It was wrong by three orders of magnitude: "buy 40 OPENAI" parsed
  * at 6dp is 40,000,000 base units, which on a 9dp mint is 0.04 OPENAI, and a
@@ -51,8 +50,8 @@ export const DEFAULT_STOCK_DECIMALS = 9;
 /**
  * The SPL program that owns the PreStocks mints: **Token-2022**, not classic
  * SPL Token. Verified on mainnet 2026-09-20 (mint accounts are 902-914 bytes,
- * owner `TokenzQd…`). This is what makes them unmovable by the deployed Aegis
- * program — see `assertAegisTransferableMint`.
+ * owner `TokenzQd…`), which is why `agent_transfer_spl` drives Token-2022 and
+ * the off-chain pre-flight (`checkMintMovable`) accepts both programs.
  */
 export const STOCK_TOKEN_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
 
@@ -103,7 +102,7 @@ export function normalizeStockAlias(input: string): string {
 
 /**
  * Build `TokenInfo[]` for the stock universe. `decimals` overrides per symbol
- * (used once the RPC spike confirms real values); `universe` restricts to a
+ * (operator-confirmed values from `PRAXIS_STOCK_DECIMALS`); `universe` restricts to a
  * subset of symbols (mirrors `PRAXIS_STOCK_UNIVERSE`, `undefined` = all).
  */
 export function buildStockTokens(

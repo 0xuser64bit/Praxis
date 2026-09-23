@@ -1,16 +1,16 @@
 import { STOCK_SYMBOLS } from "./universe";
 
 /**
- * Stocklana C06: mechanical DCA schedules + basket definitions. Pure module —
+ * Mechanical DCA schedules + basket definitions. Pure module —
  * no env, no I/O — so cadence math and basket splits are unit-testable.
  *
- * Operating rules (binding for the submission branch):
+ * Operating rules:
  * - A schedule NEVER signs. Each fire emits one transfer proposal through the
  *   same `checkTokenTransferPolicy` path as a one-off buy; the user signs.
  * - A basket NEVER partially signs. All constituents are simulated first; if
  *   any is blocked, the whole basket becomes a clarification and nothing is
  *   stored. Amounts never move until each proposal is individually signed.
- * - Baskets contain ONLY PreStocks pre-IPO mints (bounty exclusivity).
+ * - Baskets contain ONLY PreStocks pre-IPO mints.
  */
 
 /** When a recurring buy fires. `weekday`: 0=Sunday..6=Saturday (UTC). */

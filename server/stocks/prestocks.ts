@@ -11,11 +11,11 @@ import {
 } from "../agent/untrusted";
 
 /**
- * PreStocks quote fetcher (Stocklana C03).
+ * PreStocks quote fetcher.
  *
  * Read-only and best-effort: it never throws to callers, because research
  * falls back to the RPC + DexScreener path and a basket refuses itself rather
- * than guessing (docs/PRESTOCKS.md §3). A successful response is cached 60s
+ * than guessing. A successful response is cached 60s
  * per API URL; a FAILED refresh serves the last good answer for a short grace
  * period instead of caching "no prices" (see STALE_GRACE_MS). Concurrent
  * callers share one in-flight request.

@@ -70,7 +70,7 @@ export async function researchToken(
     ? `The market-data lookup failed${reason(indexer.error)}.`
     : "No Solana pair for this mint on the configured indexer.";
 
-  // Stocklana C03: PreStocks rows lead for stocks; everything below keeps the
+  // PreStocks rows lead for stocks; everything below keeps the
   // existing RPC + indexer behavior (including honest "unavailable").
   const metrics: ResearchMetric[] = [
     ...(stock ? stockPriceMetrics(stock) : []),
@@ -109,7 +109,7 @@ export async function researchToken(
     });
   }
 
-  // Stocklana C03: when on-chain supply is unavailable for a stock, fall back
+  // When on-chain supply is unavailable for a stock, fall back
   // to the PreStocks-reported figure — labeled as such, never silently.
   const supply = chain.supply
     ? { ...compactAmount(chain.supply.raw), note: chain.supply.note }

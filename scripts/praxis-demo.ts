@@ -66,7 +66,7 @@ async function main() {
 }
 
 /**
- * Stocklana C08 --stocks mode: research → buy 40 OPENAI (honest verdict) →
+ * --stocks mode: research → buy 40 OPENAI (honest verdict) →
  * over-cap 500 OPENAI (always blocked) → pause → resume. Needs the demo keys +
  * cluster like the SOL flow, plus PRAXIS_STOCKS_ENABLED=1. Moves no value:
  * the 40-OPENAI leg only simulates; pause/resume are the only submitted txs.
@@ -134,7 +134,7 @@ async function ensureDemoPolicy(client: AegisClient) {
   requireOwnerKeypair();
   requireAgentKeypair();
   const now = Math.floor(Date.now() / 1000);
-  // Seed the allow-lists to match the mock so the §9 #3 money-shot is faithful:
+  // Seed the allow-lists to match the mock so "the allow-list holds" is faithful:
   // Jupiter must be allow-listed for the swap's PROGRAM check to pass, so the
   // unverified MINT is what rejects ("mint not in the verified set").
   const config = getServerConfig();

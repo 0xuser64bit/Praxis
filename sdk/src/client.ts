@@ -248,7 +248,7 @@ export class PraxisClient {
   /**
    * The server's stock universe (`[]` when `PRAXIS_STOCKS_ENABLED` is off).
    * Read-only; symbols/mints here are the only pre-IPO stocks Praxis will
-   * touch (bounty exclusivity is enforced server-side).
+   * touch (the server enforces a PreStocks-only universe).
    */
   getTokenUniverse(): Promise<StockUniverseEntry[]> {
     return this.get<StockUniverseEntry[]>("/get-stock-universe");

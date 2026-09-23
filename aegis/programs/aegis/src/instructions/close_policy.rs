@@ -4,7 +4,7 @@ use anchor_lang::{
     system_program::{self, Transfer},
 };
 
-/// Owner-only teardown (spec §5: the owner key is unconstrained). Drains any
+/// Owner-only teardown (the owner key is unconstrained). Drains any
 /// remaining SOL from the vault back to the owner, then closes the policy and
 /// audit-log accounts — returning their rent to the owner. Irreversible; the
 /// owner can re-create a fresh policy afterward (same deterministic PDA).

@@ -4,7 +4,7 @@ use anchor_lang::{
     system_program::{self, Transfer},
 };
 
-/// Owner-only and UNCONSTRAINED by policy — it's the owner's money (spec §5).
+/// Owner-only and UNCONSTRAINED by policy — it's the owner's money.
 /// No caps, no allow-list, no expiry/pause checks apply here.
 #[derive(Accounts)]
 pub struct WithdrawVault<'info> {

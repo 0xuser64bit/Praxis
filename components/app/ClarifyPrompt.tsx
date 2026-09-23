@@ -2,7 +2,7 @@
 
 /**
  * A clarifying question with tappable options. Praxis asks rather than guesses
- * when a name is ambiguous or unknown (spec §12.ii) — one extra question beats
+ * when a name is ambiguous or unknown — one extra question beats
  * one wrong transaction.
  */
 

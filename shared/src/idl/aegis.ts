@@ -1362,7 +1362,7 @@ export type Aegis = {
     {
       "name": "policyAccount",
       "docs": [
-        "The on-chain spending envelope (spec §5). PDA seeded by `owner`.",
+        "The on-chain spending envelope. PDA seeded by `owner`.",
         "",
         "The `owner` key is unconstrained elsewhere (deposit/withdraw/update/revoke);",
         "the `agent_authority` session key may only move funds within this envelope.",
@@ -1411,7 +1411,7 @@ export type Aegis = {
           {
             "name": "allowedRecipients",
             "docs": [
-              "Empty == any recipient allowed (spec §5)."
+              "Empty == any recipient allowed."
             ],
             "type": {
               "vec": "pubkey"

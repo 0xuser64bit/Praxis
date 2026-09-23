@@ -18,7 +18,7 @@ export interface StoredProviderState {
   proposals: Record<string, ActionProposal>;
   activity: ActivityEntry[];
   contacts: AddressBookEntry[];
-  /** Stocklana C06: mechanical DCA schedules (cron fires emit proposals). */
+  /** Mechanical DCA schedules (cron fires emit proposals). */
   schedules?: DcaSchedule[];
   /**
    * Tombstones for removed address-book entries (address or label). Lets a

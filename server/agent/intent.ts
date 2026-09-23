@@ -100,7 +100,7 @@ export type ParsedAction =
       paused?: boolean;
     }
   | {
-      /** Stocklana C06: mechanical recurring buy. Creates a schedule; each
+      /** Mechanical recurring buy. Creates a schedule; each
        *  fire emits a transfer proposal through the same policy checks.
        *  Never signs — every fire needs a signature. */
       kind: "schedule_dca";
@@ -113,7 +113,7 @@ export type ParsedAction =
       cadence: DcaCadence;
     }
   | {
-      /** Stocklana C06: atomic multi-stock buy. Total USD split equally across
+      /** Atomic multi-stock buy. Total USD split equally across
        *  the basket via PreStocks prices. All-or-clarify: any blocked or
        *  unpriceable constituent clarifies the whole basket, storing nothing. */
       kind: "basket_buy";

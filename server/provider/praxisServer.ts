@@ -87,7 +87,7 @@ interface StoreState {
   proposals: Record<string, ActionProposal>;
   activity: ActivityEntry[];
   contacts: AddressBookEntry[];
-  /** Stocklana C06: mechanical DCA schedules (persisted; cron fires emit proposals). */
+  /** Mechanical DCA schedules (persisted; cron fires emit proposals). */
   schedules: DcaSchedule[];
   /** Tombstoned contact addresses/labels (lowercased) — see StoredProviderState. */
   removedContacts: string[];
@@ -696,7 +696,7 @@ export class PraxisServerProvider implements PraxisProvider {
 
   /**
    * Devnet only: mint $1,000 of the active mirror stock into this wallet's
-   * vault, so any wallet — a judge's, not just the operator's — can complete
+   * vault, so any wallet — not just the operator's — can complete
    * a buy. See `server/stocks/demoFaucet.ts` for why, and for the guards:
    * mirror mints only, never mainnet, and only mints the faucet controls.
    */
@@ -1755,8 +1755,8 @@ export class PraxisServerProvider implements PraxisProvider {
     const assetOut = this.token(action.assetOut);
     const amountIn = parseHumanUnits(action.amountHuman, assetIn.decimals);
 
-    // Run the SAME allow-list check the mock runs, so demo §9 #3 ("the allow-list
-    // holds") is faithful in API mode. This is an agent-layer (pre-CPI) verdict:
+    // Run the SAME allow-list check the mock runs, so "the allow-list holds"
+    // in API mode too. This is an agent-layer (pre-CPI) verdict:
     // the on-chain agent_swap is v2, so a rejection here is the honest gate, not
     // an on-chain RejectReason. Falls back to a plain stub if the policy can't be
     // loaded (half-configured API mode).

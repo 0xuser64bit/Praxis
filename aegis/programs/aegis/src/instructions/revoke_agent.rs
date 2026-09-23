@@ -1,7 +1,7 @@
 use crate::{constants::*, error::*, events::*, state::*};
 use anchor_lang::prelude::*;
 
-/// Owner-only kill switch (spec §5). One on-chain tx, instant.
+/// Owner-only kill switch. One on-chain tx, instant.
 ///
 /// We do BOTH, deliberately:
 ///   - zero `agent_authority` -> the old key can never again equal the

@@ -2,7 +2,7 @@
 
 /**
  * Read-only research, distilled. Surfaces on-chain data and explicitly makes no
- * buy/sell/hold call (spec §12.iv) — the "no advice" badge is part of the pitch.
+ * buy/sell/hold call — the "no advice" badge says so on the card.
  */
 
 import type { ResearchData, ResearchMetric, ResearchSource } from "@praxis/shared";

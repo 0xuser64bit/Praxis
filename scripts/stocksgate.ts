@@ -1,8 +1,8 @@
 /**
- * Stocklana C08 — offline honesty gate for the stock submission.
+ * Offline honesty gate for the stocks integration (runs in CI).
  *
  * Fully offline (no RPC, no API): proves the off-chain mirrors and agent
- * wiring agree with the on-chain program before any judge clicks a URL:
+ * wiring agree with the on-chain program:
  *   - all 8 PreStocks mints resolve to the spec addresses
  *   - an unknown mint is MintNotAllowed (mirror of Aegis 6013, proven on-chain by T7)
  *   - swaps stay blocked (parser emits only the stub; never an executable swap)

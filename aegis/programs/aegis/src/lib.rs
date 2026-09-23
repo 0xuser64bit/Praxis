@@ -1,4 +1,4 @@
-//! Aegis — the on-chain policy engine (spec §5). A program-owned smart wallet
+//! Aegis — the on-chain policy engine. A program-owned smart wallet
 //! that custodies a slice of the owner's SOL and enforces a spending envelope
 //! on every agent-initiated transfer. The owner key is unconstrained; the agent
 //! session key may only move funds within the policy. "The agent proposes; the

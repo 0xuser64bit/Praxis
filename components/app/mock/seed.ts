@@ -1,5 +1,5 @@
 /**
- * Seed state for the mock provider. A realistic envelope + history so the §9
+ * Seed state for the mock provider. A realistic envelope + history so the core
  * demo is walkable standalone: a saved-name send, an over-cap rejection, an
  * unverified-mint swap rejection, the revoke kill-switch, and a read-only
  * research query all behave correctly against this seed.

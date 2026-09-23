@@ -1,5 +1,5 @@
 /**
- * Money-shot regression harness (spec §9).
+ * Money-shot regression harness.
  *
  * Drives the MockPraxisProvider — the demo's backend — through the five
  * non-negotiable demo moments and asserts each still behaves. This is the
@@ -139,7 +139,7 @@ async function ms5_readonly() {
 }
 
 async function main() {
-  console.log("┌──── PRAXIS MONEY-SHOT WALK (spec §9) ─────────────────────────────────────");
+  console.log("┌──── PRAXIS MONEY-SHOT WALK ───────────────────────────────────────────────");
   await ms1_itWorks();
   await ms2_chainSaysNo();
   await ms3_allowListHolds();

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Stocklana C05: the active-stock switcher state.
+ * The active-stock switcher state.
  *
  * One policy PDA per wallet holds ONE SPL envelope (single mint) at a time, so
  * "one policy per stock" is an operating model, not a second account: the user

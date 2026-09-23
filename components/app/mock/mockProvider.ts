@@ -85,7 +85,7 @@ export class MockPraxisProvider implements PraxisProvider {
   getPolicy = (): PolicyView => this.state.policy;
   getActivity = (): ActivityEntry[] => [...this.state.activity].sort((a, b) => b.ts - a.ts);
   getAddressBook = (): AddressBookEntry[] => this.state.addressBook;
-  // Mock mode has no DCA scheduler (schedules are an API-mode Stocklana
+  // Mock mode has no DCA scheduler (schedules are an API-mode stocks
   // feature), so there is nothing to list or cancel here.
   getSchedules = (): [] => [];
   cancelSchedule = async (): Promise<void> => {};

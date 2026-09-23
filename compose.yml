@@ -4,9 +4,8 @@
 #   docker compose down         # stop (data survives in named volumes)
 #   docker compose down -v      # stop AND wipe local data
 #
-# The app points at these via .env:
-#   # Host port 5433: a Homebrew postgres already owns 5432 on dev machines.
-# (The container still listens on 5432 internally.) App URL:
+# Postgres is published on host port 5433 so it never collides with a local
+# Postgres on 5432 (the container still listens on 5432). Point .env at them:
 #   DATABASE_URL=postgresql://praxis:praxis@localhost:5433/praxis
 #   PRAXIS_STATE_BACKEND=postgres
 #   REDIS_URL=redis://localhost:6379

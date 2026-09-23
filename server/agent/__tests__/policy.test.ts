@@ -12,7 +12,7 @@ import { policyFixture, randomAddress, SYSTEM_PROGRAM, USDC } from "../../testin
 
 const NOW = Math.floor(Date.now() / 1000);
 
-describe("checkTransferPolicy (mirrors agent_transfer §5 order)", () => {
+describe("checkTransferPolicy (mirrors agent_transfer order)", () => {
   test("allows a transfer within all limits", () => {
     const out = checkTransferPolicy(policyFixture(), 1_000_000_000n, randomAddress(), NOW);
     expect(out.allowed).toBe(true);

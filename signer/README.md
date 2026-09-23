@@ -14,8 +14,6 @@ the in-process `LocalKeypairSigner` (the default).
 ```bash
 SIGNER_TOKEN=<long-random-shared-secret> \
 SIGNER_AGENT_KEYPAIR_PATH=./keys/agent.json \
-SIGNER_AEGIS_PROGRAM_ID=7qRKV1dNPCixKWDLHsuHa5puFsNPtNCzC1sX6P1kpFgb \
-SIGNER_PORT=8787 \
 bun run signer
 ```
 
@@ -24,7 +22,8 @@ Env:
 - `SIGNER_TOKEN` (required) — bearer token the app must present.
 - `SIGNER_AGENT_KEYPAIR` or `SIGNER_AGENT_KEYPAIR_PATH` (required) — the agent
   secret key (JSON array or base58), or a path to it.
-- `SIGNER_AEGIS_PROGRAM_ID` (optional) — defaults to the Aegis program id.
+- `SIGNER_AEGIS_PROGRAM_ID` (optional) — defaults to the repo's Aegis program id
+  (`server/aegis/constants.ts`); set it if you deployed your own.
 - `SIGNER_PORT` (optional) — defaults to `8787`.
 - `SIGNER_MAX_SIGNATURES_PER_MINUTE` (optional) — defaults to `60`.
 
@@ -48,26 +47,13 @@ This process is the only component that observes every use of the agent key,
 so "what did the agent sign while the token was leaked" is answerable only
 from here. Ship these lines somewhere durable.
 
-## Deploy for ~$0 (Oracle Cloud Always Free + Cloudflare Tunnel)
+## Deploy
 
-1. Create an **Oracle Cloud Always Free** VM (ARM Ampere is generous and free
-   forever). Install Bun, copy this repo (or just `signer/` + `server/`), and run
-   the service bound to `127.0.0.1:8787`.
-2. Expose it over HTTPS with a **Cloudflare Tunnel** (free TLS, no open inbound
-   ports or static IP):
-   ```bash
-   cloudflared tunnel --url http://127.0.0.1:8787
-   ```
-   (or a named tunnel mapped to a subdomain you control).
-3. On the Praxis app (Vercel), set:
-   - `PRAXIS_AGENT_SIGNER_URL=https://<your-tunnel-host>/sign`
-   - `PRAXIS_AGENT_PUBLIC_KEY=<agent pubkey>` (not secret)
-   - `PRAXIS_AGENT_SIGNER_TOKEN=<same SIGNER_TOKEN>`
-   - leave `PRAXIS_ALLOW_LOCAL_AGENT_KEY` unset so a raw in-process key is refused.
-
-The agent private key now lives only on the VM; the Vercel app holds just the
-agent public key and the bearer token. Run the VM process under a supervisor
-(`systemd`, `pm2`, or `tmux`) so it restarts on reboot.
+`scripts/oracle-vm-setup.sh` provisions the signer on an Oracle Cloud
+Always-Free VM behind a Cloudflare Tunnel (systemd unit, generated key and
+token) and prints the `PRAXIS_AGENT_SIGNER_*` values for the app. See
+[docs/DEPLOY.md](../docs/DEPLOY.md#production-agent-key-custody). The service
+imports from `server/`, so deploy it from a full checkout.
 
 ## Hardening later
 

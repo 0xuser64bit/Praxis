@@ -2,9 +2,9 @@
  * Rule-based intent parser — the mock agent's "brain". Deterministic so the
  * demo is reproducible by typing. Turns a natural-language line into agent
  * blocks plus any proposals/activity to commit. Ambiguous or unknown names ask
- * a clarifying question rather than guess (spec §12.ii).
+ * a clarifying question rather than guess.
  *
- * A real backend swaps this for a Claude tool-call that emits the same shapes.
+ * API mode swaps this for an LLM tool-call that emits the same shapes.
  */
 
 import type {

@@ -1,7 +1,7 @@
 /**
  * Unit checks for the server-side agent-layer swap allow-list (`checkSwapPolicy`).
  *
- * This is the API-mode half of demo §9 #3 ("the allow-list holds"): the server
+ * This is the API-mode half of "the allow-list holds": the server
  * must reject an unverified-mint swap with the SAME verdict the mock shows.
  * Pure function, no chain needed.
  *
@@ -54,7 +54,7 @@ function policy(overrides: Partial<PolicyView> = {}): PolicyView {
 const usdc: TokenInfo = { symbol: "USDC", mint: USDC_MINT, decimals: 6, verified: true };
 const scam: TokenInfo = { symbol: "SCAMCOIN", mint: SCAM_MINT, decimals: 6, verified: false };
 
-console.log("┌──── SERVER SWAP ALLOW-LIST CHECK (demo §9 #3, API mode) ───────────────────");
+console.log("┌──── SERVER SWAP ALLOW-LIST CHECK (API mode) ───────────────────────────────");
 
 console.log("│ C1  Unverified mint → rejected by mint allow-list");
 {

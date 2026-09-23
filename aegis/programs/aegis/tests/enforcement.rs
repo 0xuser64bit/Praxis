@@ -1,4 +1,5 @@
-//! Aegis enforcement gate — the five §5 test scenarios plus admin invariants.
+//! Aegis enforcement gate — T1–T10: the core enforcement scenarios plus admin,
+//! SPL, Token-2022 and vault invariants.
 //!
 //! These are simultaneously the correctness gate and the demo. We use LiteSVM
 //! (in-process SVM) so we can WARP THE CLOCK deterministically — a plain

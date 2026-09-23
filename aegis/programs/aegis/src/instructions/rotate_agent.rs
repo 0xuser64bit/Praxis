@@ -1,7 +1,7 @@
 use crate::{constants::*, error::*, events::*, state::*};
 use anchor_lang::prelude::*;
 
-/// Owner-only. Swaps in a fresh agent session key (spec §5).
+/// Owner-only. Swaps in a fresh agent session key.
 ///
 /// Rotating also clears `paused` so the new key is immediately usable — the
 /// intent of "rotate" is to install a working key. To rotate WITHOUT enabling,

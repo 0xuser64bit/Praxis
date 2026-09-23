@@ -1,10 +1,6 @@
 import type { Metadata } from "next";
-import {
-  Geist,
-  Geist_Mono,
-  Instrument_Serif,
-  JetBrains_Mono,
-} from "next/font/google";
+import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { SplashLoader } from "@/components/praxis/SplashLoader";
 
@@ -25,10 +21,17 @@ const instrumentSerif = Instrument_Serif({
   subsets: ["latin"],
 });
 
-const jetbrainsMono = JetBrains_Mono({
+// Self-hosted, not next/font/google: Google sometimes serves this family as
+// `fonts.gstatic.com/l/font?kit=…&skey=…`, and Turbopack's font-file import
+// cannot carry a URL with its own query string ("next/font/google queries
+// have exactly one entry"), so the production build failed on whichever
+// builder Google answered that way. Latin subset, weights 400–500 (variable),
+// OFL-licensed — see app/fonts/JetBrainsMono-OFL.txt.
+const jetbrainsMono = localFont({
+  src: "./fonts/JetBrainsMono-latin.woff2",
   variable: "--font-jetbrains-mono",
-  weight: ["400", "500"],
-  subsets: ["latin"],
+  weight: "400 500",
+  display: "swap",
 });
 
 // `||` (not `??`) so an empty NEXT_PUBLIC_SITE_URL also falls back, rather than

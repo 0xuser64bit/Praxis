@@ -1,4 +1,4 @@
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
 import {
   ActionKind,
   type ActionProposal,
@@ -41,9 +41,11 @@ import {
   assertSharedAgentKeySafe,
   configForWalletOwner,
   getServerConfig,
+  requirePolicyAddress,
   validatePublicKey,
   type PraxisServerConfig,
 } from "../env";
+import { findVaultPda } from "../aegis/pdas";
 import {
   PraxisConflictError,
   PraxisConfigError,
@@ -70,7 +72,14 @@ import {
   resolveMintDecimals,
   supportedTokenPrograms,
 } from "../stocks/mintDecimals";
-import { hasProvisionalDecimals, isStockSymbol } from "../stocks/universe";
+import { hasProvisionalDecimals, isMirroredMint, isStockSymbol } from "../stocks/universe";
+import {
+  DEMO_FAUCET_USD,
+  MAINNET_GENESIS_HASH,
+  demoMintInstructions,
+  isMintAuthority,
+  type DemoStockGrant,
+} from "../stocks/demoFaucet";
 import { errorFields, logger } from "../observability/logger";
 
 interface StoreState {
@@ -683,6 +692,56 @@ export class PraxisServerProvider implements PraxisProvider {
     this.assertBackendOwnerSigningAvailable();
     await this.aegis.rotateAgent();
     await this.refreshOnChain();
+  };
+
+  /**
+   * Devnet only: mint $1,000 of the active mirror stock into this wallet's
+   * vault, so any wallet — a judge's, not just the operator's — can complete
+   * a buy. See `server/stocks/demoFaucet.ts` for why, and for the guards:
+   * mirror mints only, never mainnet, and only mints the faucet controls.
+   */
+  mintDemoStock = async (): Promise<DemoStockGrant> => {
+    const faucet = this.config.demoFaucetKeypair;
+    if (!faucet || !this.config.stocksEnabled) {
+      throw new PraxisConfigError("The demo stock faucet is off (PRAXIS_DEMO_FAUCET_KEYPAIR is not set).");
+    }
+    const policy = await this.refreshPolicy();
+    const known = this.config.tokens.find((t) => t.mint === policy.tokenMint);
+    if (!known || !isStockSymbol(known.symbol) || !isMirroredMint(known.symbol, known.mint)) {
+      throw new PraxisInputError("Switch your token envelope to a demo stock first (Policy → Token transfers).");
+    }
+    const connection = getConnection(this.config);
+    if ((await connection.getGenesisHash()) === MAINNET_GENESIS_HASH) {
+      throw new PraxisConfigError("The demo stock faucet never runs on mainnet.");
+    }
+    const mint = new PublicKey(known.mint);
+    const mintAccount = await connection.getAccountInfo(mint, this.config.commitment);
+    if (!mintAccount || !isMintAuthority(mintAccount.data, faucet.publicKey)) {
+      throw new PraxisConfigError(`The demo faucet key is not the mint authority of the ${known.symbol} mirror.`);
+    }
+    const token = await this.withVerifiedDecimals(known);
+    if (!token) throw new PraxisInputError(this.unverifiedDecimalsBlock(known.symbol).text);
+    const dollars = await this.dollarsToStock(token, String(DEMO_FAUCET_USD));
+    if ("clarify" in dollars) throw new PraxisInputError(dollars.clarify);
+
+    const tx = new Transaction().add(...demoMintInstructions({
+      faucet: faucet.publicKey,
+      owner: this.requireOwnerWallet(),
+      vault: findVaultPda(requirePolicyAddress(this.config), this.config.programId),
+      mint,
+      tokenProgramId: mintAccount.owner,
+      amount: dollars.amount,
+    }));
+    let sig: string;
+    try {
+      sig = await sendAndConfirmTransaction(connection, tx, [faucet], { commitment: this.config.commitment });
+    } catch (error) {
+      // Almost always the faucet key is out of devnet SOL for fees and rent.
+      logger.error("demo_faucet.mint_failed", { ...errorFields(error), symbol: token.symbol });
+      throw new PraxisConfigError("The demo faucet could not mint; its key may be out of devnet SOL.");
+    }
+    logger.info("demo_faucet.minted", { ownerKey: this.ownerKey, symbol: token.symbol, sig });
+    return { symbol: token.symbol, amount: dollars.amount, decimals: token.decimals, usd: DEMO_FAUCET_USD, sig };
   };
 
   /**

@@ -292,6 +292,13 @@ export function PolicyDashboard() {
                   },
                 );
               }}
+              onDemoStock={(symbol) => {
+                run(actionKeys.demoStock, requestDemoStock, {
+                  label: `Adding demo ${symbol} to your vault`,
+                  fallback: "The demo faucet failed.",
+                  success: `Added $1,000 of demo ${symbol} to your vault. Try "buy $40 ${symbol.toLowerCase()}".`,
+                });
+              }}
             />
 
             <Card className="mt-4 p-5">
@@ -696,11 +703,13 @@ function TokenEnvelopeCard({
   now,
   onConfigure,
   onPrepareAccounts,
+  onDemoStock,
 }: {
   policy: PolicyView;
   now: number;
   onConfigure: (config: TokenEnvelopeConfig) => void;
   onPrepareAccounts: () => void;
+  onDemoStock: (symbol: string) => void;
 }) {
   const configured = policy.tokenMint !== SYSTEM_PROGRAM;
   const { stocks, stocksEnabled, activeMint, symbolFor, decimalsFor, usesMirrorMints } =
@@ -957,6 +966,21 @@ function TokenEnvelopeCard({
               )}
               prepare accounts
             </button>
+            {stocks.find((s) => s.mint === policy.tokenMint)?.demoFaucet && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onDemoStock(symbol)}
+                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {pendingKey === actionKeys.demoStock ? (
+                  <span className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+                ) : (
+                  <IconPlus size={11} />
+                )}
+                $1,000 demo {symbol}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1492,3 +1516,18 @@ function formatExpiry(expiryTs: number, now: number): string {
   return `in ${hours}h ${mins}m`;
 }
 
+/**
+ * Devnet demo only: mint mirror stock into the signed-in wallet's vault, so a
+ * wallet other than the operator's can complete a buy. Not on the provider
+ * interface — it is a property of a demo deployment, not of Praxis.
+ */
+async function requestDemoStock(): Promise<void> {
+  const res = await fetch("/api/praxis/demo-faucet", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  if (res.ok) return;
+  const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+  throw new Error(typeof body?.error === "string" ? body.error : "The demo faucet failed.");
+}

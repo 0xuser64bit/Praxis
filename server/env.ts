@@ -121,6 +121,13 @@ export interface PraxisServerConfig {
    * anchored to it so a weekly buy fires on the weekday it promises.
    */
   scheduleHourUtc: number;
+  /**
+   * Devnet demo only: the mint authority of the mirror stock mints
+   * (`PRAXIS_DEMO_FAUCET_KEYPAIR[_PATH]`). When set, a signed-in wallet can
+   * mint demo stock into its own vault, so a judge's wallet can complete a
+   * buy. Refused on mainnet and on any non-mirror mint.
+   */
+  demoFaucetKeypair?: Keypair;
 }
 
 export const DEFAULT_PRESTOCKS_API_URL = "https://prestocks.com/api/prestocks";
@@ -184,6 +191,7 @@ export function getServerConfig(): PraxisServerConfig {
     stockDecimals,
     stockMints,
     scheduleHourUtc,
+    demoFaucetKeypair: parseOptionalKeypair("PRAXIS_DEMO_FAUCET_KEYPAIR", "PRAXIS_DEMO_FAUCET_KEYPAIR_PATH"),
   };
 
   // An operator override is authoritative: seed the resolver cache so the

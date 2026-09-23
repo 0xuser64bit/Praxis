@@ -581,3 +581,21 @@ describe("a dollar cap change", () => {
     expect(block.tokenConfig).toBeUndefined();
   });
 });
+
+describe("the demo stock faucet refuses before it touches a cluster", () => {
+  const openai = STOCK_TOKENS.find((t) => t.symbol === "OPENAI")!;
+
+  test("off unless a faucet key is configured", async () => {
+    const { provider } = build();
+    await expect(provider.mintDemoStock()).rejects.toThrow(/faucet is off/);
+  });
+
+  test("never mints a real PreStocks mint", async () => {
+    // These tests configure the canonical mints, i.e. not mirrors.
+    const provider = new PraxisServerProvider(
+      makeConfig({ demoFaucetKeypair: Keypair.generate() }),
+      new FakeAegis(policyFixture({ tokenMint: openai.mint })) as unknown as AegisClient,
+    );
+    await expect(provider.mintDemoStock()).rejects.toThrow(/demo stock first/);
+  });
+});

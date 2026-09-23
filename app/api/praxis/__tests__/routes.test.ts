@@ -18,6 +18,7 @@ import { POST as addContact } from "../add-contact/route";
 import { POST as removeContact } from "../remove-contact/route";
 import { POST as bootstrapPolicy } from "../bootstrap-policy/route";
 import { POST as ownerBuild } from "../owner/build/route";
+import { POST as demoFaucet } from "../demo-faucet/route";
 import { POST as ownerSubmit } from "../owner/submit/route";
 import { createSessionCookie } from "@/server/auth/session";
 import { resetConfigForTests } from "@/server/env";
@@ -293,6 +294,16 @@ describe("stocklana C05: stock universe + policy mint view", () => {
       else process.env.PRAXIS_PRESTOCKS_API_URL = prevApi;
       resetConfigForTests();
     }
+  });
+
+  test("demo-faucet: 401 without a session", async () => {
+    const res = await demoFaucet(makeRequest(`${ORIGIN}/api/praxis/demo-faucet`, { origin: ORIGIN, body: {} }));
+    expect(res.status).toBe(401);
+  });
+
+  test("demo-faucet: off unless a faucet key is configured (503, nothing minted)", async () => {
+    const res = await demoFaucet(authed("/api/praxis/demo-faucet", {}));
+    expect(res.status).toBe(503);
   });
 
   test("get-policy: 400 on an invalid ?mint= (never reaches the chain)", async () => {

@@ -126,6 +126,28 @@ export function buildCreateAssociatedTokenAccountIdempotentIx(args: {
   });
 }
 
+/** SPL Token / Token-2022 `MintTo` (tag 7, u64 LE amount). The demo faucet only. */
+export function buildMintToIx(args: {
+  mint: PublicKey;
+  destination: PublicKey;
+  authority: PublicKey;
+  amount: bigint;
+  tokenProgramId: PublicKey;
+}): TransactionInstruction {
+  const data = Buffer.alloc(9);
+  data.writeUInt8(7, 0);
+  data.writeBigUInt64LE(args.amount, 1);
+  return new TransactionInstruction({
+    programId: args.tokenProgramId,
+    keys: [
+      { pubkey: args.mint, isSigner: false, isWritable: true },
+      { pubkey: args.destination, isSigner: false, isWritable: true },
+      { pubkey: args.authority, isSigner: true, isWritable: false },
+    ],
+    data,
+  });
+}
+
 /**
  * Owner-signed token transfer (vault funding), as `TransferChecked` so the
  * token program verifies the mint and decimals. Token-2022 deprecates the

@@ -243,6 +243,17 @@ Mirrors reproduce symbol, decimals (9) and token program (Token-2022) — the
 whole buy path — and not the issuer's permanent-delegate/freeze/pause
 authorities. The app labels a mirrored universe in the UI.
 
+**Let judges fund their own vault.** Only the operator's wallet holds mirror
+stock, so any other wallet can configure an envelope but never complete a buy.
+Set `PRAXIS_DEMO_FAUCET_KEYPAIR` to the contents of `keys/owner.json` (the
+mirrors' mint authority) and Policy → Token transfers shows
+**$1,000 demo \<STOCK\>**: it mints that much of the active mirror into the
+signed-in wallet's vault and creates the vault's and owner's token accounts.
+Mirror mints only, never on mainnet (checked by genesis hash), 3 grants per
+wallet per day; the key pays rent, so keep it in devnet SOL. A judge's path is
+then: connect → initialize policy → switch envelope to OPENAI →
+**$1,000 demo OPENAI** → `buy $40 openai` → sign.
+
 ### Scheduled recurring buys
 
 `vercel.json` schedules `/api/cron/stocks` daily at 09:00 UTC. (Hobby plan

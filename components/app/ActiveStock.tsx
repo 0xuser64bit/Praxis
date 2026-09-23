@@ -41,6 +41,8 @@ export interface StockUniverseEntry {
   mirrored?: boolean;
   /** PreStocks price per whole token; absent when the feed is down. */
   usdPrice?: number;
+  /** A devnet mirror this deployment can mint demo stock of. */
+  demoFaucet?: boolean;
 }
 
 interface ActiveStockApi {

@@ -30,7 +30,8 @@ export const dynamic = "force-dynamic";
  * devnet demo is moving real pre-IPO tokens.
  *
  * `usdPrice` (PreStocks tokenPrice, absent when the feed is down) lets the
- * policy screen default a stock's caps in dollars.
+ * policy screen default a stock's caps in dollars. `demoFaucet` marks a mirror
+ * this deployment can mint demo stock of (`/api/praxis/demo-faucet`).
  */
 export async function GET(request: Request) {
   return withReadProvider(request, async () => {
@@ -51,6 +52,7 @@ export async function GET(request: Request) {
         decimals: configured?.decimals ?? DEFAULT_STOCK_DECIMALS,
         mirrored: isMirroredMint(s.symbol, mint),
         usdPrice: findPrestocksEntry(quotes, s.symbol)?.tokenPrice,
+        demoFaucet: Boolean(config.demoFaucetKeypair) && isMirroredMint(s.symbol, mint),
       };
     });
 

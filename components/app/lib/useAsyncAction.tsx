@@ -187,6 +187,7 @@ export const actionKeys = {
   deleteAgent: "agent:delete",
   configureToken: "token:configure",
   prepareAccounts: "token:prepare",
+  demoStock: "token:demo",
   allowList: (kind: string, address: string, mode: string) => `allowlist:${kind}:${mode}:${address}`,
   addContact: "contacts:add",
   removeContact: (key: string) => `contacts:remove:${key}`,

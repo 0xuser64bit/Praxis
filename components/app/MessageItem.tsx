@@ -19,10 +19,12 @@ export function MessageItem({
   message,
   onSend,
   onOpenPolicy,
+  disabled,
 }: {
   message: Message;
   onSend: (text: string) => void;
   onOpenPolicy: () => void;
+  disabled?: boolean;
 }) {
   if (message.role === "user") {
     return (
@@ -59,6 +61,7 @@ export function MessageItem({
                   text={block.text}
                   options={block.options}
                   onChoose={onSend}
+                  disabled={disabled}
                 />
               );
             case "proposal":

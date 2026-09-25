@@ -11,6 +11,8 @@ import { Surface, SurfaceBand } from "./ui";
 import { useToast } from "./Toast";
 import { messageFromError } from "./lib/useAsyncAction";
 
+type SendError = { text: string; message: string };
+
 export function Conversation({
   threadId,
   onOpenPolicy,
@@ -30,7 +32,7 @@ export function Conversation({
   // view switch (which remounts this component) replays all historical
   // notices as popups.
   const seen = useRef<{ threadId: string; ids: Set<string> } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<SendError | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const messageCount = thread?.messages.length ?? 0;
@@ -81,11 +83,15 @@ export function Conversation({
     );
   }
 
-  const onSend = (text: string) => {
+  const onSend = async (text: string): Promise<boolean> => {
     setError(null);
-    void provider.send(threadId ?? "", text).catch((err) => {
-      setError(messageFromError(err, "Message failed."));
-    });
+    try {
+      await provider.send(threadId ?? "", text);
+      return true;
+    } catch (err) {
+      setError({ text, message: messageFromError(err, "Message failed.") });
+      return false;
+    }
   };
 
   return (
@@ -98,7 +104,13 @@ export function Conversation({
         )}
         <div role="log" aria-label="Conversation" aria-live="polite" aria-relevant="additions">
           {thread.messages.map((m) => (
-            <MessageItem key={m.id} message={m} onSend={onSend} onOpenPolicy={onOpenPolicy} />
+            <MessageItem
+              key={m.id}
+              message={m}
+              onSend={onSend}
+              onOpenPolicy={onOpenPolicy}
+              disabled={thinking}
+            />
           ))}
         </div>
         {thinking && <Thinking />}
@@ -109,9 +121,16 @@ export function Conversation({
         <SurfaceBand className="mb-3">
           <div
             role="alert"
-            className="rounded-lg bg-[rgba(199,91,91,0.10)] px-3 py-2 text-[12px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]"
+            className="flex items-center justify-between gap-3 rounded-lg bg-[rgba(199,91,91,0.10)] px-3 py-2 text-[12px] leading-[1.45] text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.28)]"
           >
-            {error}
+            <span>{error.message}</span>
+            <button
+              type="button"
+              onClick={() => void onSend(error.text)}
+              className="min-h-9 shrink-0 rounded-md px-2.5 text-[11px] font-medium text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.35)] hover:bg-[rgba(199,91,91,0.12)]"
+            >
+              Retry
+            </button>
           </div>
         </SurfaceBand>
       )}

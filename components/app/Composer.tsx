@@ -24,17 +24,27 @@ export function Composer({
   disabled,
   showSuggestions,
 }: {
-  onSend: (text: string) => void;
+  onSend: (text: string) => Promise<boolean>;
   disabled?: boolean;
   showSuggestions?: boolean;
 }) {
   const [value, setValue] = useState("");
+  const [sending, setSending] = useState(false);
+  const busy = Boolean(disabled || sending);
 
-  const submit = () => {
+  const submit = async () => {
     const text = value.trim();
-    if (!text || disabled) return;
-    onSend(text);
-    setValue("");
+    if (!text || busy) return;
+    setSending(true);
+    try {
+      const sent = await onSend(text);
+      if (sent) setValue("");
+      else setValue(text);
+    } catch {
+      setValue(text);
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -45,9 +55,9 @@ export function Composer({
             <button
               key={s}
               type="button"
-              disabled={disabled}
+              disabled={busy}
               onClick={() => {
-                if (!disabled) onSend(s);
+                if (!busy) void onSend(s);
               }}
               className="min-h-9 cursor-pointer rounded-full bg-[var(--bg-card)] px-3 py-1.5 [font-family:var(--font-mono)] text-[11.5px] text-[var(--text-secondary)] [border:0.5px_solid_var(--border-strong)] [transition:border-color_0.15s,color_0.15s] hover:[border-color:var(--border-bright)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 max-[760px]:min-h-11"
             >
@@ -59,7 +69,7 @@ export function Composer({
 
       <div
         className={`flex items-center gap-2.5 rounded-lg bg-[var(--bg-card)] px-3.5 py-2.5 [border:0.5px_solid_var(--border-strong)] [transition:border-color_0.15s] focus-within:[border-color:var(--accent)] ${
-          disabled ? "opacity-60" : ""
+          busy ? "opacity-60" : ""
         }`}
       >
         <span aria-hidden="true" className="[font-family:var(--font-mono)] text-[var(--accent)]">›</span>
@@ -69,21 +79,23 @@ export function Composer({
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              submit();
+              void submit();
             }
           }}
-          disabled={disabled}
+          disabled={busy}
+          maxLength={2000}
           // Not "thinking…": the indicator above stops saying that past twelve
           // seconds, and a placeholder that disagrees with it reads as a stall.
-          placeholder={disabled ? "Praxis is working…" : "Tell Praxis what to do…"}
+          placeholder={busy ? "Praxis is working…" : "Tell Praxis what to do…"}
           aria-label="Message Praxis"
           className="min-w-0 flex-1 bg-transparent [font-family:var(--font-mono)] text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] max-[760px]:text-[16px]"
         />
         <button
           type="button"
-          onClick={submit}
-          disabled={disabled || !value.trim()}
+          onClick={() => void submit()}
+          disabled={busy || !value.trim()}
           aria-label="Send"
+          aria-busy={sending}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-[var(--text-primary)] text-[var(--bg)] [transition:background_0.15s] hover:bg-[var(--accent)] disabled:cursor-not-allowed disabled:bg-[var(--bg-elevated)] disabled:text-[var(--text-tertiary)]"
         >
           <IconArrowRight size={15} />

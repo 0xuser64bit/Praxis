@@ -19,16 +19,24 @@ const SUGGESTIONS = [
   "swap 100 usdc into JUP",
 ];
 
+/**
+ * The draft is controlled by the conversation: it is cleared only once a send
+ * of that text succeeds, whichever control sent it, so a failed message stays
+ * editable and a successful retry cannot leave a stale copy behind.
+ */
 export function Composer({
+  value,
+  onChange,
   onSend,
   disabled,
   showSuggestions,
 }: {
-  onSend: (text: string) => Promise<boolean>;
+  value: string;
+  onChange: (value: string) => void;
+  onSend: (text: string) => Promise<void>;
   disabled?: boolean;
   showSuggestions?: boolean;
 }) {
-  const [value, setValue] = useState("");
   const [sending, setSending] = useState(false);
   const busy = Boolean(disabled || sending);
 
@@ -37,11 +45,7 @@ export function Composer({
     if (!text || busy) return;
     setSending(true);
     try {
-      const sent = await onSend(text);
-      if (sent) setValue("");
-      else setValue(text);
-    } catch {
-      setValue(text);
+      await onSend(text);
     } finally {
       setSending(false);
     }
@@ -75,7 +79,7 @@ export function Composer({
         <span aria-hidden="true" className="[font-family:var(--font-mono)] text-[var(--accent)]">›</span>
         <input
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();

@@ -33,6 +33,7 @@ export function Conversation({
   // notices as popups.
   const seen = useRef<{ threadId: string; ids: Set<string> } | null>(null);
   const [error, setError] = useState<SendError | null>(null);
+  const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const messageCount = thread?.messages.length ?? 0;
@@ -83,14 +84,16 @@ export function Conversation({
     );
   }
 
-  const onSend = async (text: string): Promise<boolean> => {
+  // Every send path (composer, retry, clarify and suggestion chips) lands here.
+  // A failure leaves the draft alone so the text can be edited and resent; a
+  // success clears it only if the draft is the text that just went out.
+  const onSend = async (text: string): Promise<void> => {
     setError(null);
     try {
-      await provider.send(threadId ?? "", text);
-      return true;
+      await provider.send(thread.id, text);
+      setDraft((current) => (current.trim() === text ? "" : current));
     } catch (err) {
       setError({ text, message: messageFromError(err, "Message failed.") });
-      return false;
     }
   };
 
@@ -135,7 +138,13 @@ export function Conversation({
           </div>
         </SurfaceBand>
       )}
-      <Composer onSend={onSend} disabled={thinking} showSuggestions={messageCount <= 1} />
+      <Composer
+        value={draft}
+        onChange={setDraft}
+        onSend={onSend}
+        disabled={thinking}
+        showSuggestions={messageCount <= 1}
+      />
     </div>
   );
 }

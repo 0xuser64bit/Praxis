@@ -507,7 +507,9 @@ export class RemotePraxisProvider implements PraxisProvider {
       connection: {
         mode: "api",
         phase: "stale",
-        message: "Praxis is showing the last known state. Retry when you are back online.",
+        // Background polls keep the last good snapshot: surface the server's
+        // reason (rate_limited, conflict, …) instead of always blaming offline.
+        message: api?.message ?? "Praxis is showing the last known state. Retry when you are back online.",
         code: api?.code ?? "client_error",
       },
     };
@@ -588,11 +590,14 @@ function readErrorDetails(body: unknown): Record<string, unknown> | undefined {
 
 function normalizeRequestError(error: unknown): PraxisApiError {
   if (error instanceof PraxisApiError) return error;
-  return new PraxisApiError(
+  // Generic message for the UI, original error kept as `cause` for debugging.
+  const normalized = new PraxisApiError(
     "Praxis could not reach the server. Check your connection and try again.",
     0,
     "client_error",
   );
+  if (error instanceof Error) (normalized as Error & { cause?: unknown }).cause = error;
+  return normalized;
 }
 
 async function parseResponse(res: Response): Promise<unknown> {

@@ -36,10 +36,16 @@ export function ProviderProvider({ children }: { children: ReactNode }) {
   const auth = useAuthSession();
   const [provider] = useState<PraxisProvider>(() => {
     const mode = resolveProviderMode();
-    return mode === "api"
-      ? new RemotePraxisProvider(() => auth?.invalidateSession())
-      : new MockPraxisProvider();
+    return mode === "api" ? new RemotePraxisProvider() : new MockPraxisProvider();
   });
+
+  // Keep the 401 → sign-in callback pointed at the current session even if
+  // this provider outlives a sign-out/in cycle without remounting.
+  useEffect(() => {
+    if (provider instanceof RemotePraxisProvider) {
+      provider.setOnUnauthorized(() => auth?.invalidateSession());
+    }
+  }, [provider, auth]);
 
   // The remote provider polls; tie that to the component's lifetime so signing
   // out actually stops it. Without this the interval outlived every unmount

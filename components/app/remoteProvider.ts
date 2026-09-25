@@ -70,8 +70,16 @@ function createEmptyState(): RemoteStoreState {
 export class RemotePraxisProvider implements PraxisProvider {
   private state: RemoteStoreState = createEmptyState();
   private unauthorizedNotified = false;
+  private onUnauthorized?: () => void;
 
-  constructor(private readonly onUnauthorized?: () => void) {}
+  constructor(onUnauthorized?: () => void) {
+    this.onUnauthorized = onUnauthorized;
+  }
+
+  /** Point 401 recovery at the current session (see ProviderProvider). */
+  setOnUnauthorized(fn?: () => void): void {
+    this.onUnauthorized = fn;
+  }
   private listeners = new Set<() => void>();
   private version = 0;
   // Monotonic token so a slow, stale `refreshAll` can't overwrite the result of
@@ -100,6 +108,8 @@ export class RemotePraxisProvider implements PraxisProvider {
   start(): () => void {
     if (this.started) return this.stop;
     this.started = true;
+    // A reused instance serves a new session; allow one fresh 401 → sign-in.
+    this.unauthorizedNotified = false;
     void this.refreshAll();
 
     if (typeof document === "undefined") return this.stop;

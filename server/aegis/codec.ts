@@ -98,6 +98,18 @@ export function decodePolicyAccount(
   };
 }
 
+/** SPL Token's account size. Token-2022 keeps this base layout and appends extensions. */
+const TOKEN_ACCOUNT_BASE_LEN = 165;
+
+/**
+ * `amount` of an SPL Token or Token-2022 token account: a u64 LE at byte 64,
+ * after the mint and owner keys. `undefined` when the data is too short to be
+ * a token account, so a malformed account never reads as a balance.
+ */
+export function decodeTokenAccountAmount(data: Buffer): bigint | undefined {
+  return data.length >= TOKEN_ACCOUNT_BASE_LEN ? data.readBigUInt64LE(64) : undefined;
+}
+
 /** Read `bump` + the appended SPL-token envelope fields, in struct order. */
 function readTokenEnvelope(c: Cursor): {
   tokenMint: string;

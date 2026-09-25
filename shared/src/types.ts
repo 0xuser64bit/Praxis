@@ -121,6 +121,13 @@ export interface PolicyView {
   tokenSpentToday: BaseUnits;
   /** Unix seconds; start of the token's rolling 24h window. */
   tokenDayStartTs: number;
+  /**
+   * Live balance of the vault's token account for `tokenMint`, in the token's
+   * base units: what the agent can actually move. Unset when no envelope is
+   * configured or the balance could not be read. Unset means unknown, never
+   * zero, so a failed read can't look like an empty vault.
+   */
+  vaultTokenBalance?: BaseUnits;
 }
 
 // ---------------------------------------------------------------------------

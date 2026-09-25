@@ -188,9 +188,11 @@ export class MockPraxisProvider implements PraxisProvider {
         };
       } else {
         this.applyTokenRollover(ts);
+        const held = this.state.policy.vaultTokenBalance;
         this.state.policy = {
           ...this.state.policy,
           tokenSpentToday: this.state.policy.tokenSpentToday + p.detail.amount,
+          ...(held !== undefined ? { vaultTokenBalance: held > p.detail.amount ? held - p.detail.amount : 0n } : {}),
         };
       }
       p.check = check;
@@ -325,8 +327,11 @@ export class MockPraxisProvider implements PraxisProvider {
     // Mirror on-chain configure_token: set the token + caps, and start a fresh
     // token daily window only when the mint changes.
     const newMint = config.tokenMint !== this.state.policy.tokenMint;
+    // The mock tracks one balance, for the seeded mint; another mint's is unknown.
+    const { vaultTokenBalance, ...policy } = this.state.policy;
     this.state.policy = {
-      ...this.state.policy,
+      ...policy,
+      ...(newMint || vaultTokenBalance === undefined ? {} : { vaultTokenBalance }),
       tokenMint: config.tokenMint,
       tokenMaxPerTx: config.tokenMaxPerTx,
       tokenDailyLimit: config.tokenDailyLimit,

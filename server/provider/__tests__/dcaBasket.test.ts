@@ -63,6 +63,9 @@ class FakeAegis {
   async getPolicy() {
     return this.policy;
   }
+  async getVaultTokenBalance() {
+    return undefined;
+  }
   async getActionLog() {
     return [];
   }

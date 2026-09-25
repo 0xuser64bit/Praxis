@@ -59,6 +59,10 @@ class FakeAegis {
   async getPolicy() {
     return this.policy;
   }
+  vaultTokenBalance: () => Promise<bigint | undefined> = async () => undefined;
+  getVaultTokenBalance() {
+    return this.vaultTokenBalance();
+  }
   actionLog: ActionLogEntry[] = [];
   async getActionLog() {
     return this.actionLog;
@@ -123,6 +127,25 @@ function build(over: Partial<PraxisServerConfig> = {}, policy = policyFixture())
   const provider = new PraxisServerProvider(makeConfig(over), fake as unknown as AegisClient);
   return { provider, fake };
 }
+
+describe("refreshPolicy", () => {
+  test("attaches the vault's token balance to the policy", async () => {
+    const { provider, fake } = build();
+    fake.vaultTokenBalance = async () => 1_000_000_000n;
+    expect((await provider.refreshPolicy()).vaultTokenBalance).toBe(1_000_000_000n);
+    expect(provider.getPolicy().vaultTokenBalance).toBe(1_000_000_000n);
+  });
+
+  test("a failed token balance read leaves it unknown, not zero, and keeps the policy", async () => {
+    const { provider, fake } = build();
+    fake.vaultTokenBalance = async () => {
+      throw new Error("rpc down");
+    };
+    const policy = await provider.refreshPolicy();
+    expect(policy.address).toBe(fake.policy.address);
+    expect("vaultTokenBalance" in policy).toBe(false);
+  });
+});
 
 describe("unknown assets", () => {
   test("an unrecognized symbol clarifies instead of simulating a placeholder mint", async () => {

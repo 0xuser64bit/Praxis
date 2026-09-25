@@ -591,3 +591,70 @@ describe("submitSignedTransaction", () => {
 function isAtaCreateFor(ix: TransactionInstruction, owner: PublicKey): boolean {
   return ix.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID) && ix.keys[2]?.pubkey.equals(owner);
 }
+
+describe("getVaultTokenBalance", () => {
+  /** A Token-2022 token account (165-byte base layout) holding `amount`. */
+  function tokenAccount(amount: bigint) {
+    const data = Buffer.alloc(170);
+    data.writeBigUInt64LE(amount, 64);
+    return { data, owner: TOKEN_2022_PROGRAM_ID, lamports: 1, executable: false };
+  }
+
+  /** A client whose chain holds one Token-2022 mint and, optionally, the vault's account for it. */
+  function setup(vaultAccount: ReturnType<typeof tokenAccount> | { data: Buffer } | null, mintReadable = true) {
+    const config = makeConfig();
+    const mint = Keypair.generate().publicKey;
+    const policy = policyFixture({ address: config.policyAddress!.toBase58(), tokenMint: mint.toBase58() });
+    const vault = findVaultPda(config.policyAddress!, DEFAULT_AEGIS_PROGRAM_ID);
+    const ata = findAssociatedTokenAddress(vault, mint, TOKEN_2022_PROGRAM_ID);
+    const mintData = Buffer.alloc(82);
+    mintData[44] = 9;
+    const client = new AegisClient(
+      config,
+      fakeConnection({
+        getAccountInfo: async (address: PublicKey) => {
+          if (address.equals(mint)) {
+            return mintReadable ? { data: mintData, owner: TOKEN_2022_PROGRAM_ID, lamports: 1, executable: false } : null;
+          }
+          return address.equals(ata) ? vaultAccount : null;
+        },
+      }),
+    );
+    return { client, policy };
+  }
+
+  test("reads the vault's Token-2022 ATA", async () => {
+    const { client, policy } = setup(tokenAccount(1_000_000_000_000n));
+    expect(await client.getVaultTokenBalance(policy)).toBe(1_000_000_000_000n);
+  });
+
+  test("a vault token account that was never created holds zero", async () => {
+    const { client, policy } = setup(null);
+    expect(await client.getVaultTokenBalance(policy)).toBe(0n);
+  });
+
+  test("is unknown, not zero, when the mint can't be read", async () => {
+    // Guessing classic SPL would derive an ATA that doesn't exist and read 0.
+    const { client, policy } = setup(tokenAccount(5n), false);
+    expect(await client.getVaultTokenBalance(policy)).toBeUndefined();
+  });
+
+  test("is unknown for an account too short to be a token account", async () => {
+    const { client, policy } = setup({ data: Buffer.alloc(72) });
+    expect(await client.getVaultTokenBalance(policy)).toBeUndefined();
+  });
+
+  test("is unknown with no envelope configured, without touching the chain", async () => {
+    const config = makeConfig();
+    const client = new AegisClient(
+      config,
+      fakeConnection({
+        getAccountInfo: async () => {
+          throw new Error("must not read");
+        },
+      }),
+    );
+    const policy = policyFixture({ address: config.policyAddress!.toBase58(), tokenMint: PublicKey.default.toBase58() });
+    expect(await client.getVaultTokenBalance(policy)).toBeUndefined();
+  });
+});

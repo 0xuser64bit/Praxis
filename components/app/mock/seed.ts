@@ -103,6 +103,7 @@ export function createInitialState(): StoreState {
     tokenDailyLimit: usdc("500"),
     tokenSpentToday: 0n,
     tokenDayStartTs: now,
+    vaultTokenBalance: usdc("1250"),
   };
 
   // A signed historical transfer from the previous window; the live demo starts

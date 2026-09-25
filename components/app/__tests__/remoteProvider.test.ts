@@ -139,3 +139,22 @@ describe("RemotePraxisProvider lifecycle", () => {
     expect(notified).toBe(seen);
   });
 });
+
+describe("RemotePraxisProvider refresh", () => {
+  test("re-pulls the policy and revives the vault token balance as a bigint", async () => {
+    // A money key missing from the revive list arrives as a string, and
+    // formatting it as base units throws mid-render.
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requests.push(url);
+      const body = url.includes("get-policy") ? { vaultBalance: "5", vaultTokenBalance: "1000000000000" } : [];
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof globalThis.fetch;
+
+    const provider = new RemotePraxisProvider();
+    await provider.refresh();
+
+    expect(requests.some((url) => url.includes("get-policy"))).toBe(true);
+    expect(provider.getPolicy().vaultTokenBalance).toBe(1_000_000_000_000n);
+  });
+});

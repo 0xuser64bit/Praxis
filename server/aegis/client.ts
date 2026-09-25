@@ -24,7 +24,7 @@ import {
   TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
 } from "./constants";
-import { decodeActionLog, decodePolicyAccount } from "./codec";
+import { decodeActionLog, decodePolicyAccount, decodeTokenAccountAmount } from "./codec";
 import { assertMatchesOwnerDraft, issueOwnerDraftToken } from "./ownerDraft";
 import { checkMintMovable, resolveMintInfo, supportedTokenPrograms } from "../stocks/mintDecimals";
 import {
@@ -251,6 +251,33 @@ export class AegisClient {
     }
 
     return decodePolicyAccount(policyAddress, policyInfo.data, BigInt(vaultBalance));
+  }
+
+  /**
+   * What the agent can move under the token envelope: the balance of the
+   * vault's associated token account, the only token account
+   * `agent_transfer_spl` debits. A missing account is a real zero, since
+   * nothing was ever deposited. `undefined` when no envelope is configured or
+   * the mint can't be read: the ATA address depends on the mint's token
+   * program, and a guessed program would read an account that doesn't exist
+   * and report a confident zero.
+   */
+  async getVaultTokenBalance(policy: PolicyView): Promise<bigint | undefined> {
+    if (policy.tokenMint === PublicKey.default.toBase58()) return undefined;
+    const mintInfo = await resolveMintInfo(this.conn, policy.tokenMint);
+    if (!mintInfo) return undefined;
+    const info = await this.readVaultTokenAccount(
+      policy,
+      new PublicKey(policy.tokenMint),
+      new PublicKey(mintInfo.programId),
+    );
+    return info ? decodeTokenAccountAmount(info.data) : 0n;
+  }
+
+  /** The vault's associated token account for `mint`, or null if it was never created. */
+  private readVaultTokenAccount(policy: PolicyView, mint: PublicKey, programId: PublicKey) {
+    const vault = findVaultPda(new PublicKey(policy.address), this.config.programId);
+    return this.conn.getAccountInfo(findAssociatedTokenAddress(vault, mint, programId), this.config.commitment);
   }
 
   async getActionLog(): Promise<ActionLogEntry[]> {
@@ -628,25 +655,20 @@ export class AegisClient {
   /**
    * Phase-1 teardown is SOL-only. If a token envelope is configured and its
    * vault token account still holds a balance, refuse to close so the tokens
-   * are never silently stranded (token sweep is a follow-up). SPL token account
-   * layout: amount is a u64 LE at byte offset 64.
+   * are never silently stranded (token sweep is a follow-up).
    */
   private async assertVaultTokensCleared(): Promise<void> {
     const policy = await this.getPolicy();
     if (policy.tokenMint === PublicKey.default.toBase58()) return;
-    const vault = findVaultPda(new PublicKey(policy.address), this.config.programId);
     const mint = new PublicKey(policy.tokenMint);
     const { programId } = await this.tokenProgramFor(mint);
-    const vaultTokenAccount = findAssociatedTokenAddress(vault, mint, programId);
-    const info = await this.conn.getAccountInfo(vaultTokenAccount, this.config.commitment);
+    const info = await this.readVaultTokenAccount(policy, mint, programId);
     if (!info) return;
-    // SPL token account layout: amount is a u64 LE at byte offset 64 (165-byte
-    // account). Guard length so a short/malformed account throws InputError,
-    // not a RangeError 500.
-    if (info.data.length < 72) {
+    // A malformed account throws InputError here, not a RangeError 500.
+    const balance = decodeTokenAccountAmount(info.data);
+    if (balance === undefined) {
       throw new PraxisInputError("Vault token account has unexpected layout; refusing teardown.");
     }
-    const balance = info.data.readBigUInt64LE(64);
     if (balance > 0n) {
       throw new PraxisInputError(
         "Move your SPL tokens out of the vault before deleting your agent (SOL-only teardown for now).",

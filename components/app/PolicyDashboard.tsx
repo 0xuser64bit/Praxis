@@ -50,8 +50,9 @@ import {
 } from "./lib/units";
 import { useNow } from "./lib/useNow";
 import { effectiveSpentToday, effectiveTokenSpentToday } from "./lib/policyMath";
-import { KNOWN_PROGRAMS, mintDecimals, mintLabel, programLabel } from "./lib/tokenCatalog";
+import { KNOWN_PROGRAMS, mintLabel, programLabel } from "./lib/tokenCatalog";
 import { useTokenCatalog } from "./TokenCatalog";
+import { useTokenMeta, VaultTokenBalance } from "./VaultToken";
 
 const SYSTEM_PROGRAM = KNOWN_PROGRAMS.system;
 
@@ -294,7 +295,12 @@ export function PolicyDashboard() {
                 );
               }}
               onDemoStock={(symbol) => {
-                run(actionKeys.demoStock, requestDemoStock, {
+                run(actionKeys.demoStock, async () => {
+                  await requestDemoStock();
+                  // The faucet runs outside the provider; re-pull so the new
+                  // balance shows now rather than on the next poll.
+                  await provider.refresh?.();
+                }, {
                   label: `Adding demo ${symbol} to your vault`,
                   fallback: "The demo faucet failed.",
                   success: `Added $1,000 of demo ${symbol} to your vault. Try "buy $40 ${symbol.toLowerCase()}".`,
@@ -713,25 +719,11 @@ function TokenEnvelopeCard({
   onDemoStock: (symbol: string) => void;
 }) {
   const configured = policy.tokenMint !== SYSTEM_PROGRAM;
-  const { stocks, stocksEnabled, activeMint, symbolFor, decimalsFor, usesMirrorMints } =
-    useActiveStock();
-  const {
-    envelopeCandidates,
-    unusable,
-    loaded: catalogLoaded,
-    decimalsFor: catalogDecimalsFor,
-  } = useTokenCatalog();
-  // Envelope label prefers the stock universe (OPENAI over a bare mint), then
-  // the static catalog, then a generic fallback.
-  const stockSymbol = symbolFor(policy.tokenMint);
-  // Decimals must come from a source that actually knows: the server-supplied
-  // universe entry, then the server token catalog (chain-confirmed), then the
-  // static catalog. The old fallback of 6 silently mis-scaled the PreStocks
-  // mints (9dp) by 1000x in both the cap defaults and the displayed amounts.
-  const scaleFor = (mint: string): number | undefined =>
-    decimalsFor(mint) ?? catalogDecimalsFor(mint) ?? mintDecimals(mint);
+  const { stocks, stocksEnabled, activeMint, symbolFor, usesMirrorMints } = useActiveStock();
+  const { envelopeCandidates, unusable, loaded: catalogLoaded } = useTokenCatalog();
+  const { labelFor, scaleFor } = useTokenMeta();
   const decimals = scaleFor(policy.tokenMint);
-  const symbol = stockSymbol ?? mintLabel(policy.tokenMint) ?? "TOKEN";
+  const symbol = labelFor(policy.tokenMint);
   const universeIndex = stocks.findIndex((s) => s.mint === policy.tokenMint);
   const stockEntry = universeIndex >= 0 ? stocks[universeIndex] : undefined;
   // Everything an envelope could actually be pointed at on this cluster: the
@@ -908,6 +900,15 @@ function TokenEnvelopeCard({
             </p>
           ) : (
             <>
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] text-[var(--text-secondary)]">In vault</span>
+                <VaultTokenBalance
+                  policy={policy}
+                  withUsd
+                  className="[font-family:var(--font-mono)] text-[13px] text-[var(--text-primary)]"
+                />
+              </div>
+              <div className="h-px bg-[var(--border)]" />
               <TokenSpend policy={policy} now={now} decimals={decimals} symbol={symbol} />
               <div className="h-px bg-[var(--border)]" />
               <CapRow
@@ -1287,6 +1288,11 @@ function VaultCard({
             {formatSol(policy.vaultBalance)}{" "}
             <span className="text-[15px] text-[var(--text-tertiary)]">SOL</span>
           </div>
+          <VaultTokenBalance
+            policy={policy}
+            withUsd
+            className="mt-1 block [font-family:var(--font-mono)] text-[12px] text-[var(--text-secondary)]"
+          />
           <div className="mt-1.5 flex justify-end gap-1.5">
             <button
               type="button"

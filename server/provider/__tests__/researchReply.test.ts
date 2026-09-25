@@ -76,7 +76,11 @@ function config(): PraxisServerConfig {
 }
 
 function build() {
-  const fake = { async getPolicy() { return policyFixture(); }, async getActionLog() { return []; } };
+  const fake = {
+    async getPolicy() { return policyFixture(); },
+    async getVaultTokenBalance() { return undefined; },
+    async getActionLog() { return []; },
+  };
   return new PraxisServerProvider(config(), fake as unknown as AegisClient);
 }
 

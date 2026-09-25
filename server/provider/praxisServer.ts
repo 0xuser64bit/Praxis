@@ -316,8 +316,14 @@ export class PraxisServerProvider implements PraxisProvider {
   // --- refresh ---
   async refreshPolicy(): Promise<PolicyView> {
     const policy = await this.aegis.getPolicy();
-    this.state.policy = policy;
-    return policy;
+    // Display only. A failed token read must not fail the policy read that
+    // every screen depends on, so it leaves the balance unknown instead.
+    const vaultTokenBalance = await this.aegis.getVaultTokenBalance(policy).catch((error: unknown) => {
+      logger.warn("policy.vault_token_balance_failed", { ...errorFields(error), mint: policy.tokenMint });
+      return undefined;
+    });
+    this.state.policy = vaultTokenBalance === undefined ? policy : { ...policy, vaultTokenBalance };
+    return this.state.policy;
   }
 
   /**

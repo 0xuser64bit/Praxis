@@ -438,6 +438,11 @@ export interface PraxisProvider {
   revokeAgent(): Promise<void>;
   /** Issue a fresh session key and unpause. */
   rotateAgent(): Promise<void>;
+  /**
+   * Re-pull state now, after a change made outside the provider (the devnet
+   * demo faucet). Only a networked provider has anything to re-pull.
+   */
+  refresh?(): Promise<void>;
   addToAllowList(kind: AllowListKind, address: Address): Promise<void>;
   removeFromAllowList(kind: AllowListKind, address: Address): Promise<void>;
   /** Save (or rename) an address-book contact. Labels have no signing power. */

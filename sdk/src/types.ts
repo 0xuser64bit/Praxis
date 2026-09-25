@@ -94,6 +94,8 @@ export interface PolicyView {
   tokenDailyLimit: BaseUnitString;
   tokenSpentToday: BaseUnitString;
   tokenDayStartTs: number;
+  /** The vault's balance of `tokenMint`. Absent when no envelope is set or it could not be read. */
+  vaultTokenBalance?: BaseUnitString;
 }
 
 export interface PolicyCheckResult {

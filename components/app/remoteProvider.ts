@@ -148,6 +148,8 @@ export class RemotePraxisProvider implements PraxisProvider {
 
   getVersion = (): number => this.version;
 
+  refresh = (): Promise<void> => this.refreshAll();
+
   getThreads = (): Thread[] => this.state.threads;
   getThread = (id: string): Thread | undefined => this.state.threads.find((thread) => thread.id === id);
   getProposal = (id: string): ActionProposal | undefined => this.state.proposals[id];
@@ -619,5 +621,6 @@ function isMoneyKey(key: string): boolean {
     "tokenMaxPerTx",
     "tokenDailyLimit",
     "tokenSpentToday",
+    "vaultTokenBalance",
   ].includes(key);
 }

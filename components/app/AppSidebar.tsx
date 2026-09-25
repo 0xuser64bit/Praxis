@@ -9,6 +9,7 @@ import {
 } from "@tabler/icons-react";
 
 import { Dot } from "./ui";
+import { VaultTokenBalance } from "./VaultToken";
 import { formatSol } from "./lib/units";
 import { KNOWN_PROGRAMS } from "./lib/tokenCatalog";
 import { PraxisLogoMark } from "@/components/praxis/PraxisLogo";
@@ -132,6 +133,10 @@ export function AppSidebar({
           <div className="text-[13px] font-medium text-[var(--text-primary)]">
             {formatSol(policy.vaultBalance)} SOL
           </div>
+          <VaultTokenBalance
+            policy={policy}
+            className="block truncate [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]"
+          />
         </div>
       </div>
     </aside>

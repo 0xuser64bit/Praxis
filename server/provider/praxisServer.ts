@@ -1409,10 +1409,16 @@ export class PraxisServerProvider implements PraxisProvider {
     return known ?? this.addressBook.labelFor(address);
   }
 
-  /** Resolve a recipient: named contact, or the owner's own wallet when none was named. */
+  /**
+   * Resolve a recipient: named contact, or the owner's own wallet when none was named.
+   *
+   * A tapped clarify option is sent back as a new line, and a bare address
+   * would lose the amount and asset. `continuation` turns each option's address
+   * into the full instruction to replay.
+   */
   private resolveSelfOrContact(
     recipient: string | undefined,
-    continuation?: (address: string) => string,
+    continuation: (address: string) => string,
   ): { address: string; name: string; note?: string } | { clarify: string; options: ClarifyOption[] } {
     if (!recipient) {
       return {
@@ -1426,7 +1432,7 @@ export class PraxisServerProvider implements PraxisProvider {
         clarify: resolved.question,
         options: resolved.options.map((option) => ({
           ...option,
-          value: continuation ? continuation(option.value) : option.value,
+          value: continuation(option.value),
         })),
       };
     }

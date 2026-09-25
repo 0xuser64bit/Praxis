@@ -1107,7 +1107,6 @@ function CapRow({
   decimals = 9,
   unit = "SOL",
   usdPrice,
-  validate,
 }: {
   label: string;
   value: bigint;
@@ -1116,7 +1115,6 @@ function CapRow({
   unit?: string;
   /** Price per whole `unit`; shows the cap's dollar value beside it (stocks). */
   usdPrice?: number;
-  validate?: (value: bigint) => string | undefined;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -1142,11 +1140,6 @@ function CapRow({
     }
     if (parsed <= 0n) {
       setError("Amount must be greater than zero.");
-      return;
-    }
-    const validationError = validate?.(parsed);
-    if (validationError) {
-      setError(validationError);
       return;
     }
     setError(null);

@@ -370,6 +370,7 @@ export type ConnectionErrorCode =
   | "conflict"
   /** Submitted to Solana but confirmation is unknown; reconcile by signature, never blind-retry. */
   | "submitted_unknown"
+  /** Raised by the client, never sent by the server: the request got no usable response. */
   | "client_error"
   | "internal_error";
 
@@ -377,7 +378,7 @@ export type ProviderConnectionState =
   | { mode: "mock"; phase: "ready" }
   | {
       mode: "api";
-       phase: "loading" | "ready" | "stale" | "error";
+      phase: "loading" | "ready" | "stale" | "error";
       message?: string;
       code?: ConnectionErrorCode;
       /** From `policy_not_found`: the PDA this wallet's policy will live at. */

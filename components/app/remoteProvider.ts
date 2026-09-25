@@ -118,8 +118,8 @@ export class RemotePraxisProvider implements PraxisProvider {
     // policy + activity on an interval so a confirmation that lands after the
     // optimistic refresh (or any out-of-band change) actually surfaces.
     // Refresh is six flat parallel reads, so this is cheap and well under the
-    // read limit. Background ticks fail silently — a transient blip must not
-    // tear the app down to an error screen mid-flow.
+    // read limit. A failed tick keeps the last good snapshot and marks it
+    // stale rather than tearing the app down to an error screen mid-flow.
     const REFRESH_MS = 12_000;
     this.refreshTimer = setInterval(() => {
       if (document.visibilityState !== "visible") return;
@@ -407,7 +407,7 @@ export class RemotePraxisProvider implements PraxisProvider {
   private async refreshAll() {
     const token = ++this.refreshToken;
     try {
-      // Five parallel reads, flat — regardless of conversation length. Proposals
+      // Six parallel reads, flat — regardless of conversation length. Proposals
       // come back as a single batch (`get-proposals`) rather than one request per
       // proposal block, which previously made refresh O(proposals) sequential
       // round-trips on every mutation and could trip the read rate limit.

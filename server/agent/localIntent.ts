@@ -310,7 +310,8 @@ function matchPolicyChange(text: string): Extract<ParsedAction, { kind: "policy_
 
 /** Mechanical recurring buy ("buy $50 openai every monday", "dca 10 openai weekly"). */
 function matchDca(text: string): Extract<ParsedAction, { kind: "schedule_dca" }> | null {
-  const CADENCE = "every\\s+[a-z]+|daily|weekly|monthly";
+  const CADENCE =
+    "every\\s+[a-z]+(?:\\s+on(?:\\s+the)?\\s+day\\s+\\d{1,2}(?:st|nd|rd|th)?)?|daily|weekly|monthly(?:\\s+on(?:\\s+the)?\\s+day\\s+\\d{1,2}(?:st|nd|rd|th)?)?";
   // People put the recipient on either side of the cadence, and both read
   // naturally: "buy 10 openai for maya every monday" and "buy 10 openai every
   // monday for maya". Only the first used to parse; the second fell through to
@@ -388,6 +389,7 @@ function isBasketRequest(text: string): boolean {
 function hasRecurringCadence(text: string): boolean {
   return (
     /\bevery\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|day|week|month|morning)\b/i.test(text) ||
+    /\bmonthly\s+on(?:\s+the)?\s+day\s+\d{1,2}(?:st|nd|rd|th)?\b/i.test(text) ||
     /\b(weekly|monthly|daily|recurring|auto-?buy)\b/i.test(text) ||
     /\bdca\b/i.test(text)
   );

@@ -4,6 +4,7 @@ import {
   advanceCadence,
   availableBaskets,
   describeCadence,
+  formatCadenceForReplay,
   nextFireAt,
   parseCadence,
   resolveBasket,
@@ -42,6 +43,12 @@ describe("parseCadence", () => {
     expect(describeCadence({ type: "weekly", weekday: 1 })).toBe("every Monday");
     expect(describeCadence({ type: "daily" })).toBe("daily");
     expect(describeCadence({ type: "monthly", day: 15 })).toBe("monthly");
+  });
+
+  test("replay cadence preserves a monthly day", () => {
+    const cadence = { type: "monthly", day: 15 } as const;
+    expect(formatCadenceForReplay(cadence)).toBe("monthly on day 15");
+    expect(parseCadence(formatCadenceForReplay(cadence))).toEqual(cadence);
   });
 });
 

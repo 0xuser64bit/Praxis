@@ -158,7 +158,7 @@ function parseAddress(value: string): PublicKey | undefined {
 function toOption(entry: AddressBookEntry): ClarifyOption {
   return {
     label: entry.name,
-    value: entry.label,
+    value: entry.address,
     hint: entry.note ?? entry.address,
   };
 }

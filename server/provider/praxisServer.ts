@@ -60,6 +60,7 @@ import {
   availableBaskets,
   nextFireAt,
   describeCadence,
+  formatCadenceForReplay,
   resolveBasket,
   sameCadence,
   splitBasket,
@@ -1180,7 +1181,10 @@ export class PraxisServerProvider implements PraxisProvider {
         }],
       };
     }
-    const resolved = this.resolveSelfOrContact(action.toSelf ? undefined : action.recipient);
+    const resolved = this.resolveSelfOrContact(
+      action.toSelf ? undefined : action.recipient,
+      (address) => `send ${action.usdSigil ? "$" : ""}${action.amountHuman} ${action.asset} to ${address}`,
+    );
     if ("clarify" in resolved) {
       return {
         blocks: [
@@ -1354,6 +1358,7 @@ export class PraxisServerProvider implements PraxisProvider {
   /** Resolve a recipient: named contact, or the owner's own wallet when none was named. */
   private resolveSelfOrContact(
     recipient: string | undefined,
+    continuation?: (address: string) => string,
   ): { address: string; name: string; note?: string } | { clarify: string; options: ClarifyOption[] } {
     if (!recipient) {
       return {
@@ -1363,7 +1368,13 @@ export class PraxisServerProvider implements PraxisProvider {
     }
     const resolved = this.addressBook.resolve(recipient);
     if (resolved.kind !== "exact") {
-      return { clarify: resolved.question, options: resolved.options };
+      return {
+        clarify: resolved.question,
+        options: resolved.options.map((option) => ({
+          ...option,
+          value: continuation ? continuation(option.value) : option.value,
+        })),
+      };
     }
     return { address: resolved.entry.address, name: resolved.entry.name, note: resolved.entry.note };
   }
@@ -1488,7 +1499,11 @@ export class PraxisServerProvider implements PraxisProvider {
       };
     }
 
-    const target = this.resolveSelfOrContact(action.recipient);
+    const target = this.resolveSelfOrContact(
+      action.recipient,
+      (address) =>
+        `buy ${action.usdSigil ? "$" : ""}${action.amountHuman} ${action.asset} for ${address} ${formatCadenceForReplay(action.cadence)}`,
+    );
     if ("clarify" in target) {
       return { blocks: [{ type: "clarify", text: target.clarify, options: target.options }] };
     }
@@ -1568,7 +1583,10 @@ export class PraxisServerProvider implements PraxisProvider {
       };
     }
 
-    const target = this.resolveSelfOrContact(action.recipient);
+    const target = this.resolveSelfOrContact(
+      action.recipient,
+      (address) => `buy ${action.basket} $${action.amountHuman} for ${address}`,
+    );
     if ("clarify" in target) {
       return { blocks: [{ type: "clarify", text: target.clarify, options: target.options }] };
     }

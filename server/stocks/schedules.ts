@@ -59,6 +59,11 @@ const WEEKDAYS: Record<string, number> = {
 export function parseCadence(text: string, nowMs: number = Date.now()): DcaCadence | null {
   const t = text.toLowerCase().trim();
   const now = new Date(nowMs);
+  const monthlyDay = t.match(/^(?:every\s+month|monthly)(?:\s+on(?:\s+the)?\s+(?:day\s+)?(\d{1,2})(?:st|nd|rd|th)?)?$/);
+  if (monthlyDay) {
+    const day = monthlyDay[1] ? Number(monthlyDay[1]) : now.getUTCDate();
+    if (day >= 1 && day <= 31) return { type: "monthly", day };
+  }
   let m = t.match(/\bevery\s+([a-z]+)\s*$/);
   if (m) {
     const word = m[1];
@@ -86,6 +91,11 @@ export function describeCadence(cadence: DcaCadence): string {
     return `every ${name[0].toUpperCase()}${name.slice(1)}`;
   }
   return "monthly";
+}
+
+export function formatCadenceForReplay(cadence: DcaCadence): string {
+  if (cadence.type === "monthly") return `monthly on day ${cadence.day}`;
+  return describeCadence(cadence);
 }
 
 /** True when two cadences fire on the same rhythm (used for duplicate detection). */

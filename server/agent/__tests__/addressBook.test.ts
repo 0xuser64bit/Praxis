@@ -19,6 +19,17 @@ describe("AddressBook saved contacts", () => {
     expect(r.kind === "exact" && r.entry.name).toBe("Backpack Wallet");
   });
 
+  test("ambiguous labels produce address-specific continuation values", () => {
+    const book = new AddressBook([
+      { label: "alex", name: "Alex Kim", address: ADDR },
+      { label: "alex", name: "Alex Rivera", address: ADDR2 },
+    ]);
+    const result = book.resolve("alex");
+    expect(result.kind).toBe("ambiguous");
+    if (result.kind !== "ambiguous") return;
+    expect(result.options.map((option) => option.value)).toEqual([ADDR, ADDR2]);
+  });
+
   test("an unknown pasted address resolves as a one-off pasted address", () => {
     const book = new AddressBook([]);
     const r = book.resolve(ADDR2);

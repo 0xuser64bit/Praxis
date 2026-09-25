@@ -209,6 +209,11 @@ describe("deterministic parser — stock intents (C04)", () => {
     expect(w.outcome === "actions" && w.actions[0]).toMatchObject({ kind: "schedule_dca", asset: "SPACEX" });
     const m = parseIntentLocallyForDemo("buy $5 spacex monthly");
     expect(m.outcome === "actions" && m.actions[0].kind).toBe("schedule_dca");
+    const monthly = parseIntentLocallyForDemo("buy $5 spacex monthly on day 15");
+    expect(monthly.outcome === "actions" && monthly.actions[0]).toMatchObject({
+      kind: "schedule_dca",
+      cadence: { type: "monthly", day: 15 },
+    });
   });
 
   test("unknown cadence clarifies instead of scheduling", () => {

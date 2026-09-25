@@ -147,6 +147,41 @@ describe("refreshPolicy", () => {
   });
 });
 
+describe("clarification continuations", () => {
+  const ALEX_KIM = "ALUMw7kSn9xn67suHr2ti21CXBQVNMuRk7uWSM1WuXEt";
+  const ALEX_RIVERA = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
+
+  test("an ambiguous contact keeps the original transfer intent", async () => {
+    const { provider } = build({
+      addressBook: [
+        { label: "alex", name: "Alex Kim", address: ALEX_KIM },
+        { label: "alex", name: "Alex Rivera", address: ALEX_RIVERA },
+      ],
+    });
+    const first = await provider.send(null, "send 0.5 sol to alex");
+    const clarify = (provider.getThread(first.threadId)!.messages.at(-1) as {
+      blocks: Array<{ type: string; options?: Array<{ value: string }> }>;
+    }).blocks.find((block) => block.type === "clarify")!;
+    expect(clarify.options).toHaveLength(2);
+    expect(clarify.options!.map((option) => option.value)).toEqual([
+      `send 0.5 SOL to ${ALEX_KIM}`,
+      `send 0.5 SOL to ${ALEX_RIVERA}`,
+    ]);
+
+    await provider.send(first.threadId, clarify.options![1].value);
+    const proposalBlock = (provider.getThread(first.threadId)!.messages.at(-1) as {
+      blocks: Array<{ type: string; proposalId?: string }>;
+    }).blocks.find((block) => block.type === "proposal")!;
+    const proposal = provider.getProposal(proposalBlock.proposalId!)!;
+    expect(proposal.detail.kind).toBe("transfer");
+    if (proposal.detail.kind === "transfer") {
+      expect(proposal.detail.amount).toBe(500_000_000n);
+      expect(proposal.detail.asset.symbol).toBe("SOL");
+      expect(proposal.detail.recipientAddress).toBe(ALEX_RIVERA);
+    }
+  });
+});
+
 describe("unknown assets", () => {
   test("an unrecognized symbol clarifies instead of simulating a placeholder mint", async () => {
     const { provider, fake } = build();

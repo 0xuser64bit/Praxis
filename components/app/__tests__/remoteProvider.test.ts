@@ -197,6 +197,34 @@ describe("RemotePraxisProvider authorization recovery", () => {
     expect(provider.getPolicy().vaultBalance).toBe(5n);
   });
 
+  test("a policy that disappears (agent deleted) routes to onboarding, not a stale view", async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const body = String(input).includes("get-policy") ? { vaultBalance: "5" } : [];
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof globalThis.fetch;
+    const provider = new RemotePraxisProvider();
+    await provider.refresh();
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (!String(input).includes("get-policy")) {
+        return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(
+        JSON.stringify({ error: "Aegis policy account not found", code: "policy_not_found", details: { policyAddress: "PolicyPda" } }),
+        { status: 404, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof globalThis.fetch;
+    await provider.refresh();
+
+    expect(provider.getConnectionState()).toMatchObject({ phase: "error", code: "policy_not_found", policyAddress: "PolicyPda" });
+    // A later network blip must not resurrect the deleted policy as a stale view.
+    globalThis.fetch = (async () => {
+      throw new Error("offline");
+    }) as unknown as typeof globalThis.fetch;
+    await provider.refresh();
+    expect(provider.getConnectionState()).toMatchObject({ phase: "error" });
+  });
+
   test("an initial network failure is an actionable error", async () => {
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       void input;

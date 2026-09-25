@@ -443,6 +443,11 @@ export class RemotePraxisProvider implements PraxisProvider {
         this.notifyUnauthorized();
         return;
       }
+      // No policy (the agent was just deleted) is an answer, not a stale read:
+      // drop the old one so onboarding renders and a later blip can't revive it.
+      if (error instanceof PraxisApiError && error.code === "policy_not_found") {
+        this.state = { ...this.state, policy: undefined };
+      }
       if (!this.state.policy) this.setConnectionError(error);
       else this.setConnectionStale(error);
     }

@@ -16,6 +16,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -53,6 +54,9 @@ interface TokenCatalogApi {
    * cluster" while the request is still in flight is a lie with a timer on it.
    */
   loaded: boolean;
+  /** A transport/server failure, distinct from a successful empty catalog. */
+  error: string | null;
+  retry: () => void;
   /** Mints that can back an SPL token envelope right now. */
   envelopeCandidates: TokenCatalogEntry[];
   /** Configured mints this cluster refused, with the reason to show. */
@@ -94,14 +98,18 @@ export function TokenCatalogProvider({ children }: { children: ReactNode }) {
   );
   // Mock mode is answered by the static list on the first render.
   const [loaded, setLoaded] = useState(() => !isApiMode());
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!isApiMode()) return;
     let cancelled = false;
-    // Session-gated: a 401 before sign-in resolves to an empty catalog and the
-    // pickers simply have nothing to offer — never an error state.
     fetch("/api/praxis/get-token-catalog", { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : []))
+      .then((res) => {
+        if (res.status === 401) return [];
+        if (!res.ok) throw new Error(`Token catalog request failed (${res.status}).`);
+        return res.json();
+      })
       .then((body) => {
         if (cancelled || !Array.isArray(body)) return;
         setEntries(
@@ -111,13 +119,21 @@ export function TokenCatalogProvider({ children }: { children: ReactNode }) {
           ),
         );
       })
-      .catch(() => undefined)
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Token catalog request failed.");
+      })
       .finally(() => {
         if (!cancelled) setLoaded(true);
       });
     return () => {
       cancelled = true;
     };
+  }, [attempt]);
+
+  const retry = useCallback(() => {
+    setError(null);
+    setLoaded(false);
+    setAttempt((value) => value + 1);
   }, []);
 
   const value = useMemo<TokenCatalogApi>(() => {
@@ -125,6 +141,8 @@ export function TokenCatalogProvider({ children }: { children: ReactNode }) {
     return {
       entries,
       loaded,
+      error,
+      retry,
       envelopeCandidates: movable.filter((e) => !e.native),
       // Wrapped SOL is excluded: native SOL has its own envelope, so its
       // absence is not something the SPL picker should report.
@@ -136,7 +154,7 @@ export function TokenCatalogProvider({ children }: { children: ReactNode }) {
         entries.find((e) => e.mint === mint)?.decimals ?? mintDecimals(mint) ?? null,
       labelFor: (mint) => entries.find((e) => e.mint === mint)?.symbol ?? mintLabel(mint),
     };
-  }, [entries, loaded]);
+  }, [entries, loaded, error, retry]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

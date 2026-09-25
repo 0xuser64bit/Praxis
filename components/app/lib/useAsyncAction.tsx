@@ -48,7 +48,7 @@ export interface AsyncActions {
    * Run an owner action. Ignored while another is in flight, so a double
    * click cannot submit two transactions. Reports success via `onSuccess`.
    */
-  run: (key: string, action: () => Promise<void>, opts: RunOptions) => void;
+  run: (key: string, action: () => Promise<void>, opts: RunOptions) => Promise<boolean>;
 }
 
 export interface RunOptions {
@@ -69,13 +69,14 @@ export function useAsyncActions(onSuccess?: (message: string) => void): AsyncAct
   const clearError = useCallback(() => setError(null), []);
 
   const run = useCallback(
-    (key: string, action: () => Promise<void>, opts: RunOptions) => {
+    (key: string, action: () => Promise<void>, opts: RunOptions): Promise<boolean> => {
       // A second click while the wallet prompt is open must not queue another
       // signature request.
-      if (pending) return;
+      if (pending) return Promise.resolve(false);
       setError(null);
       setPending({ key, label: opts.label });
-      void action()
+      return Promise.resolve()
+        .then(action)
         .then(() => {
           if (opts.success) onSuccess?.(opts.success);
           return true;
@@ -93,6 +94,7 @@ export function useAsyncActions(onSuccess?: (message: string) => void): AsyncAct
           seq.current += 1;
           setSettled({ key, ok, seq: seq.current });
           setPending(null);
+          return ok;
         });
     },
     [pending, onSuccess],

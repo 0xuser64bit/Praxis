@@ -268,7 +268,7 @@ export function PolicyDashboard() {
             <div className="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
               <CapsCard
                 policy={policy}
-                onSave={(patch) => {
+                onSave={(patch) =>
                   run(
                     patch.maxPerTx !== undefined ? actionKeys.maxPerTx : actionKeys.dailyLimit,
                     () => provider.updatePolicy(patch),
@@ -277,8 +277,8 @@ export function PolicyDashboard() {
                       fallback: "Policy update failed.",
                       success: "Caps updated on-chain.",
                     },
-                  );
-                }}
+                  )
+                }
               />
               <SessionCard
                 policy={policy}
@@ -304,13 +304,13 @@ export function PolicyDashboard() {
             <TokenEnvelopeCard
               policy={policy}
               now={now}
-              onConfigure={(config) => {
+              onConfigure={(config) =>
                 run(actionKeys.configureToken, () => provider.configureToken(config), {
                   label: "Configuring the token envelope",
                   fallback: "Token configuration failed.",
                   success: "Token envelope configured.",
-                });
-              }}
+                })
+              }
               onPrepareAccounts={() => {
                 run(
                   actionKeys.prepareAccounts,
@@ -713,7 +713,7 @@ function CapsCard({
   onSave,
 }: {
   policy: PolicyView;
-  onSave: (patch: { maxPerTx?: bigint; dailyLimit?: bigint }) => void;
+  onSave: (patch: { maxPerTx?: bigint; dailyLimit?: bigint }) => Promise<boolean>;
 }) {
   return (
     <Card className="p-5">
@@ -722,12 +722,14 @@ function CapsCard({
         <CapRow
           label="Per transaction"
           value={policy.maxPerTx}
+          validate={(v) => (v > policy.dailyLimit ? "Per-transaction cap cannot exceed the daily limit." : undefined)}
           onSave={(v) => onSave({ maxPerTx: v })}
         />
         <div className="h-px bg-[var(--border)]" />
         <CapRow
           label="Daily limit"
           value={policy.dailyLimit}
+          validate={(v) => (v < policy.maxPerTx ? "Daily limit cannot be below the per-transaction cap." : undefined)}
           onSave={(v) => onSave({ dailyLimit: v })}
         />
       </div>
@@ -745,13 +747,19 @@ function TokenEnvelopeCard({
 }: {
   policy: PolicyView;
   now: number;
-  onConfigure: (config: TokenEnvelopeConfig) => void;
+  onConfigure: (config: TokenEnvelopeConfig) => Promise<boolean>;
   onPrepareAccounts: () => void;
   onDemoStock: (symbol: string) => void;
 }) {
   const configured = policy.tokenMint !== SYSTEM_PROGRAM;
   const { stocks, stocksEnabled, activeMint, symbolFor, usesMirrorMints } = useActiveStock();
-  const { envelopeCandidates, unusable, loaded: catalogLoaded } = useTokenCatalog();
+  const {
+    envelopeCandidates,
+    unusable,
+    loaded: catalogLoaded,
+    error: catalogError,
+    retry: retryCatalog,
+  } = useTokenCatalog();
   const { labelFor, scaleFor } = useTokenMeta();
   const decimals = scaleFor(policy.tokenMint);
   const symbol = labelFor(policy.tokenMint);
@@ -835,7 +843,20 @@ function TokenEnvelopeCard({
 
       {!configured ? (
         <div>
-          {pickable.length > 0 ? (
+          {catalogError ? (
+            <div className="rounded-md bg-[var(--bg)] p-3 text-[12.5px] leading-[1.45] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)]">
+              <div className="flex items-start justify-between gap-3">
+                <span>Could not load the mint catalog: {catalogError}</span>
+                <button
+                  type="button"
+                  onClick={retryCatalog}
+                  className="inline-flex shrink-0 items-center gap-1 text-[var(--accent)] hover:text-[var(--text-primary)]"
+                >
+                  <IconRefresh size={12} /> Retry
+                </button>
+              </div>
+            </div>
+          ) : pickable.length > 0 ? (
             <>
               <p className="mb-3 text-[13px] text-[var(--text-secondary)]">
                 No SPL token configured. Pick one to let the agent move it within its own
@@ -948,6 +969,7 @@ function TokenEnvelopeCard({
                 decimals={decimals}
                 unit={symbol}
                 usdPrice={stockEntry?.usdPrice}
+                validate={(v) => (v > policy.tokenDailyLimit ? "Per-transaction cap cannot exceed the daily limit." : undefined)}
                 onSave={(v) =>
                   onConfigure({
                     tokenMint: policy.tokenMint,
@@ -962,6 +984,7 @@ function TokenEnvelopeCard({
                 decimals={decimals}
                 unit={symbol}
                 usdPrice={stockEntry?.usdPrice}
+                validate={(v) => (v < policy.tokenMaxPerTx ? "Daily limit cannot be below the per-transaction cap." : undefined)}
                 onSave={(v) =>
                   onConfigure({
                     tokenMint: policy.tokenMint,
@@ -1070,77 +1093,104 @@ function CapRow({
   decimals = 9,
   unit = "SOL",
   usdPrice,
+  validate,
 }: {
   label: string;
   value: bigint;
-  onSave: (v: bigint) => void;
+  onSave: (v: bigint) => Promise<boolean>;
   decimals?: number;
   unit?: string;
   /** Price per whole `unit`; shows the cap's dollar value beside it (stocks). */
   usdPrice?: number;
+  validate?: (value: bigint) => string | undefined;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { busy } = useActionState();
 
   const begin = () => {
     // Editable draft must not include thousands separators — formatUnits adds them
     // for display, and a raw "1,000" would fail toBaseUnits on Save.
     setDraft(formatEditableUnits(value, decimals));
-    setError(false);
+    setError(null);
     setEditing(true);
   };
 
-  const commit = () => {
+  const commit = async () => {
     if (busy) return;
+    let parsed: bigint;
     try {
-      onSave(toBaseUnits(draft, decimals));
-      setEditing(false);
+      parsed = toBaseUnits(draft, decimals);
     } catch {
-      setError(true);
+      setError("Enter a valid amount.");
+      return;
     }
+    if (parsed <= 0n) {
+      setError("Amount must be greater than zero.");
+      return;
+    }
+    const validationError = validate?.(parsed);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setError(null);
+    const saved = await onSave(parsed).catch(() => false);
+    if (saved) setEditing(false);
+    else setError("Not saved. The policy was not changed.");
   };
 
   return (
     <div className="flex items-center justify-between">
       <span className="text-[13px] text-[var(--text-secondary)]">{label}</span>
       {editing ? (
-        <div className="flex items-center gap-1.5">
-          <input
-            autoFocus
-            value={draft}
-            aria-label={`Edit ${label}`}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commit();
-              if (e.key === "Escape") setEditing(false);
-            }}
-            className="w-24 rounded-md bg-[var(--bg)] px-2 py-1 text-right [font-family:var(--font-mono)] text-[13px] text-[var(--text-primary)] outline-none"
-            style={{
-              border: `0.5px solid ${error ? "var(--danger)" : "var(--border-strong)"}`,
-            }}
-          />
-          <span className="[font-family:var(--font-mono)] text-[12px] text-[var(--text-tertiary)]">
-            {unit}
-          </span>
-          <button
-            type="button"
-            onClick={commit}
-            disabled={busy}
-            aria-label="Save"
-            className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--success)] hover:bg-[var(--bg-elevated)]"
-          >
-            <IconCheck size={14} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setEditing(false)}
-            aria-label="Cancel"
-            className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)]"
-          >
-            <IconX size={14} />
-          </button>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-1.5">
+            <input
+              autoFocus
+              value={draft}
+              aria-label={`Edit ${label}`}
+              aria-invalid={Boolean(error)}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void commit();
+                if (e.key === "Escape") setEditing(false);
+              }}
+              className="w-24 rounded-md bg-[var(--bg)] px-2 py-1 text-right [font-family:var(--font-mono)] text-[13px] text-[var(--text-primary)] outline-none"
+              style={{
+                border: `0.5px solid ${error ? "var(--danger)" : "var(--border-strong)"}`,
+              }}
+            />
+            <span className="[font-family:var(--font-mono)] text-[12px] text-[var(--text-tertiary)]">
+              {unit}
+            </span>
+            <button
+              type="button"
+              onClick={() => void commit()}
+              disabled={busy}
+              aria-label="Save"
+              className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--success)] hover:bg-[var(--bg-elevated)]"
+            >
+              <IconCheck size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              aria-label="Cancel"
+              className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)]"
+            >
+              <IconX size={14} />
+            </button>
+          </div>
+          {error && (
+            <p role="alert" className="max-w-56 text-right text-[11px] leading-[1.35] text-[var(--danger)]">
+              {error}
+            </p>
+          )}
         </div>
       ) : (
         <button
@@ -1305,7 +1355,6 @@ function VaultCard({
     // Keep the form open and disabled until the action settles: closing it
     // immediately is what made a multi-second wallet round-trip look like
     // nothing had happened.
-    setDraft("");
   };
 
   return (

@@ -22,7 +22,7 @@ export function PraxisApp() {
   if (!isClient) {
     return (
       <div className="flex h-[100dvh] items-center justify-center bg-[var(--bg)]">
-        <PraxisLogoMark size={36} className="[animation:pulse_2s_infinite]" />
+        <PraxisLogoMark size={36} className="motion-safe:[animation:pulse_2s_infinite]" />
       </div>
     );
   }

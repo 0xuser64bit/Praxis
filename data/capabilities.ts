@@ -34,7 +34,7 @@ export const CAPABILITIES: Capability[] = [
     title: "The Aegis envelope",
     description:
       "An Anchor program that checks signer, pause, expiry, per-transaction cap, rolling daily cap, recipient allow-list and configured mint — inside the instruction, before any value moves.",
-    tag: "T1–T9 enforcement gate",
+    tag: "T1–T10 enforcement gate",
   },
   {
     icon: IconMessage2,

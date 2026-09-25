@@ -137,7 +137,7 @@ export function ProposalCard({
                 </>
               ) : (
                 <>
-                  Confirm &amp; sign
+                  Confirm &amp; submit
                   <IconArrowRight size={14} />
                 </>
               )}

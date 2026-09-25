@@ -49,19 +49,18 @@ import {
   toBaseUnits,
 } from "./lib/units";
 import { useNow } from "./lib/useNow";
-import { effectiveSpentToday, effectiveTokenSpentToday } from "./lib/policyMath";
+import {
+  effectiveSpentToday,
+  effectiveTokenSpentToday,
+  expiryAfterSevenDays,
+  getAgentState,
+  type AgentState,
+} from "./lib/policyMath";
 import { KNOWN_PROGRAMS, mintLabel, programLabel } from "./lib/tokenCatalog";
 import { useTokenCatalog } from "./TokenCatalog";
 import { useTokenMeta, VaultTokenBalance } from "./VaultToken";
 
 const SYSTEM_PROGRAM = KNOWN_PROGRAMS.system;
-
-/** Distinguish pause (key intact) from revoke (authority zeroed). */
-function agentInactiveState(policy: PolicyView): "live" | "paused" | "revoked" {
-  if (policy.agentAuthority === SYSTEM_PROGRAM) return "revoked";
-  if (policy.paused) return "paused";
-  return "live";
-}
 
 export function PolicyDashboard() {
   const policy = usePolicy();
@@ -72,7 +71,7 @@ export function PolicyDashboard() {
   const [tab, setTab] = useState<"overview" | "advanced">("overview");
   const now = useNow();
   const { toast } = useToast();
-  const agentState = agentInactiveState(policy);
+  const agentState = getAgentState(policy, now);
   const inactive = agentState !== "live";
   const actions = useAsyncActions(toast);
   const { run, busy } = actions;
@@ -123,6 +122,20 @@ export function PolicyDashboard() {
                     fallback: "Could not unpause the agent.",
                     success: "Agent unpaused.",
                   });
+                } else if (agentState === "expired") {
+                  run(
+                    actionKeys.expiry,
+                    () =>
+                      provider.updatePolicy({
+                        expiryTs: expiryAfterSevenDays(policy.expiryTs, now),
+                        paused: false,
+                      }),
+                    {
+                      label: "Restoring the agent session",
+                      fallback: "Could not restore the agent session.",
+                      success: "Agent session restored for seven more days.",
+                    },
+                  );
                 } else {
                   run(actionKeys.rotate, () => provider.rotateAgent(), {
                     label: "Rotating the session key",
@@ -132,12 +145,18 @@ export function PolicyDashboard() {
                 }
               }}
             >
-              {actions.pendingKey === actionKeys.pause || actions.pendingKey === actionKeys.rotate ? (
+              {actions.pendingKey === actionKeys.pause ||
+              actions.pendingKey === actionKeys.expiry ||
+              actions.pendingKey === actionKeys.rotate ? (
                 <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
               ) : (
                 <IconRefresh size={15} />
               )}
-              {agentState === "paused" ? "Unpause agent" : "Re-enable agent"}
+              {agentState === "paused"
+                ? "Unpause agent"
+                : agentState === "expired"
+                  ? "Restore session"
+                  : "Re-enable agent"}
             </Button>
           ) : (
             <button
@@ -160,6 +179,15 @@ export function PolicyDashboard() {
           >
             <Dot color="var(--danger)" />
             Agent revoked — the session key is zeroed on-chain. Rotate a fresh key to re-enable.
+          </div>
+        )}
+        {agentState === "expired" && (
+          <div
+            className="mb-5 flex items-center gap-2.5 rounded-xl px-4 py-3 text-[13px] text-[var(--text-secondary)]"
+            style={{ background: "rgba(199,91,91,0.10)", border: "0.5px solid rgba(199,91,91,0.3)" }}
+          >
+            <Dot color="var(--danger)" />
+            Agent expired — transfers are blocked. Restore the session for seven more days or rotate the key in Advanced.
           </div>
         )}
         {agentState === "paused" && (
@@ -309,12 +337,15 @@ export function PolicyDashboard() {
             />
 
             <Card className="mt-4 p-5">
-              <Label className="mb-4">Allow-lists</Label>
+              <Label>Policy lists</Label>
+              <p className="mb-4 mt-2 text-[12.5px] leading-[1.5] text-[var(--text-secondary)]">
+                Aegis enforces transfer recipients and the configured token mint. Program and mint lists currently feed swap previews only.
+              </p>
               <div className="flex flex-col gap-5">
                 <AllowList
                   kind="programs"
-                  title="Programs"
-                  hint="Only these programs may be invoked"
+                  title="Swap programs"
+                  hint="Preview only · not enforced by current transfers"
                   addresses={policy.allowedPrograms}
                   labeler={programLabel}
                   onAdd={addToAllowList}
@@ -322,8 +353,8 @@ export function PolicyDashboard() {
                 />
                 <AllowList
                   kind="mints"
-                  title="Verified mints"
-                  hint="The agent may only route into these mints"
+                  title="Swap mints"
+                  hint="Preview only · not enforced by current transfers"
                   addresses={policy.allowedMints}
                   labeler={mintLabel}
                   quickAdd={mintQuickAdd}
@@ -332,8 +363,8 @@ export function PolicyDashboard() {
                 />
                 <AllowList
                   kind="recipients"
-                  title="Recipients"
-                  hint="Empty means any recipient is allowed"
+                  title="Transfer recipients"
+                  hint="Enforced by Aegis · empty allows any recipient"
                   addresses={policy.allowedRecipients}
                   emptyMeansAny
                   onAdd={addToAllowList}
@@ -1144,7 +1175,7 @@ function SessionCard({
   showActions = true,
 }: {
   policy: PolicyView;
-  agentState: "live" | "paused" | "revoked";
+  agentState: AgentState;
   now: number;
   onRotate?: () => void;
   onUpdateExpiry?: (expiryTs: number) => void;
@@ -1152,17 +1183,25 @@ function SessionCard({
 }) {
   const { busy, pendingKey } = useActionState();
   const extendSevenDays = () => {
-    if (!busy) onUpdateExpiry?.(now + 7 * 86400);
+    if (!busy) onUpdateExpiry?.(expiryAfterSevenDays(policy.expiryTs, now));
   };
   const inactive = agentState !== "live";
   const statusLabel =
-    agentState === "revoked" ? "Revoked" : agentState === "paused" ? "Paused" : "Live";
+    agentState === "revoked"
+      ? "Revoked"
+      : agentState === "expired"
+        ? "Expired"
+        : agentState === "paused"
+          ? "Paused"
+          : "Live";
   const statusDetail =
     agentState === "revoked"
       ? "key zeroed on-chain"
-      : agentState === "paused"
-        ? `${shortenAddress(policy.agentAuthority, 6, 6)} · paused`
-        : shortenAddress(policy.agentAuthority, 6, 6);
+      : agentState === "expired"
+        ? `${shortenAddress(policy.agentAuthority, 6, 6)} · expired`
+        : agentState === "paused"
+          ? `${shortenAddress(policy.agentAuthority, 6, 6)} · paused`
+          : shortenAddress(policy.agentAuthority, 6, 6);
 
   return (
     <Card className="p-5">

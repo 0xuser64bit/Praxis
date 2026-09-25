@@ -11,11 +11,9 @@ import {
 import { Dot } from "./ui";
 import { VaultTokenBalance } from "./VaultToken";
 import { formatSol } from "./lib/units";
-import { KNOWN_PROGRAMS } from "./lib/tokenCatalog";
+import type { AgentState } from "./lib/policyMath";
 import { PraxisLogoMark } from "@/components/praxis/PraxisLogo";
 import type { View } from "./AppShell";
-
-const SYSTEM_PROGRAM = KNOWN_PROGRAMS.system;
 
 export function AppSidebar({
   view,
@@ -25,6 +23,7 @@ export function AppSidebar({
   onSelectThread,
   onNewThread,
   policy,
+  agentState,
   rejectedCount,
 }: {
   view: View;
@@ -34,12 +33,18 @@ export function AppSidebar({
   onSelectThread: (id: string) => void;
   onNewThread: () => void;
   policy: PolicyView;
+  agentState: AgentState;
   rejectedCount: number;
 }) {
-  // Revoke zeroes authority; pause alone still leaves the key registered.
-  const agentDead = policy.agentAuthority === SYSTEM_PROGRAM;
-  const agentInactive = agentDead || policy.paused;
-  const agentLabel = agentDead ? "agent revoked" : policy.paused ? "agent paused" : "agent live";
+  const inactive = agentState !== "live";
+  const agentLabel =
+    agentState === "revoked"
+      ? "agent revoked"
+      : agentState === "expired"
+        ? "agent expired"
+        : agentState === "paused"
+          ? "agent paused"
+          : "agent live";
   const groups = groupThreads(threads);
 
   return (
@@ -66,7 +71,7 @@ export function AppSidebar({
           label="Policy"
           active={view === "policy"}
           onClick={() => onView("policy")}
-          trailing={agentInactive ? <Dot color="var(--danger)" /> : <Dot color="var(--success)" />}
+          trailing={inactive ? <Dot color="var(--danger)" /> : <Dot color="var(--success)" />}
         />
         <NavItem
           icon={<IconHistory size={16} />}
@@ -125,7 +130,7 @@ export function AppSidebar({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <Dot color={agentInactive ? "var(--danger)" : "var(--success)"} pulse={!agentInactive} />
+            <Dot color={inactive ? "var(--danger)" : "var(--success)"} pulse={!inactive} />
             <span className="[font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
               {agentLabel}
             </span>

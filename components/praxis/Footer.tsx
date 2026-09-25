@@ -42,7 +42,7 @@ const FOOTER_COLS: FooterColumn[] = [
     title: "On-chain",
     links: [
       {
-        label: "Aegis program",
+        label: "Devnet Aegis program",
         href: `https://explorer.solana.com/address/${DEFAULT_AEGIS_PROGRAM_ID_BASE58}?cluster=devnet`,
         external: true,
       },
@@ -103,7 +103,7 @@ export function Footer() {
               aria-hidden
               className="h-1.5 w-1.5 rounded-full bg-[var(--success)]"
             />
-            <span>Aegis T1–T9 passing</span>
+            <span>Aegis T1–T10 passing</span>
           </div>
         </div>
       </Container>

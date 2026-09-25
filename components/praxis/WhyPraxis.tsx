@@ -6,7 +6,7 @@ import { Eyebrow } from "@/components/praxis/Eyebrow";
 const GUARANTEES = [
   "Per-transaction and rolling daily spend caps",
   "A separate token envelope, with caps of its own",
-  "Allow-listed recipients, mints, and programs",
+  "Allow-listed recipients and a configured token mint",
   "A session key with a hard expiry",
   "Instant revoke — the key dies on-chain",
 ];

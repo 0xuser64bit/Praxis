@@ -34,11 +34,10 @@ import { Dot, Pill } from "./ui";
 import { messageFromError } from "./lib/useAsyncAction";
 import { isApiMode } from "./providerMode";
 import { formatSol, shortenAddress } from "./lib/units";
-import { KNOWN_PROGRAMS } from "./lib/tokenCatalog";
+import { getAgentState } from "./lib/policyMath";
+import { useNow } from "./lib/useNow";
 
 export type View = "chat" | "policy" | "activity";
-
-const SYSTEM_PROGRAM = KNOWN_PROGRAMS.system;
 
 export function AppShell() {
   const provider = useProvider();
@@ -112,9 +111,16 @@ function ReadyAppShell() {
     "t-welcome";
 
   const activeThread = useThread(activeThreadId);
-  const agentDead = policy.agentAuthority === SYSTEM_PROGRAM;
-  const agentInactive = agentDead || policy.paused;
-  const agentPill = agentDead ? "Agent revoked" : policy.paused ? "Agent paused" : "Agent live";
+  const now = useNow();
+  const agentState = getAgentState(policy, now);
+  const agentPill =
+    agentState === "revoked"
+      ? "Agent revoked"
+      : agentState === "expired"
+        ? "Agent expired"
+        : agentState === "paused"
+          ? "Agent paused"
+          : "Agent live";
   const rejectedCount = activity.filter((a) => a.result === "rejected").length;
 
   const selectThread = (id: string) => {
@@ -143,6 +149,7 @@ function ReadyAppShell() {
         onSelectThread={selectThread}
         onNewThread={newThread}
         policy={policy}
+        agentState={agentState}
         rejectedCount={rejectedCount}
       />
 
@@ -194,7 +201,7 @@ function ReadyAppShell() {
               </button>
             )}
             <Pill>
-              <Dot color={agentInactive ? "var(--danger)" : "var(--success)"} pulse={!agentInactive} />
+              <Dot color={agentState === "live" ? "var(--success)" : "var(--danger)"} pulse={agentState === "live"} />
               {agentPill}
             </Pill>
             <Pill className="max-[760px]:hidden">{formatSol(policy.vaultBalance)} SOL</Pill>

@@ -428,22 +428,7 @@ export class PraxisServerProvider implements PraxisProvider {
             };
 
         if (!this.state.activity.some((entry) => entry.sig === proposal.sig)) {
-          this.state.activity = [
-            {
-              id: this.id("a"),
-              kind: "transfer",
-              label: this.destinationLabel(proposal.detail.recipientAddress, proposal.detail.recipientName),
-              target: proposal.detail.recipientAddress,
-              asset: proposal.detail.asset.symbol,
-              amount: proposal.detail.amount,
-              decimals: proposal.detail.asset.decimals,
-              result: confirmed ? "allowed" : "rejected",
-              reason: proposal.check.reason,
-              ts: nowSeconds(),
-              sig: proposal.sig,
-            },
-            ...this.state.activity,
-          ];
+          this.logTransfer(proposal, confirmed ? "allowed" : "rejected");
         }
         changed = true;
       }
@@ -618,23 +603,7 @@ export class PraxisServerProvider implements PraxisProvider {
           : "Rejected by Aegis during execution";
 
       if (execution.status !== "submitted") {
-        this.state.activity = [
-          {
-            id: this.id("a"),
-            kind: "transfer",
-            label: this.destinationLabel(proposal.detail.recipientAddress, proposal.detail.recipientName),
-            target: proposal.detail.recipientAddress,
-            asset: asset.symbol,
-            amount: proposal.detail.amount,
-            decimals: asset.decimals,
-            result: execution.status === "confirmed" ? "allowed" : "rejected",
-            reason: execution.check.reason,
-            reasonCode: execution.check.reasonCode,
-            ts: nowSeconds(),
-            sig: execution.sig,
-          },
-          ...this.state.activity,
-        ];
+        this.logTransfer(proposal, execution.status === "confirmed" ? "allowed" : "rejected");
       }
 
       await this.refreshPolicy().catch(() => undefined);
@@ -1406,24 +1375,7 @@ export class PraxisServerProvider implements PraxisProvider {
     };
     this.state.proposals[proposal.id] = proposal;
 
-    if (!args.preview.check.allowed) {
-      this.state.activity = [
-        {
-          id: this.id("a"),
-          kind: "transfer",
-          label: this.destinationLabel(args.recipientAddress, args.recipientName),
-          target: args.recipientAddress,
-          asset: args.token.symbol,
-          amount: args.amount,
-          decimals: args.token.decimals,
-          result: "rejected",
-          reason: args.preview.check.reason,
-          reasonCode: args.preview.check.reasonCode,
-          ts: nowSeconds(),
-        },
-        ...this.state.activity,
-      ];
-    }
+    if (!args.preview.check.allowed) this.logTransfer(proposal, "rejected");
     return proposal;
   }
 
@@ -1935,6 +1887,28 @@ export class PraxisServerProvider implements PraxisProvider {
     } catch {
       return undefined;
     }
+  }
+
+  /** Record a transfer proposal's verdict, with its signature once it reached the chain. */
+  private logTransfer(proposal: ActionProposal, result: ActivityEntry["result"]) {
+    if (proposal.detail.kind !== "transfer") return;
+    this.state.activity = [
+      {
+        id: this.id("a"),
+        kind: "transfer",
+        label: this.destinationLabel(proposal.detail.recipientAddress, proposal.detail.recipientName),
+        target: proposal.detail.recipientAddress,
+        asset: proposal.detail.asset.symbol,
+        amount: proposal.detail.amount,
+        decimals: proposal.detail.asset.decimals,
+        result,
+        reason: proposal.check.reason,
+        reasonCode: proposal.check.reasonCode,
+        ts: nowSeconds(),
+        sig: proposal.sig,
+      },
+      ...this.state.activity,
+    ];
   }
 
   private logSwapRejection(proposal: ActionProposal) {

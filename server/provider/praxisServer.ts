@@ -382,18 +382,36 @@ export class PraxisServerProvider implements PraxisProvider {
     );
     if (candidates.length === 0) return;
 
+    // Fetch outcomes BEFORE taking the lock: `get-proposals` polls every 12s
+    // and this runs on the read path, so holding the per-wallet mutex across
+    // Solana RPC would head-of-line-block the user's next send/sign.
+    const outcomes = new Map<string, "confirmed" | "failed" | "pending">();
+    await Promise.all(candidates.map(async (proposal) => {
+      if (!proposal.sig) return;
+      try {
+        outcomes.set(proposal.id, await this.aegis.getTransactionOutcome(proposal.sig));
+      } catch (error) {
+        logger.warn("praxis.proposal_reconcile_failed", { proposalId: proposal.id, ...errorFields(error) });
+      }
+    }));
+
     await withOwnerLock(this.ownerKey, async () => {
+      // Re-read inside the lock so a send that landed while the RPC was in
+      // flight is adopted rather than clobbered by this write.
+      await this.reload();
       let changed = false;
-      for (const proposal of candidates) {
-        if (proposal.state !== "submitted" || !proposal.sig || proposal.detail.kind !== "transfer") continue;
-        let outcome: "confirmed" | "failed" | "pending";
-        try {
-          outcome = await this.aegis.getTransactionOutcome(proposal.sig);
-        } catch (error) {
-          logger.warn("praxis.proposal_reconcile_failed", { proposalId: proposal.id, ...errorFields(error) });
+      for (const snapshot of candidates) {
+        const proposal = this.state.proposals[snapshot.id];
+        if (!proposal || proposal.state !== "submitted" || !proposal.sig) continue;
+        // Outcome was fetched for the snapshot's sig; a changed sig means a
+        // concurrent writer already reconciled or re-submitted — leave it.
+        if (proposal.sig !== snapshot.sig) continue;
+        if (proposal.detail.kind !== "transfer") {
+          logger.warn("praxis.proposal_reconcile_unexpected_kind", { proposalId: proposal.id });
           continue;
         }
-        if (outcome === "pending") continue;
+        const outcome = outcomes.get(snapshot.id);
+        if (!outcome || outcome === "pending") continue;
 
         const confirmed = outcome === "confirmed";
         proposal.state = confirmed ? "signed" : "blocked";

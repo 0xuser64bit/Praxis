@@ -141,6 +141,13 @@ export interface ActionProposal {
   state: ProposalState;
   /** Tx signature once signed (or the failed attempt's signature). */
   sig?: string;
+  /**
+   * The last block height at which the signed transaction can still land,
+   * recorded with `sig` on submission. Once the cluster is past it and the
+   * transaction is in no block, an unconfirmed submission is known to have
+   * expired: nothing moved.
+   */
+  lastValidBlockHeight?: number;
 }
 
 // ---------------------------------------------------------------------------

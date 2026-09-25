@@ -673,6 +673,49 @@ describe("getTransactionOutcome", () => {
     expect(await failed.getTransactionOutcome("sig")).toBe("failed");
     expect(await pending.getTransactionOutcome("sig")).toBe("pending");
   });
+
+  test("an unseen transaction is expired only once the chain is past its last valid height", async () => {
+    const config = makeConfig();
+    const at = (height: number, landed = false) =>
+      new AegisClient(config, fakeConnection({
+        getBlockHeight: async () => height,
+        getTransaction: async () => (landed ? { meta: { err: null } } : null),
+      }));
+
+    expect(await at(321).getTransactionOutcome("sig", 321)).toBe("pending");
+    expect(await at(322).getTransactionOutcome("sig", 321)).toBe("expired");
+    // A transaction found in a block wins, however far past the window.
+    expect(await at(900, true).getTransactionOutcome("sig", 321)).toBe("confirmed");
+  });
+
+  test("execution records the blockhash's last valid height with the signature", async () => {
+    const agent = Keypair.generate();
+    const signer: AgentSigner = {
+      publicKey: agent.publicKey,
+      async signTransaction(tx) {
+        tx.sign(agent);
+        return tx;
+      },
+    };
+    const config = makeConfig({ agentKeypair: undefined });
+    const policyData = encodePolicyAccount(policyFixture({ address: config.policyAddress!.toBase58() }));
+    const conn = fakeConnection({
+      getAccountInfo: async () => ({ data: policyData, owner: DEFAULT_AEGIS_PROGRAM_ID, lamports: 1, executable: false }),
+      getBalance: async () => 100_000_000_000,
+      getSlot: async () => 1,
+      getBlockTime: async () => Math.floor(Date.now() / 1000),
+      getTransaction: async () => ({ meta: { err: null, logMessages: [] } }),
+    });
+    let recorded: number | undefined;
+
+    await new AegisClient(config, conn, signer).executeAgentTransfer(Keypair.generate().publicKey, 1_000_000n, {
+      onSubmitted: async (_sig, lastValidBlockHeight) => {
+        recorded = lastValidBlockHeight;
+      },
+    });
+
+    expect(recorded).toBe(321);
+  });
 });
 
 describe("getVaultTokenBalance", () => {

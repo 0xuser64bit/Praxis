@@ -20,6 +20,7 @@ import {
 import {
   AegisClient,
   type OwnerAction,
+  type TransactionOutcome,
   type TransferSimulation,
   type UnsignedOwnerTransaction,
 } from "../aegis/client";
@@ -385,11 +386,11 @@ export class PraxisServerProvider implements PraxisProvider {
     // Fetch outcomes BEFORE taking the lock: `get-proposals` polls every 12s
     // and this runs on the read path, so holding the per-wallet mutex across
     // Solana RPC would head-of-line-block the user's next send/sign.
-    const outcomes = new Map<string, "confirmed" | "failed" | "pending">();
+    const outcomes = new Map<string, TransactionOutcome>();
     await Promise.all(candidates.map(async (proposal) => {
       if (!proposal.sig) return;
       try {
-        outcomes.set(proposal.id, await this.aegis.getTransactionOutcome(proposal.sig));
+        outcomes.set(proposal.id, await this.aegis.getTransactionOutcome(proposal.sig, proposal.lastValidBlockHeight));
       } catch (error) {
         logger.warn("praxis.proposal_reconcile_failed", { proposalId: proposal.id, ...errorFields(error) });
       }
@@ -412,6 +413,21 @@ export class PraxisServerProvider implements PraxisProvider {
         }
         const outcome = outcomes.get(snapshot.id);
         if (!outcome || outcome === "pending") continue;
+        changed = true;
+
+        if (outcome === "expired") {
+          // Dropped before any block took it, and its blockhash is now too old
+          // to land. Nothing happened on-chain, so there is no activity row.
+          proposal.state = "blocked";
+          proposal.simulation = "Expired before it reached a block on Solana.";
+          proposal.check = {
+            ...proposal.check,
+            allowed: false,
+            reason: "The transaction expired before it reached a block, so nothing moved. Ask again for a fresh proposal.",
+            reasonCode: undefined,
+          };
+          continue;
+        }
 
         const confirmed = outcome === "confirmed";
         proposal.state = confirmed ? "signed" : "blocked";
@@ -430,7 +446,6 @@ export class PraxisServerProvider implements PraxisProvider {
         if (!this.state.activity.some((entry) => entry.sig === proposal.sig)) {
           this.logTransfer(proposal, confirmed ? "allowed" : "rejected");
         }
-        changed = true;
       }
       if (!changed) return;
       // Compare-and-swap, never last-write-wins: this runs on a read path and
@@ -576,9 +591,10 @@ export class PraxisServerProvider implements PraxisProvider {
       // pending so the card stays signable instead of stuck, then surface the
       // failure. Resetting is safe exactly because submission never happened;
       // the post-broadcast paths below convert failures to submitted states.
-      const onSubmitted = async (sig: string) => {
+      const onSubmitted = async (sig: string, lastValidBlockHeight: number) => {
         proposal.state = "submitted";
         proposal.sig = sig;
+        proposal.lastValidBlockHeight = lastValidBlockHeight;
         proposal.simulation = "Submitted to Solana; waiting for confirmation.";
         await this.casSave();
       };

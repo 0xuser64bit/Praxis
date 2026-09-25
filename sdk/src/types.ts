@@ -171,6 +171,8 @@ export interface ActionProposal {
   check: PolicyCheckResult;
   state: ProposalState;
   sig?: string;
+  /** Last block height at which a submitted transaction can still land. */
+  lastValidBlockHeight?: number;
 }
 
 // --- Conversation ----------------------------------------------------------

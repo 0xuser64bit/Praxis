@@ -54,7 +54,7 @@ export function ProposalCard({
   const blockedMessage = proposal.detail.kind === "swap"
     ? "Swaps are preview-only in v0.1. Nothing was signed."
     : proposal.sig
-      ? "Transaction was rejected; no funds moved."
+      ? "No funds moved."
       : "Not submitted; nothing moved.";
   const runAction = (kind: "sign" | "cancel", action: () => Promise<void>, fallback: string) => {
     setError(null);

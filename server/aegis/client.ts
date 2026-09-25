@@ -128,6 +128,11 @@ export interface TransferExecution {
   logs: string[];
 }
 
+/** Called once a transfer is signed, before it is sent: the write-ahead record of the submission. */
+export type OnSubmitted = (sig: string, lastValidBlockHeight: number) => Promise<void>;
+
+export type TransactionOutcome = "confirmed" | "failed" | "expired" | "pending";
+
 export interface TokenAccountSetupResult {
   mint: string;
   vaultTokenAccount: string;
@@ -290,13 +295,22 @@ export class AegisClient {
     return decodeActionLog(account.data);
   }
 
-  async getTransactionOutcome(signature: string): Promise<"confirmed" | "failed" | "pending"> {
+  /**
+   * What became of a submitted transaction. `expired` means it can never land:
+   * the cluster is past `lastValidBlockHeight` and the transaction is in no
+   * block. Without that height the answer stays `pending`.
+   */
+  async getTransactionOutcome(signature: string, lastValidBlockHeight?: number): Promise<TransactionOutcome> {
+    // Height first: once it is past the window, every block that could hold
+    // the transaction is already visible to the lookup below.
+    const pastWindow = lastValidBlockHeight !== undefined
+      && (await this.conn.getBlockHeight(this.finality())) > lastValidBlockHeight;
     const transaction = await this.conn.getTransaction(signature, {
       commitment: this.finality(),
       maxSupportedTransactionVersion: 0,
     });
-    if (!transaction?.meta) return "pending";
-    return transaction.meta.err ? "failed" : "confirmed";
+    if (transaction?.meta) return transaction.meta.err ? "failed" : "confirmed";
+    return pastWindow ? "expired" : "pending";
   }
 
   async simulateAgentTransfer(recipient: PublicKey, amount: bigint): Promise<TransferSimulation> {
@@ -354,7 +368,7 @@ export class AegisClient {
   async executeAgentTransfer(
     recipient: PublicKey,
     amount: bigint,
-    opts: { skipPreflight?: boolean; onSubmitted?: (sig: string) => Promise<void> } = {},
+    opts: { skipPreflight?: boolean; onSubmitted?: OnSubmitted } = {},
   ): Promise<TransferExecution> {
     const policy = await this.getPolicy();
     const signer = this.activeAgentSigner(policy);
@@ -364,7 +378,7 @@ export class AegisClient {
     const signed = await signer.signTransaction(tx);
     const submittedSig = signed.signature ? bs58.encode(signed.signature) : undefined;
     if (!submittedSig) throw new Error("Signed transfer has no transaction signature.");
-    await opts.onSubmitted?.(submittedSig);
+    await opts.onSubmitted?.(submittedSig, latestBlockhash.lastValidBlockHeight);
 
     try {
       const { sig, confirmation } = await this.sendAndConfirm(signed.serialize(), latestBlockhash, opts);
@@ -474,7 +488,7 @@ export class AegisClient {
     recipient: PublicKey,
     token: TokenInfo,
     amount: bigint,
-    opts: { skipPreflight?: boolean; onSubmitted?: (sig: string) => Promise<void> } = {},
+    opts: { skipPreflight?: boolean; onSubmitted?: OnSubmitted } = {},
   ): Promise<TransferExecution> {
     const policy = await this.getPolicy();
     const signer = this.activeAgentSigner(policy);
@@ -484,7 +498,7 @@ export class AegisClient {
     const signed = await signer.signTransaction(tx);
     const submittedSig = signed.signature ? bs58.encode(signed.signature) : undefined;
     if (!submittedSig) throw new Error("Signed token transfer has no transaction signature.");
-    await opts.onSubmitted?.(submittedSig);
+    await opts.onSubmitted?.(submittedSig, latestBlockhash.lastValidBlockHeight);
 
     try {
       const { sig, confirmation } = await this.sendAndConfirm(signed.serialize(), latestBlockhash, opts);

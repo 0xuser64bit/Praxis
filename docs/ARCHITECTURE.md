@@ -233,6 +233,15 @@ writer elsewhere.
   non-pending proposal and returns without submitting. If signing fails before
   submission, nothing has reached the chain, so the proposal goes back to
   `pending` and the error is shown.
+- **An unknown outcome is reconciled, never retried.** Once signed, the
+  proposal is written as `submitted`, with its signature and the blockhash's
+  last valid height, *before* it is sent. If confirmation is then lost, the
+  card stays `submitted` and cannot be signed again. Reading proposals looks
+  the signature up. A landed transaction becomes `signed` or `blocked`. A
+  transaction that is in no block once the chain is past that height can
+  never land, so it becomes `blocked` with nothing moved. Reconcile runs on a
+  read path, so it writes by compare-and-swap and never overwrites a newer
+  document.
 - **Schedule fires are at-most-once.** A due schedule's `nextFireTs` is
   advanced and written *before* any proposal is built. A crash between the
   claim and the card misses one fire, and for money that is the right way to

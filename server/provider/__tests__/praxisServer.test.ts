@@ -9,6 +9,8 @@ import { ActionKind, type ActionLogEntry, type PolicyView } from "@praxis/shared
 import { PraxisServerProvider } from "../praxisServer";
 import type {
   AegisClient,
+  OnSubmitted,
+  TransactionOutcome,
   TransferExecution,
   TransferSimulation,
   UnsignedOwnerTransaction,
@@ -21,6 +23,7 @@ import { findPolicyPda } from "../../aegis/pdas";
 import { policyFixture } from "../../testing/fixtures";
 
 const MAYA = "ALUMw7kSn9xn67suHr2ti21CXBQVNMuRk7uWSM1WuXEt";
+const SUBMITTED_VALID_UNTIL = 1_000;
 
 let prevDir: string | undefined;
 let prevIntent: string | undefined;
@@ -44,7 +47,8 @@ class FakeAegis {
   policyError: Error | undefined;
   simResult: TransferSimulation;
   execResult: TransferExecution;
-  transactionOutcome: "confirmed" | "failed" | "pending" = "pending";
+  transactionOutcome: TransactionOutcome = "pending";
+  outcomeQueries: Array<number | undefined> = [];
   calls: string[] = [];
 
   constructor(policy: PolicyView) {
@@ -79,8 +83,9 @@ class FakeAegis {
   async getActionLog() {
     return this.actionLog;
   }
-  async getTransactionOutcome() {
+  async getTransactionOutcome(_sig: string, lastValidBlockHeight?: number) {
     this.calls.push("getTransactionOutcome");
+    this.outcomeQueries.push(lastValidBlockHeight);
     return this.transactionOutcome;
   }
   async simulateAgentTransfer() {
@@ -90,10 +95,10 @@ class FakeAegis {
   async executeAgentTransfer(
     _recipient: Keypair["publicKey"],
     _amount: bigint,
-    opts?: { onSubmitted?: (sig: string) => Promise<void> },
+    opts?: { onSubmitted?: OnSubmitted },
   ) {
     this.calls.push("executeAgentTransfer");
-    await opts?.onSubmitted?.(this.execResult.sig ?? "sig-unknown");
+    await opts?.onSubmitted?.(this.execResult.sig ?? "sig-unknown", SUBMITTED_VALID_UNTIL);
     return this.execResult;
   }
   async simulateAgentTransferSpl() {
@@ -104,9 +109,9 @@ class FakeAegis {
     _recipient: Keypair["publicKey"],
     _token: unknown,
     _amount: bigint,
-    opts?: { onSubmitted?: (sig: string) => Promise<void> },
+    opts?: { onSubmitted?: OnSubmitted },
   ) {
-    await opts?.onSubmitted?.(this.execResult.sig ?? "sig-unknown");
+    await opts?.onSubmitted?.(this.execResult.sig ?? "sig-unknown", SUBMITTED_VALID_UNTIL);
     return this.execResult;
   }
   async revokeAgent() {
@@ -381,6 +386,31 @@ describe("send → sign flow", () => {
 
     expect(provider.getProposal(proposal.id)!.state).toBe("blocked");
     expect(provider.getActivity().find((entry) => entry.sig === "sig-failed")?.result).toBe("rejected");
+  });
+
+  test("reconciles a submission that expired without landing into a blocked card, with no activity row", async () => {
+    const { provider, fake } = build();
+    fake.execResult = {
+      sig: "sig-dropped",
+      check: { allowed: true, spentToday: 0n, dailyLimit: 1_000_000_000n, remaining: 500_000_000n },
+      status: "submitted",
+      logs: [],
+    };
+    const { threadId } = await provider.send(null, "send 0.5 sol to maya");
+    const block = (provider.getThread(threadId)!.messages.at(-1) as { blocks: Array<{ proposalId?: string; type: string }> }).blocks.find(
+      (item) => item.type === "proposal",
+    )!;
+    await provider.signProposal(block.proposalId!);
+    expect(provider.getProposal(block.proposalId!)!.lastValidBlockHeight).toBe(SUBMITTED_VALID_UNTIL);
+
+    fake.transactionOutcome = "expired";
+    await provider.reconcileSubmittedProposals();
+
+    expect(fake.outcomeQueries).toEqual([SUBMITTED_VALID_UNTIL]);
+    const proposal = provider.getProposal(block.proposalId!)!;
+    expect(proposal.state).toBe("blocked");
+    expect(proposal.check.allowed).toBe(false);
+    expect(provider.getActivity().some((entry) => entry.sig === "sig-dropped")).toBe(false);
   });
 
   test("a reconcile that loses a write race adopts the newer document instead of overwriting it", async () => {

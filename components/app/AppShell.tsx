@@ -121,14 +121,6 @@ function ReadyAppShell() {
   const activeThread = useThread(activeThreadId ?? "");
   const now = useNow();
   const agentState = getAgentState(policy, now);
-  const agentPill =
-    agentState === "revoked"
-      ? "Agent revoked"
-      : agentState === "expired"
-        ? "Agent expired"
-        : agentState === "paused"
-          ? "Agent paused"
-          : "Agent live";
   const rejectedCount = activity.filter((a) => a.result === "rejected").length;
 
   const selectThread = (id: string) => {
@@ -210,7 +202,7 @@ function ReadyAppShell() {
             )}
             <Pill>
               <Dot color={agentState === "live" ? "var(--success)" : "var(--danger)"} pulse={agentState === "live"} />
-              {agentPill}
+              Agent {agentState}
             </Pill>
             <Pill className="max-[760px]:hidden">{formatSol(policy.vaultBalance)} SOL</Pill>
           </div>

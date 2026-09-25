@@ -37,14 +37,6 @@ export function AppSidebar({
   rejectedCount: number;
 }) {
   const inactive = agentState !== "live";
-  const agentLabel =
-    agentState === "revoked"
-      ? "agent revoked"
-      : agentState === "expired"
-        ? "agent expired"
-        : agentState === "paused"
-          ? "agent paused"
-          : "agent live";
   const groups = groupThreads(threads);
 
   return (
@@ -133,7 +125,7 @@ export function AppSidebar({
           <div className="flex items-center gap-1.5">
             <Dot color={inactive ? "var(--danger)" : "var(--success)"} pulse={!inactive} />
             <span className="[font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
-              {agentLabel}
+              agent {agentState}
             </span>
           </div>
           <div className="text-[13px] font-medium text-[var(--text-primary)]">

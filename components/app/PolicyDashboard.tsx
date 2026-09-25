@@ -1249,22 +1249,15 @@ function SessionCard({
     if (!busy) onUpdateExpiry?.(expiryAfterSevenDays(policy.expiryTs, now));
   };
   const inactive = agentState !== "live";
-  const statusLabel =
-    agentState === "revoked"
-      ? "Revoked"
-      : agentState === "expired"
-        ? "Expired"
-        : agentState === "paused"
-          ? "Paused"
-          : "Live";
+  // The state names are the display words, so a state added later shows as
+  // itself rather than falling through to "live".
+  const agentKey = shortenAddress(policy.agentAuthority, 6, 6);
   const statusDetail =
     agentState === "revoked"
       ? "key zeroed on-chain"
-      : agentState === "expired"
-        ? `${shortenAddress(policy.agentAuthority, 6, 6)} · expired`
-        : agentState === "paused"
-          ? `${shortenAddress(policy.agentAuthority, 6, 6)} · paused`
-          : shortenAddress(policy.agentAuthority, 6, 6);
+      : agentState === "live"
+        ? agentKey
+        : `${agentKey} · ${agentState}`;
 
   return (
     <Card className="p-5">
@@ -1294,7 +1287,7 @@ function SessionCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Dot color={inactive ? "var(--danger)" : "var(--success)"} pulse={!inactive} />
-            <span className="text-[13px] font-medium">{statusLabel}</span>
+            <span className="text-[13px] font-medium capitalize">{agentState}</span>
           </div>
           <div className="truncate [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
             {statusDetail}

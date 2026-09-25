@@ -1128,9 +1128,10 @@ export class PraxisServerProvider implements PraxisProvider {
 
   /**
    * Translate a parsed policy_change into a concrete {@link PolicyUpdate} patch
-   * plus human before→after rows, validating against the same invariants the
-   * on-chain `update_policy` enforces (non-zero, maxPerTx ≤ dailyLimit) so the
-   * user gets a friendly message instead of an on-chain rejection.
+   * plus human before→after rows, validating against the same invariant the
+   * on-chain `update_policy` enforces (each cap non-zero) so the user gets a
+   * friendly message instead of an on-chain rejection. There is deliberately
+   * no maxPerTx ≤ dailyLimit rule: the program treats them as independent gates.
    */
   private buildPolicyPatch(
     policy: PolicyView,

@@ -228,6 +228,25 @@ describe("buildUnsignedOwnerTransaction", () => {
     expect(ix.data).toHaveLength(8);
   });
 
+  test("refuses teardown when the configured token mint cannot be read", async () => {
+    const config = makeConfig();
+    const mint = Keypair.generate().publicKey;
+    const policyData = encodePolicyAccount(
+      policyFixture({ address: config.policyAddress!.toBase58(), tokenMint: mint.toBase58() }),
+    );
+    const client = new AegisClient(config, fakeConnection({
+      getAccountInfo: async (address: PublicKey) =>
+        address.equals(config.policyAddress!)
+          ? { data: policyData, owner: DEFAULT_AEGIS_PROGRAM_ID, lamports: 1, executable: false }
+          : null,
+      getBalance: async () => 0,
+    }));
+
+    await expect(
+      client.buildUnsignedOwnerTransaction(config.ownerAddress!, { kind: "closePolicy" }),
+    ).rejects.toThrow(/refusing teardown/);
+  });
+
   test("refuses to rotate to the current agent key", async () => {
     const agent = Keypair.generate();
     const config = makeConfig({ agentKeypair: agent, nextAgentKeypair: agent });

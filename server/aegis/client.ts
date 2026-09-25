@@ -686,7 +686,19 @@ export class AegisClient {
     const policy = await this.getPolicy();
     if (policy.tokenMint === PublicKey.default.toBase58()) return;
     const mint = new PublicKey(policy.tokenMint);
-    const { programId } = await this.tokenProgramFor(mint);
+    const mintInfo = await resolveMintInfo(this.conn, mint.toBase58());
+    if (!mintInfo) {
+      throw new PraxisInputError("Could not read the vault token mint; refusing teardown.");
+    }
+    if (
+      mintInfo.programId !== TOKEN_PROGRAM_ID.toBase58()
+      && mintInfo.programId !== TOKEN_2022_PROGRAM_ID.toBase58()
+    ) {
+      throw new PraxisInputError("The vault token mint uses an unsupported token program; refusing teardown.");
+    }
+    const programId = mintInfo.programId === TOKEN_2022_PROGRAM_ID.toBase58()
+      ? TOKEN_2022_PROGRAM_ID
+      : TOKEN_PROGRAM_ID;
     const info = await this.readVaultTokenAccount(policy, mint, programId);
     if (!info) return;
     // A malformed account throws InputError here, not a RangeError 500.

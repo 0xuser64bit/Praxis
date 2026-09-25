@@ -1150,9 +1150,10 @@ function CapRow({
       return;
     }
     setError(null);
-    const saved = await onSave(parsed).catch(() => false);
-    if (saved) setEditing(false);
-    else setError("Not saved. The policy was not changed.");
+    // A failure keeps the editor open and leaves the reason to the dashboard's
+    // error banner, like every other owner form here. Only that banner knows
+    // the outcome: a submitted-but-unconfirmed edit may still have landed.
+    if (await onSave(parsed).catch(() => false)) setEditing(false);
   };
 
   return (

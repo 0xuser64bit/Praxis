@@ -643,6 +643,19 @@ function isAtaCreateFor(ix: TransactionInstruction, owner: PublicKey): boolean {
   return ix.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID) && ix.keys[2]?.pubkey.equals(owner);
 }
 
+describe("getTransactionOutcome", () => {
+  test("distinguishes landed, failed, and not-yet-visible transactions", async () => {
+    const config = makeConfig();
+    const confirmed = new AegisClient(config, fakeConnection({ getTransaction: async () => ({ meta: { err: null } }) }));
+    const failed = new AegisClient(config, fakeConnection({ getTransaction: async () => ({ meta: { err: { InstructionError: [0, "Custom"] } } }) }));
+    const pending = new AegisClient(config, fakeConnection({ getTransaction: async () => null }));
+
+    expect(await confirmed.getTransactionOutcome("sig")).toBe("confirmed");
+    expect(await failed.getTransactionOutcome("sig")).toBe("failed");
+    expect(await pending.getTransactionOutcome("sig")).toBe("pending");
+  });
+});
+
 describe("getVaultTokenBalance", () => {
   /** A Token-2022 token account (165-byte base layout) holding `amount`. */
   function tokenAccount(amount: bigint) {

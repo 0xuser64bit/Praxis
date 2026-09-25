@@ -44,6 +44,7 @@ class FakeAegis {
   policyError: Error | undefined;
   simResult: TransferSimulation;
   execResult: TransferExecution;
+  transactionOutcome: "confirmed" | "failed" | "pending" = "pending";
   calls: string[] = [];
 
   constructor(policy: PolicyView) {
@@ -77,6 +78,10 @@ class FakeAegis {
   actionLog: ActionLogEntry[] = [];
   async getActionLog() {
     return this.actionLog;
+  }
+  async getTransactionOutcome() {
+    this.calls.push("getTransactionOutcome");
+    return this.transactionOutcome;
   }
   async simulateAgentTransfer() {
     this.calls.push("simulateAgentTransfer");
@@ -331,6 +336,51 @@ describe("send → sign flow", () => {
     expect(provider.getActivity().some((entry) => entry.result === "rejected")).toBe(false);
     await provider.signProposal(proposal.id);
     expect(fake.calls.filter((call) => call === "executeAgentTransfer")).toHaveLength(1);
+  });
+
+  test("reconciles a later-confirmed submission exactly once", async () => {
+    const { provider, fake } = build();
+    fake.execResult = {
+      sig: "sig-late",
+      check: { allowed: true, spentToday: 0n, dailyLimit: 1_000_000_000n, remaining: 500_000_000n },
+      status: "submitted",
+      logs: [],
+    };
+    const { threadId } = await provider.send(null, "send 0.5 sol to maya");
+    const block = (provider.getThread(threadId)!.messages.at(-1) as { blocks: Array<{ proposalId?: string; type: string }> }).blocks.find(
+      (item) => item.type === "proposal",
+    )!;
+    const proposal = provider.getProposal(block.proposalId!)!;
+    await provider.signProposal(proposal.id);
+
+    fake.transactionOutcome = "confirmed";
+    await provider.reconcileSubmittedProposals();
+    await provider.reconcileSubmittedProposals();
+
+    expect(provider.getProposal(proposal.id)!.state).toBe("signed");
+    expect(provider.getActivity().filter((entry) => entry.sig === "sig-late")).toHaveLength(1);
+  });
+
+  test("reconciles a later-rejected submission into a blocked card and activity row", async () => {
+    const { provider, fake } = build();
+    fake.execResult = {
+      sig: "sig-failed",
+      check: { allowed: true, spentToday: 0n, dailyLimit: 1_000_000_000n, remaining: 500_000_000n },
+      status: "submitted",
+      logs: [],
+    };
+    const { threadId } = await provider.send(null, "send 0.5 sol to maya");
+    const block = (provider.getThread(threadId)!.messages.at(-1) as { blocks: Array<{ proposalId?: string; type: string }> }).blocks.find(
+      (item) => item.type === "proposal",
+    )!;
+    const proposal = provider.getProposal(block.proposalId!)!;
+    await provider.signProposal(proposal.id);
+
+    fake.transactionOutcome = "failed";
+    await provider.reconcileSubmittedProposals();
+
+    expect(provider.getProposal(proposal.id)!.state).toBe("blocked");
+    expect(provider.getActivity().find((entry) => entry.sig === "sig-failed")?.result).toBe("rejected");
   });
 
   test("a blocked preview yields a blocked proposal and a rejected activity row", async () => {

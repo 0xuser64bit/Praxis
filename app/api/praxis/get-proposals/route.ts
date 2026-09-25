@@ -9,5 +9,8 @@ export const dynamic = "force-dynamic";
  * bounded by orphan GC (only proposals referenced by retained threads survive).
  */
 export async function GET(request: Request) {
-  return withReadProvider(request, (provider) => provider.getAllProposals());
+  return withReadProvider(request, async (provider) => {
+    await provider.reconcileSubmittedProposals();
+    return provider.getAllProposals();
+  });
 }

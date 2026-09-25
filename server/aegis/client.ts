@@ -290,6 +290,15 @@ export class AegisClient {
     return decodeActionLog(account.data);
   }
 
+  async getTransactionOutcome(signature: string): Promise<"confirmed" | "failed" | "pending"> {
+    const transaction = await this.conn.getTransaction(signature, {
+      commitment: this.finality(),
+      maxSupportedTransactionVersion: 0,
+    });
+    if (!transaction?.meta) return "pending";
+    return transaction.meta.err ? "failed" : "confirmed";
+  }
+
   async simulateAgentTransfer(recipient: PublicKey, amount: bigint): Promise<TransferSimulation> {
     const policy = await this.getPolicy();
     const signer = this.activeAgentSigner(policy);

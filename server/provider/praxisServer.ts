@@ -376,6 +376,63 @@ export class PraxisServerProvider implements PraxisProvider {
     await this.commit();
   }
 
+  async reconcileSubmittedProposals(): Promise<void> {
+    const candidates = Object.values(this.state.proposals).filter(
+      (proposal) => proposal.state === "submitted" && Boolean(proposal.sig),
+    );
+    if (candidates.length === 0) return;
+
+    await withOwnerLock(this.ownerKey, async () => {
+      let changed = false;
+      for (const proposal of candidates) {
+        if (proposal.state !== "submitted" || !proposal.sig || proposal.detail.kind !== "transfer") continue;
+        let outcome: "confirmed" | "failed" | "pending";
+        try {
+          outcome = await this.aegis.getTransactionOutcome(proposal.sig);
+        } catch (error) {
+          logger.warn("praxis.proposal_reconcile_failed", { proposalId: proposal.id, ...errorFields(error) });
+          continue;
+        }
+        if (outcome === "pending") continue;
+
+        const confirmed = outcome === "confirmed";
+        proposal.state = confirmed ? "signed" : "blocked";
+        proposal.simulation = confirmed
+          ? "Confirmed on Solana after the original submission."
+          : "Rejected on Solana after the original submission.";
+        proposal.check = confirmed
+          ? { ...proposal.check, allowed: true, reason: undefined, reasonCode: undefined }
+          : {
+              ...proposal.check,
+              allowed: false,
+              reason: "Solana rejected this transaction; no funds moved.",
+              reasonCode: undefined,
+            };
+
+        if (!this.state.activity.some((entry) => entry.sig === proposal.sig)) {
+          this.state.activity = [
+            {
+              id: this.id("a"),
+              kind: "transfer",
+              label: this.destinationLabel(proposal.detail.recipientAddress, proposal.detail.recipientName),
+              target: proposal.detail.recipientAddress,
+              asset: proposal.detail.asset.symbol,
+              amount: proposal.detail.amount,
+              decimals: proposal.detail.asset.decimals,
+              result: confirmed ? "allowed" : "rejected",
+              reason: proposal.check.reason,
+              ts: nowSeconds(),
+              sig: proposal.sig,
+            },
+            ...this.state.activity,
+          ];
+        }
+        changed = true;
+      }
+      if (changed) await this.commit();
+    });
+  }
+
   // --- reads ---
   getThreads = (): Thread[] => [...this.state.threads].sort((a, b) => b.updatedAt - a.updatedAt);
   getThread = (id: string): Thread | undefined => this.state.threads.find((thread) => thread.id === id);

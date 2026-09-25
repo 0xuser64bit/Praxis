@@ -53,7 +53,9 @@ export function ProposalCard({
   // backend makes before the chain is ever asked, such as an expired preview.
   const blockedMessage = proposal.detail.kind === "swap"
     ? "Swaps are preview-only in v0.1. Nothing was signed."
-    : "Nothing was signed, and nothing moved.";
+    : proposal.sig
+      ? "Transaction was rejected; no funds moved."
+      : "Not submitted; nothing moved.";
   const runAction = (kind: "sign" | "cancel", action: () => Promise<void>, fallback: string) => {
     setError(null);
     setBusy(kind);
@@ -161,6 +163,33 @@ export function ProposalCard({
           </div>
         )}
 
+        {proposal.state === "submitted" && (
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--bg-elevated)] px-3.5 py-3 [border:0.5px_solid_rgba(212,160,86,0.35)]">
+            <div>
+              <div className="text-[13px] font-medium text-[var(--text-primary)]">Confirmation unknown</div>
+              <div className="mt-0.5 text-[12px] leading-[1.45] text-[var(--text-secondary)]">
+                Submitted to Solana, but the outcome is not confirmed. Do not submit it again.
+              </div>
+              {proposal.sig && (
+                <div className="mt-1 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
+                  {shortenAddress(proposal.sig, 6, 6)}
+                </div>
+              )}
+            </div>
+            {proposal.sig && (
+              <a
+                href={explorerTxUrl(proposal.sig)}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Check submitted transaction on Solana Explorer"
+                className="shrink-0 text-[var(--warning)] hover:text-[var(--accent)]"
+              >
+                <IconExternalLink size={15} />
+              </a>
+            )}
+          </div>
+        )}
+
         {proposal.state === "signed" && (
           <div className="flex items-center gap-3 rounded-lg bg-[var(--bg-elevated)] px-3.5 py-3 [border:0.5px_solid_var(--border)]">
             <span
@@ -230,6 +259,7 @@ export function ProposalCard({
 const STATUS: Record<ActionProposal["state"], { label: string; color: string; tint: string }> = {
   pending: { label: "Awaiting signature", color: "var(--accent)", tint: "var(--accent-dim)" },
   signing: { label: "Signing", color: "var(--accent)", tint: "var(--accent-dim)" },
+  submitted: { label: "Confirmation unknown", color: "var(--warning)", tint: "rgba(212,160,86,0.14)" },
   signed: { label: "Confirmed", color: "var(--success)", tint: "rgba(127,176,105,0.14)" },
   blocked: { label: "Blocked by Aegis", color: "var(--danger)", tint: "rgba(199,91,91,0.16)" },
   cancelled: { label: "Cancelled", color: "var(--text-tertiary)", tint: "var(--bg-elevated)" },
@@ -284,7 +314,7 @@ function describe(
       },
       meta: [
         { label: "Network fee", value: fee },
-        { label: "Simulation", value: proposal.simulation, ok: proposal.check.allowed },
+        { label: "Simulation", value: proposal.simulation, ok: proposal.state !== "submitted" && proposal.check.allowed },
       ],
     };
   }

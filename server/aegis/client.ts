@@ -1,3 +1,4 @@
+import bs58 from "bs58";
 import {
   Connection,
   Keypair,
@@ -122,7 +123,7 @@ export interface TransferSimulation {
 export interface TransferExecution {
   sig?: string;
   check: PolicyCheckResult;
-  status: "confirmed" | "rejected";
+  status: "confirmed" | "rejected" | "submitted";
   logs: string[];
 }
 
@@ -343,18 +344,21 @@ export class AegisClient {
   async executeAgentTransfer(
     recipient: PublicKey,
     amount: bigint,
-    opts: { skipPreflight?: boolean } = {},
+    opts: { skipPreflight?: boolean; onSubmitted?: (sig: string) => Promise<void> } = {},
   ): Promise<TransferExecution> {
     const policy = await this.getPolicy();
     const signer = this.activeAgentSigner(policy);
     const now = await this.chainTime();
     const ix = await this.agentTransferIx(signer.publicKey, recipient, amount);
     const { tx, latestBlockhash } = await this.buildTransaction([ix], signer.publicKey);
-    await signer.signTransaction(tx);
+    const signed = await signer.signTransaction(tx);
+    const submittedSig = signed.signature ? bs58.encode(signed.signature) : undefined;
+    if (!submittedSig) throw new Error("Signed transfer has no transaction signature.");
+    await opts.onSubmitted?.(submittedSig);
 
     try {
-      const { sig, confirmation } = await this.sendAndConfirm(tx.serialize(), latestBlockhash, opts);
-      const logs = await this.logsForSignature(sig);
+      const { sig, confirmation } = await this.sendAndConfirm(signed.serialize(), latestBlockhash, opts);
+      const logs = await this.logsForSignature(sig).catch(() => []);
       const customCode = extractCustomErrorCode(confirmation.value.err, logs);
       const reasonCode = customCode === undefined ? undefined : reasonFromAegisErrorCode(customCode);
 
@@ -372,17 +376,21 @@ export class AegisClient {
         logs,
       };
     } catch (error) {
-      const logs = await logsFromError(error, this.conn);
+      const logs = await logsFromError(error, this.conn).catch(() => []);
       const customCode = extractCustomErrorCode(error, logs);
       const reasonCode = customCode === undefined ? undefined : reasonFromAegisErrorCode(customCode);
-      const check = reasonCode !== undefined
-        ? checkFromAegisReason(policy, reasonCode, amount, recipient.toBase58(), now)
-        : fallbackTransferCheck(
-            policy,
-            now,
-            error instanceof Error ? error.message : "Transaction failed",
-          );
-      return { check, status: "rejected", logs };
+      if (error instanceof SendTransactionError) {
+        const check = reasonCode !== undefined
+          ? checkFromAegisReason(policy, reasonCode, amount, recipient.toBase58(), now)
+          : fallbackTransferCheck(policy, now, error.message);
+        return { sig: submittedSig, check, status: "rejected", logs };
+      }
+      return {
+        sig: submittedSig,
+        check: checkTransferPolicy(policy, amount, recipient.toBase58(), now),
+        status: "submitted",
+        logs,
+      };
     }
   }
 
@@ -456,18 +464,21 @@ export class AegisClient {
     recipient: PublicKey,
     token: TokenInfo,
     amount: bigint,
-    opts: { skipPreflight?: boolean } = {},
+    opts: { skipPreflight?: boolean; onSubmitted?: (sig: string) => Promise<void> } = {},
   ): Promise<TransferExecution> {
     const policy = await this.getPolicy();
     const signer = this.activeAgentSigner(policy);
     const now = await this.chainTime();
     const ix = await this.agentTransferSplIx(signer.publicKey, recipient, token, amount);
     const { tx, latestBlockhash } = await this.buildTransaction([ix], signer.publicKey);
-    await signer.signTransaction(tx);
+    const signed = await signer.signTransaction(tx);
+    const submittedSig = signed.signature ? bs58.encode(signed.signature) : undefined;
+    if (!submittedSig) throw new Error("Signed token transfer has no transaction signature.");
+    await opts.onSubmitted?.(submittedSig);
 
     try {
-      const { sig, confirmation } = await this.sendAndConfirm(tx.serialize(), latestBlockhash, opts);
-      const logs = await this.logsForSignature(sig);
+      const { sig, confirmation } = await this.sendAndConfirm(signed.serialize(), latestBlockhash, opts);
+      const logs = await this.logsForSignature(sig).catch(() => []);
       const customCode = extractCustomErrorCode(confirmation.value.err, logs);
       const reasonCode = customCode === undefined ? undefined : reasonFromAegisErrorCode(customCode);
 
@@ -485,17 +496,21 @@ export class AegisClient {
         logs,
       };
     } catch (error) {
-      const logs = await logsFromError(error, this.conn);
+      const logs = await logsFromError(error, this.conn).catch(() => []);
       const customCode = extractCustomErrorCode(error, logs);
       const reasonCode = customCode === undefined ? undefined : reasonFromAegisErrorCode(customCode);
-      const check = reasonCode !== undefined
-        ? checkTokenFromAegisReason(policy, token, reasonCode, amount, recipient.toBase58(), now)
-        : fallbackTokenTransferCheck(
-            policy,
-            now,
-            error instanceof Error ? error.message : "Transaction failed",
-          );
-      return { check, status: "rejected", logs };
+      if (error instanceof SendTransactionError) {
+        const check = reasonCode !== undefined
+          ? checkTokenFromAegisReason(policy, token, reasonCode, amount, recipient.toBase58(), now)
+          : fallbackTokenTransferCheck(policy, now, error.message);
+        return { sig: submittedSig, check, status: "rejected", logs };
+      }
+      return {
+        sig: submittedSig,
+        check: checkTokenTransferPolicy(policy, token, amount, recipient.toBase58(), now),
+        status: "submitted",
+        logs,
+      };
     }
   }
 

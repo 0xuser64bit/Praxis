@@ -64,10 +64,10 @@ export function compactState(state: StoredProviderState): StoredProviderState {
     const proposal = state.proposals[id];
     if (proposal) proposals[id] = proposal;
   }
-  // Never GC actionable proposals: a pending/signing card must survive even if
-  // its thread aged out of the retained window, or the UI 404s on sign.
+  // Never GC actionable or unresolved proposals: a pending/signing/submitted
+  // card must survive even if its thread aged out of the retained window.
   for (const [id, proposal] of Object.entries(state.proposals)) {
-    if ((proposal.state === "pending" || proposal.state === "signing") && !proposals[id]) {
+    if ((proposal.state === "pending" || proposal.state === "signing" || proposal.state === "submitted") && !proposals[id]) {
       proposals[id] = proposal;
     }
   }

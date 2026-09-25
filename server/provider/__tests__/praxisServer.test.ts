@@ -71,15 +71,26 @@ class FakeAegis {
     this.calls.push("simulateAgentTransfer");
     return this.simResult;
   }
-  async executeAgentTransfer() {
+  async executeAgentTransfer(
+    _recipient: Keypair["publicKey"],
+    _amount: bigint,
+    opts?: { onSubmitted?: (sig: string) => Promise<void> },
+  ) {
     this.calls.push("executeAgentTransfer");
+    await opts?.onSubmitted?.(this.execResult.sig ?? "sig-unknown");
     return this.execResult;
   }
   async simulateAgentTransferSpl() {
     this.calls.push("simulateAgentTransferSpl");
     return this.simResult;
   }
-  async executeAgentTransferSpl() {
+  async executeAgentTransferSpl(
+    _recipient: Keypair["publicKey"],
+    _token: unknown,
+    _amount: bigint,
+    opts?: { onSubmitted?: (sig: string) => Promise<void> },
+  ) {
+    await opts?.onSubmitted?.(this.execResult.sig ?? "sig-unknown");
     return this.execResult;
   }
   async revokeAgent() {
@@ -288,6 +299,29 @@ describe("send → sign flow", () => {
     expect(activity[0].sig).toBe("sig-confirmed");
   });
 
+  test("an unresolved submission stays actionable and is not recorded as rejected", async () => {
+    const { provider, fake } = build();
+    fake.execResult = {
+      sig: "sig-unknown",
+      check: { allowed: true, spentToday: 0n, dailyLimit: 1_000_000_000n, remaining: 500_000_000n },
+      status: "submitted",
+      logs: [],
+    };
+    const { threadId } = await provider.send(null, "send 0.5 sol to maya");
+    const block = (provider.getThread(threadId)!.messages.at(-1) as { blocks: Array<{ proposalId?: string; type: string }> }).blocks.find(
+      (item) => item.type === "proposal",
+    )!;
+    const proposal = provider.getProposal(block.proposalId!)!;
+
+    await provider.signProposal(proposal.id);
+
+    expect(provider.getProposal(proposal.id)!.state).toBe("submitted");
+    expect(provider.getProposal(proposal.id)!.sig).toBe("sig-unknown");
+    expect(provider.getActivity().some((entry) => entry.result === "rejected")).toBe(false);
+    await provider.signProposal(proposal.id);
+    expect(fake.calls.filter((call) => call === "executeAgentTransfer")).toHaveLength(1);
+  });
+
   test("a blocked preview yields a blocked proposal and a rejected activity row", async () => {
     const { provider, fake } = build();
     fake.simResult = {
@@ -324,16 +358,20 @@ describe("send → sign flow", () => {
 });
 
 describe("getVersion cursor", () => {
-  test("reflects the newest thread/activity timestamp and advances after a send", async () => {
+  test("advances when a proposal changes state without adding activity", async () => {
     const { provider } = build();
-    // Fresh provider: cursor is the welcome thread's updatedAt (a recent unix ts).
     const before = provider.getVersion();
-    expect(before).toBeGreaterThan(0);
 
-    await provider.send(null, "send 0.5 sol to maya");
-    // A send writes a user + agent message and bumps thread.updatedAt, so the
-    // durable cursor must not regress (and tracks the latest mutation).
-    expect(provider.getVersion()).toBeGreaterThanOrEqual(before);
+    const { threadId } = await provider.send(null, "send 0.5 sol to maya");
+    const proposalBlock = (provider.getThread(threadId)!.messages.at(-1) as {
+      blocks: Array<{ type: string; proposalId?: string }>;
+    }).blocks.find((block) => block.type === "proposal")!;
+    const proposal = provider.getProposal(proposalBlock.proposalId!)!;
+    const beforeSign = provider.getVersion();
+    await provider.signProposal(proposal.id);
+
+    expect(provider.getVersion()).toBeGreaterThan(beforeSign);
+    expect(provider.getVersion()).toBeGreaterThan(before);
   });
 });
 

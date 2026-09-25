@@ -9,18 +9,27 @@
 
 import type { ActionProposal } from "@praxis/shared";
 import { REJECT_REASON_LABEL } from "@praxis/shared";
-import { IconShieldCheck, IconShieldX } from "@tabler/icons-react";
+import { IconClock, IconShieldCheck, IconShieldX } from "@tabler/icons-react";
 
 import { formatUnits, percentOf } from "./lib/units";
 
 export function PolicyCheckBanner({ proposal }: { proposal: ActionProposal }) {
   const { check, detail } = proposal;
-  const allowed = check.allowed;
+  const unresolved = proposal.state === "submitted";
+  const allowed = !unresolved && check.allowed;
   const swapBlocked = detail.kind === "swap" && !allowed;
 
-  const accent = allowed ? "var(--success)" : "var(--danger)";
-  const tint = allowed ? "rgba(127, 176, 105, 0.09)" : "rgba(199, 91, 91, 0.10)";
-  const border = allowed ? "rgba(127, 176, 105, 0.28)" : "rgba(199, 91, 91, 0.32)";
+  const accent = unresolved ? "var(--warning)" : allowed ? "var(--success)" : "var(--danger)";
+  const tint = unresolved
+    ? "rgba(212, 160, 86, 0.10)"
+    : allowed
+      ? "rgba(127, 176, 105, 0.09)"
+      : "rgba(199, 91, 91, 0.10)";
+  const border = unresolved
+    ? "rgba(212, 160, 86, 0.34)"
+    : allowed
+      ? "rgba(127, 176, 105, 0.28)"
+      : "rgba(199, 91, 91, 0.32)";
 
   return (
     <div
@@ -32,29 +41,40 @@ export function PolicyCheckBanner({ proposal }: { proposal: ActionProposal }) {
         <div className="flex items-center gap-2.5">
           <span
             className="flex h-7 w-7 items-center justify-center rounded-full"
-            style={{ background: allowed ? "rgba(127,176,105,0.16)" : "rgba(199,91,91,0.18)", color: accent }}
+            style={{
+              background: unresolved
+                ? "rgba(212,160,86,0.16)"
+                : allowed
+                  ? "rgba(127,176,105,0.16)"
+                  : "rgba(199,91,91,0.18)",
+              color: accent,
+            }}
           >
-            {allowed ? <IconShieldCheck size={16} /> : <IconShieldX size={16} />}
+            {unresolved ? <IconClock size={16} /> : allowed ? <IconShieldCheck size={16} /> : <IconShieldX size={16} />}
           </span>
           <div className="text-[14px] font-medium text-[var(--text-primary)]">
-            {allowed ? "Within your Aegis policy" : swapBlocked ? "Swap not executable" : "Blocked by Aegis"}
+            {unresolved ? "Confirmation unknown" : allowed ? "Within your Aegis policy" : swapBlocked ? "Swap not executable" : "Blocked by Aegis"}
           </div>
         </div>
         <span
           className="[font-family:var(--font-mono)] text-[10px] tracking-[0.14em] uppercase"
           style={{ color: accent }}
         >
-          {allowed ? "Allowed" : swapBlocked ? "Stubbed" : "Rejected"}
+          {unresolved ? "Submitted" : allowed ? "Allowed" : swapBlocked ? "Stubbed" : "Rejected"}
         </span>
       </div>
 
       {/* Reason / headroom line */}
       <p className="mt-2.5 pl-[38px] text-[13px] leading-[1.55] text-[var(--text-secondary)]">
-        {allowed ? <AllowedSummary proposal={proposal} /> : check.reason}
+        {unresolved
+          ? "The transaction reached Solana, but the network did not confirm the outcome. Check the signature before trying again."
+          : allowed
+            ? <AllowedSummary proposal={proposal} />
+            : check.reason}
       </p>
 
       {/* Daily-limit meter — shown for transfers (the per-asset cap accounting) */}
-      {detail.kind === "transfer" && (
+      {detail.kind === "transfer" && !unresolved && (
         <div className="mt-3.5 pl-[38px]">
           <DailyMeter
             spent={check.spentToday}
@@ -68,7 +88,7 @@ export function PolicyCheckBanner({ proposal }: { proposal: ActionProposal }) {
       )}
 
       {/* On-chain reason code, when this maps to a real Aegis RejectReason */}
-      {!allowed && check.reasonCode !== undefined && (
+      {!allowed && !unresolved && check.reasonCode !== undefined && (
         <div className="mt-3 pl-[38px] [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
           on-chain reason · {REJECT_REASON_LABEL[check.reasonCode]}
         </div>

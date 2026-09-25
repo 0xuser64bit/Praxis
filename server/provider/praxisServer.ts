@@ -403,22 +403,11 @@ export class PraxisServerProvider implements PraxisProvider {
   isThinking = (): boolean => false;
   getConnectionState = () => ({ mode: "api" as const, phase: "ready" as const });
   /**
-   * A durable state cursor derived from persisted state (stable across
-   * serverless instances). Base is the newest mutation timestamp (unix
-   * seconds); the low digits fold in message/proposal counts so two mutations
-   * within the same second still advance the cursor for polling clients.
+   * A durable state cursor. The repository revision changes for every commit,
+   * including proposal state and signature updates that leave message/activity
+   * timestamps unchanged.
    */
-  getVersion = (): number => {
-    let cursor = 0;
-    let messages = 0;
-    for (const thread of this.state.threads) {
-      cursor = Math.max(cursor, thread.updatedAt);
-      messages += thread.messages.length;
-    }
-    for (const entry of this.state.activity) cursor = Math.max(cursor, entry.ts);
-    const proposals = Object.keys(this.state.proposals).length;
-    return cursor * 10_000 + (messages % 1_000) * 10 + (proposals % 10);
-  };
+  getVersion = (): number => this.rev;
 
   // --- conversation ---
   newThread = (preferredId?: string): string => {
@@ -514,12 +503,18 @@ export class PraxisServerProvider implements PraxisProvider {
       // If any of it throws (RPC read, remote-signer round-trip), reset to
       // pending so the card stays signable instead of stuck, then surface the
       // failure. Resetting is safe exactly because submission never happened;
-      // the post-broadcast paths below convert failures to rejected statuses.
+      // the post-broadcast paths below convert failures to submitted states.
+      const onSubmitted = async (sig: string) => {
+        proposal.state = "submitted";
+        proposal.sig = sig;
+        proposal.simulation = "Submitted to Solana; waiting for confirmation.";
+        await this.casSave();
+      };
       let execution;
       try {
         execution = isSol
-          ? await this.aegis.executeAgentTransfer(recipient, proposal.detail.amount)
-          : await this.aegis.executeAgentTransferSpl(recipient, asset, proposal.detail.amount);
+          ? await this.aegis.executeAgentTransfer(recipient, proposal.detail.amount, { onSubmitted })
+          : await this.aegis.executeAgentTransferSpl(recipient, asset, proposal.detail.amount, { onSubmitted });
       } catch (error) {
         proposal.state = "pending";
         proposal.simulation = "Submission failed before reaching the chain — try signing again.";
@@ -528,28 +523,32 @@ export class PraxisServerProvider implements PraxisProvider {
       }
       proposal.check = execution.check;
       proposal.sig = execution.sig;
-      proposal.state = execution.status === "confirmed" ? "signed" : "blocked";
+      proposal.state = execution.status === "confirmed" ? "signed" : execution.status === "submitted" ? "submitted" : "blocked";
       proposal.simulation = execution.status === "confirmed"
         ? `Confirmed through Aegis ${isSol ? "agent_transfer" : "agent_transfer_spl"}`
-        : "Rejected by Aegis during execution";
+        : execution.status === "submitted"
+          ? "Submitted to Solana; confirmation is still unknown."
+          : "Rejected by Aegis during execution";
 
-      this.state.activity = [
-        {
-          id: this.id("a"),
-          kind: "transfer",
-          label: this.destinationLabel(proposal.detail.recipientAddress, proposal.detail.recipientName),
-          target: proposal.detail.recipientAddress,
-          asset: asset.symbol,
-          amount: proposal.detail.amount,
-          decimals: asset.decimals,
-          result: execution.status === "confirmed" ? "allowed" : "rejected",
-          reason: execution.check.reason,
-          reasonCode: execution.check.reasonCode,
-          ts: nowSeconds(),
-          sig: execution.sig,
-        },
-        ...this.state.activity,
-      ];
+      if (execution.status !== "submitted") {
+        this.state.activity = [
+          {
+            id: this.id("a"),
+            kind: "transfer",
+            label: this.destinationLabel(proposal.detail.recipientAddress, proposal.detail.recipientName),
+            target: proposal.detail.recipientAddress,
+            asset: asset.symbol,
+            amount: proposal.detail.amount,
+            decimals: asset.decimals,
+            result: execution.status === "confirmed" ? "allowed" : "rejected",
+            reason: execution.check.reason,
+            reasonCode: execution.check.reasonCode,
+            ts: nowSeconds(),
+            sig: execution.sig,
+          },
+          ...this.state.activity,
+        ];
+      }
 
       await this.refreshPolicy().catch(() => undefined);
       await this.commit();

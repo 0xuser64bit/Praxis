@@ -379,6 +379,40 @@ describe("execute uses the AgentSigner", () => {
     expect(result.status).toBe("confirmed");
     expect(result.sig).toBe("owner-sig");
   });
+
+  test("a confirmation timeout becomes an unresolved submission with a durable signature", async () => {
+    const agent = Keypair.generate();
+    const signer: AgentSigner = {
+      publicKey: agent.publicKey,
+      async signTransaction(tx) {
+        tx.sign(agent);
+        return tx;
+      },
+    };
+    const config = makeConfig({ agentKeypair: undefined });
+    const policyData = encodePolicyAccount(policyFixture({ address: config.policyAddress!.toBase58() }));
+    let persisted: string | undefined;
+    const conn = fakeConnection({
+      getAccountInfo: async () => ({ data: policyData, owner: DEFAULT_AEGIS_PROGRAM_ID, lamports: 1, executable: false }),
+      getBalance: async () => 100_000_000_000,
+      getSlot: async () => 1,
+      getBlockTime: async () => Math.floor(Date.now() / 1000),
+      confirmTransaction: async () => {
+        throw new Error("confirmation timed out");
+      },
+    });
+    const client = new AegisClient(config, conn, signer);
+
+    const result = await client.executeAgentTransfer(Keypair.generate().publicKey, 1_000_000n, {
+      onSubmitted: async (sig) => {
+        persisted = sig;
+      },
+    });
+
+    expect(result.status).toBe("submitted");
+    expect(result.sig).toBeTruthy();
+    expect(persisted).toBe(result.sig);
+  });
 });
 
 describe("submitSignedTransaction", () => {

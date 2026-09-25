@@ -111,6 +111,7 @@ export type ProposalDetail = TransferDetail | SwapDetail;
 export type ProposalState =
   | "pending"
   | "signing"
+  | "submitted"
   | "signed"
   | "blocked"
   | "cancelled";

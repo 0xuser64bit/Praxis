@@ -248,16 +248,12 @@ body::after {
   }
 }
 
-/* Visible keyboard focus across non-form controls. */
+/* Visible keyboard focus everywhere, form controls included. A border-color
+   shift alone is too subtle on dark surfaces to count as a focus indicator
+   (WCAG 2.4.7); the accent outline is the indicator. */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
-  outline: none;
 }
 
 /* Interactive affordances: a pointer on anything clickable, and a clear

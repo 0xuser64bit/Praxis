@@ -1,16 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import { Geist, Instrument_Serif } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
-import { SplashLoader } from "@/components/praxis/SplashLoader";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
   subsets: ["latin"],
 });
 
@@ -87,10 +81,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} h-full overflow-x-hidden antialiased`}
+      className={`${geistSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} h-full overflow-x-hidden antialiased`}
     >
       <body className="min-h-full flex flex-col overflow-x-hidden">
-        <SplashLoader />
         {children}
       </body>
     </html>

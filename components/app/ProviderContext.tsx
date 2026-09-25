@@ -26,15 +26,19 @@ import {
 } from "react";
 
 import { MockPraxisProvider } from "./mock/mockProvider";
+import { useAuthSession } from "./AuthGate";
 import { resolveProviderMode } from "./providerMode";
 import { RemotePraxisProvider } from "./remoteProvider";
 
 const Ctx = createContext<PraxisProvider | null>(null);
 
 export function ProviderProvider({ children }: { children: ReactNode }) {
+  const auth = useAuthSession();
   const [provider] = useState<PraxisProvider>(() => {
     const mode = resolveProviderMode();
-    return mode === "api" ? new RemotePraxisProvider() : new MockPraxisProvider();
+    return mode === "api"
+      ? new RemotePraxisProvider(() => auth?.invalidateSession())
+      : new MockPraxisProvider();
   });
 
   // The remote provider polls; tie that to the component's lifetime so signing

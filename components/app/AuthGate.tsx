@@ -26,6 +26,7 @@ interface AuthContextValue {
   walletAddress: string;
   expiresAt?: number;
   signOut: () => Promise<void>;
+  invalidateSession: (message?: string) => void;
 }
 
 interface SolanaWallet {
@@ -106,16 +107,30 @@ export function ApiAuthGate({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const signOut = useCallback(async () => {
-    await fetch("/api/praxis/auth/session", { method: "DELETE" }).catch(() => undefined);
+  const invalidateSession = useCallback((message = "Your session ended. Sign in again.") => {
     setSession({ authenticated: false });
     setPhase("signed-out");
+    setError(message);
+  }, []);
+
+  const signOut = useCallback(async () => {
+    setSession({ authenticated: false });
+    setPhase("signed-out");
+    setError(null);
+    try {
+      const response = await fetch("/api/praxis/auth/session", { method: "DELETE" });
+      if (!response.ok && response.status !== 401) {
+        setError("Signed out here, but the server session could not be cleared. Try again if this was not intentional.");
+      }
+    } catch {
+      setError("Signed out here, but the server session could not be cleared. Try again if this was not intentional.");
+    }
   }, []);
 
   /**
    * Keep the session bound to the wallet that is actually connected.
    *
-   * The session cookie names one wallet for seven days. The wallet extension
+   * The session cookie names one wallet for its configured lifetime. The wallet extension
    * can be switched to a different account at any moment, and nothing told
    * this app — so the header would show account B while every read, every
    * proposal and every agent transfer still ran against account A's vault.
@@ -167,8 +182,9 @@ export function ApiAuthGate({ children }: { children: ReactNode }) {
       walletAddress: session.walletAddress,
       expiresAt: session.expiresAt,
       signOut,
+      invalidateSession,
     };
-  }, [session, signOut]);
+  }, [session, signOut, invalidateSession]);
 
   if (phase === "checking") {
     return (
@@ -187,7 +203,7 @@ export function ApiAuthGate({ children }: { children: ReactNode }) {
   return (
     <AuthScreen
       title="Sign in with Solana"
-      message="Praxis uses your wallet address as the owner boundary for policy, proposals, and activity."
+      message="Praxis uses your wallet signature to create a time-limited session. It can submit agent proposals within your on-chain policy; owner actions still require your wallet."
       error={error}
       onSignIn={signIn}
       signing={phase === "signing"}
@@ -232,7 +248,7 @@ function AuthScreen({
         <p className="text-[13.5px] leading-[1.6] text-[var(--text-secondary)]">{message}</p>
 
         {error && (
-          <div className="mt-4 flex gap-2 rounded-md bg-[rgba(199,91,91,0.12)] p-3 text-[12.5px] leading-[1.5] text-[var(--danger)]">
+          <div role="alert" className="mt-4 flex gap-2 rounded-md bg-[rgba(199,91,91,0.12)] p-3 text-[12.5px] leading-[1.5] text-[var(--danger)]">
             <IconAlertTriangle size={15} className="mt-[2px] shrink-0" />
             <span>{error}</span>
           </div>
@@ -243,7 +259,7 @@ function AuthScreen({
             type="button"
             disabled={signing}
             onClick={onSignIn}
-            className="mt-5 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--bg)] [transition:opacity_0.15s] disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--bg)] [transition:opacity_0.15s] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <IconWallet size={16} />
             {signing ? "Waiting for signature" : "Connect wallet"}

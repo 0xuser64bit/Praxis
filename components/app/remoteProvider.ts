@@ -69,6 +69,9 @@ function createEmptyState(): RemoteStoreState {
 
 export class RemotePraxisProvider implements PraxisProvider {
   private state: RemoteStoreState = createEmptyState();
+  private unauthorizedNotified = false;
+
+  constructor(private readonly onUnauthorized?: () => void) {}
   private listeners = new Set<() => void>();
   private version = 0;
   // Monotonic token so a slow, stale `refreshAll` can't overwrite the result of
@@ -379,7 +382,7 @@ export class RemotePraxisProvider implements PraxisProvider {
       await this.mutate(legacy);
       return;
     }
-    const draft = await this.post<OwnerActionDraft>("/api/praxis/owner/build", { action });
+    const draft = await this.mutate(() => this.post<OwnerActionDraft>("/api/praxis/owner/build", { action }));
     const transaction = await signer.signTransaction(draft.transaction);
     await this.mutate(() =>
       this.post("/api/praxis/owner/submit", {
@@ -425,10 +428,25 @@ export class RemotePraxisProvider implements PraxisProvider {
       };
       this.notify();
     } catch (error) {
+      if (token !== this.refreshToken) return;
+      if (this.isUnauthorized(error)) {
+        this.notifyUnauthorized();
+        return;
+      }
       // Foreground loads (initial mount, post-mutation) surface the error;
       // background polls keep the last good state instead of flashing an error.
-      if (token === this.refreshToken && !opts.background) this.setConnectionError(error);
+      if (!opts.background) this.setConnectionError(error);
     }
+  }
+
+  private isUnauthorized(error: unknown): boolean {
+    return error instanceof PraxisApiError && error.status === 401;
+  }
+
+  private notifyUnauthorized(): void {
+    if (this.unauthorizedNotified) return;
+    this.unauthorizedNotified = true;
+    this.onUnauthorized?.();
   }
 
   /**
@@ -467,17 +485,22 @@ export class RemotePraxisProvider implements PraxisProvider {
   }
 
   private async mutate<T>(fn: () => Promise<T>): Promise<T> {
-    const result = await fn();
-    // Only promote the connection to "ready" once a policy is actually loaded.
-    // A successful bootstrap submit resolves BEFORE the follow-up refreshAll()
-    // has fetched the freshly-created policy; flipping to "ready" here would
-    // render ReadyAppShell (which calls getPolicy()) and throw "policy has not
-    // loaded yet". refreshAll() is the authority on load state in that window.
-    if (this.state.policy) {
-      this.state = { ...this.state, connection: { mode: "api", phase: "ready" } };
-      this.notify();
+    try {
+      const result = await fn();
+      // Only promote the connection to "ready" once a policy is actually loaded.
+      // A successful bootstrap submit resolves BEFORE the follow-up refreshAll()
+      // has fetched the freshly-created policy; flipping to "ready" here would
+      // render ReadyAppShell (which calls getPolicy()) and throw "policy has not
+      // loaded yet". refreshAll() is the authority on load state in that window.
+      if (this.state.policy) {
+        this.state = { ...this.state, connection: { mode: "api", phase: "ready" } };
+        this.notify();
+      }
+      return result;
+    } catch (error) {
+      if (this.isUnauthorized(error)) this.notifyUnauthorized();
+      throw error;
     }
-    return result;
   }
 
   private setConnectionError(error: unknown) {

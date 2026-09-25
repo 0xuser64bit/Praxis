@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { RemotePraxisProvider } from "../remoteProvider";
+import { PraxisApiError, RemotePraxisProvider } from "../remoteProvider";
 
 /**
  * The provider polls `/api/praxis/*` on an interval while the tab is visible.
@@ -156,5 +156,49 @@ describe("RemotePraxisProvider refresh", () => {
 
     expect(requests.some((url) => url.includes("get-policy"))).toBe(true);
     expect(provider.getPolicy().vaultTokenBalance).toBe(1_000_000_000_000n);
+  });
+});
+
+describe("RemotePraxisProvider authorization recovery", () => {
+  test("a refresh 401 invalidates the session once", async () => {
+    let invalidations = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      void input;
+      return new Response(JSON.stringify({ error: "Session expired" }), {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof globalThis.fetch;
+    const provider = new RemotePraxisProvider(() => {
+      invalidations += 1;
+    });
+
+    await provider.refresh();
+    await provider.refresh();
+
+    expect(invalidations).toBe(1);
+  });
+
+  test("an action 401 invalidates and rejects without retrying", async () => {
+    let invalidations = 0;
+    let calls = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      void input;
+      calls += 1;
+      return new Response(JSON.stringify({ error: "Session expired" }), {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof globalThis.fetch;
+    const provider = new RemotePraxisProvider(() => {
+      invalidations += 1;
+    });
+
+    await expect(provider.addContact("maya", "11111111111111111111111111111112")).rejects.toBeInstanceOf(
+      PraxisApiError,
+    );
+
+    expect(invalidations).toBe(1);
+    expect(calls).toBe(1);
   });
 });

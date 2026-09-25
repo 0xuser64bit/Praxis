@@ -95,7 +95,8 @@ bun run dev
 
 Open <http://localhost:3000/app>, connect a devnet wallet and create your vault
 when prompted. The wallet signs a transaction that creates its Aegis policy
-PDA and funds the vault. Then try `send 0.5 sol to maya`.
+PDA and funds the vault. The address book starts empty, so save a contact
+first (`save <address> as maya`), then try `send 0.5 sol to maya`.
 
 ## Hosting on Vercel
 

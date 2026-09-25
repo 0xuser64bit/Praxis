@@ -718,18 +718,22 @@ function CapsCard({
   return (
     <Card className="p-5">
       <Label className="mb-4">Caps</Label>
+      {/*
+        No cross-cap validation here: on-chain `update_policy` requires each
+        cap to be > 0 and treats them as independent gates, and the chat
+        `policy_change` path accepts the same states. Blocking maxPerTx >
+        dailyLimit in this form alone would make two entry points diverge.
+      */}
       <div className="flex flex-col gap-4">
         <CapRow
           label="Per transaction"
           value={policy.maxPerTx}
-          validate={(v) => (v > policy.dailyLimit ? "Per-transaction cap cannot exceed the daily limit." : undefined)}
           onSave={(v) => onSave({ maxPerTx: v })}
         />
         <div className="h-px bg-[var(--border)]" />
         <CapRow
           label="Daily limit"
           value={policy.dailyLimit}
-          validate={(v) => (v < policy.maxPerTx ? "Daily limit cannot be below the per-transaction cap." : undefined)}
           onSave={(v) => onSave({ dailyLimit: v })}
         />
       </div>
@@ -806,6 +810,9 @@ function TokenEnvelopeCard({
   };
   const activeNeedsSwitch = stocksEnabled && activeMint !== null && activeMint !== policy.tokenMint;
   const activeSymbol = activeMint ? (symbolFor(activeMint) ?? "stock") : null;
+  // One-tap switches need a live price for stock caps; without it the button
+  // must read disabled rather than silently no-op on click (see `pick`).
+  const activeSwitchConfig = activeNeedsSwitch && activeMint ? defaultsFor(activeMint) : null;
 
   return (
     <Card className="mt-4 p-5">
@@ -939,7 +946,8 @@ function TokenEnvelopeCard({
           {activeNeedsSwitch && (
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !activeSwitchConfig}
+              title={activeSwitchConfig ? `Switch envelope to ${activeSymbol}` : `${activeSymbol} needs a live price before caps can be set`}
               onClick={() => activeMint && pick(activeMint)}
               className="inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-[var(--accent)] [border:0.5px_solid_var(--border-strong)] [transition:background_0.15s] hover:bg-[var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -977,7 +985,6 @@ function TokenEnvelopeCard({
                 decimals={decimals}
                 unit={symbol}
                 usdPrice={stockEntry?.usdPrice}
-                validate={(v) => (v > policy.tokenDailyLimit ? "Per-transaction cap cannot exceed the daily limit." : undefined)}
                 onSave={(v) =>
                   onConfigure({
                     tokenMint: policy.tokenMint,
@@ -992,7 +999,6 @@ function TokenEnvelopeCard({
                 decimals={decimals}
                 unit={symbol}
                 usdPrice={stockEntry?.usdPrice}
-                validate={(v) => (v < policy.tokenMaxPerTx ? "Daily limit cannot be below the per-transaction cap." : undefined)}
                 onSave={(v) =>
                   onConfigure({
                     tokenMint: policy.tokenMint,

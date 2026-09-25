@@ -58,7 +58,7 @@ export function ConfirmDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[440px] overflow-y-auto rounded-2xl bg-[var(--bg-card)] p-0 [border:0.5px_solid_var(--border-strong)] [box-shadow:0_40px_100px_-30px_rgba(0,0,0,0.8)] backdrop:bg-[rgba(0,0,0,0.6)] backdrop:backdrop-blur-[2px] motion-safe:[animation:fadeUp_0.2s_ease]"
+      className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[440px] overflow-y-auto overscroll-contain rounded-2xl bg-[var(--bg-card)] p-0 [border:0.5px_solid_var(--border-strong)] [box-shadow:0_40px_100px_-30px_rgba(0,0,0,0.8)] backdrop:bg-[rgba(0,0,0,0.6)] backdrop:backdrop-blur-[2px] motion-safe:[animation:fadeUp_0.2s_ease]"
       onCancel={(event) => {
         event.preventDefault();
         if (!busy) onClose();
@@ -97,7 +97,7 @@ export function ConfirmDialog({
         <div className="mt-6 flex gap-2.5">
           <Button
             variant="default"
-            className="flex-1 justify-center py-[11px]"
+            className="flex-1 justify-center py-[11px] min-h-11"
             onClick={onClose}
             disabled={busy}
             autoFocus
@@ -106,7 +106,7 @@ export function ConfirmDialog({
           </Button>
           <Button
             variant="danger"
-            className="flex-1 justify-center py-[11px]"
+            className="flex-1 justify-center py-[11px] min-h-11"
             disabled={busy}
             onClick={onConfirm}
           >

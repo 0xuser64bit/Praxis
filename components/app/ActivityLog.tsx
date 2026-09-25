@@ -54,18 +54,18 @@ export function ActivityLog() {
           be spliced into the description, where selecting a stock appended
           "· SYMBOL only", re-wrapped the paragraph, and shoved the entire feed
           down a line mid-click. */}
-      <div className="mb-2.5 flex items-center justify-between gap-4">
+      <div className="mb-2.5 flex items-center justify-between gap-4 max-[760px]:flex-col max-[760px]:items-stretch max-[760px]:gap-3">
         <h1 className="[font-family:var(--font-serif)] text-[34px] leading-none tracking-[-0.02em]">
           Activity
         </h1>
-        <div className="flex shrink-0 gap-1 rounded-lg bg-[var(--bg-elevated)] p-1 [border:0.5px_solid_var(--border)]">
+        <div className="flex shrink-0 gap-1 self-end rounded-lg bg-[var(--bg-elevated)] p-1 max-[760px]:self-stretch [border:0.5px_solid_var(--border)]">
           {(["all", "allowed", "rejected"] as const).map((f) => (
             <button
               key={f}
               type="button"
               aria-pressed={filter === f}
               onClick={() => setFilter(f)}
-              className={`rounded-md px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] capitalize [transition:background_0.15s,color_0.15s] ${
+              className={`rounded-md px-3 py-1.5 max-[760px]:min-h-11 max-[760px]:flex-1 [font-family:var(--font-mono)] text-[11px] capitalize [transition:background_0.15s,color_0.15s] ${
                 filter === f
                   ? "bg-[var(--bg-card)] text-[var(--text-primary)]"
                   : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
@@ -82,14 +82,14 @@ export function ActivityLog() {
         recorded on-chain; rejections are shown for this session.
       </p>
 
-      <div className="mt-2 flex h-[17px] items-center gap-2 overflow-hidden [font-family:var(--font-mono)] text-[11px] whitespace-nowrap text-[var(--text-tertiary)]">
+      <div className="mt-2 flex h-[17px] min-w-0 items-center gap-2 overflow-hidden [font-family:var(--font-mono)] text-[11px] whitespace-nowrap text-[var(--text-tertiary)]">
         <span>{activity.length} actions</span>
         <span aria-hidden>·</span>
         <span>{rejected} rejected</span>
         {activeSymbol && (
           <>
             <span aria-hidden>·</span>
-            <span className="text-[var(--accent)]">{activeSymbol} only</span>
+            <span className="truncate text-[var(--accent)]">{activeSymbol} only</span>
           </>
         )}
       </div>
@@ -142,14 +142,16 @@ function ActivityRow({ entry, now }: { entry: ActivityEntry; now: number }) {
       </span>
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <KindIcon size={14} className="text-[var(--text-tertiary)]" />
-          <span className="text-[14px] font-medium text-[var(--text-primary)]">{entry.label}</span>
-          <span className="[font-family:var(--font-mono)] text-[12px] text-[var(--text-secondary)]">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
+          <KindIcon size={14} className="shrink-0 text-[var(--text-tertiary)]" />
+          <span className="min-w-0 truncate text-[14px] font-medium text-[var(--text-primary)]" title={entry.label}>
+            {entry.label}
+          </span>
+          <span className="shrink-0 [font-family:var(--font-mono)] text-[12px] text-[var(--text-secondary)]">
             {amount}
           </span>
           <span
-            className="ml-1 rounded-full px-2 py-0.5 [font-family:var(--font-mono)] text-[9px] tracking-[0.1em] uppercase"
+            className="ml-1 shrink-0 rounded-full px-2 py-0.5 [font-family:var(--font-mono)] text-[9px] tracking-[0.1em] uppercase"
             style={{
               color: rejected ? "var(--danger)" : "var(--success)",
               background: rejected ? "rgba(199,91,91,0.14)" : "rgba(127,176,105,0.12)",
@@ -255,11 +257,11 @@ function ScheduleRow({
   return (
     <div className="flex items-center gap-3 rounded-lg bg-[var(--bg)] px-3 py-2.5 [border:0.5px_solid_var(--border)]">
       <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-medium text-[var(--text-primary)]">
+        <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">
           {formatUnits(schedule.amount, schedule.decimals, { maxFrac: 4 })} {schedule.asset}
           <span className="font-normal text-[var(--text-tertiary)]"> · {describeCadence(schedule)}</span>
         </div>
-        <div className="[font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
+        <div className="truncate [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
           for {schedule.recipientName} · next {formatNextFire(schedule.nextFireTs, now)}
         </div>
       </div>
@@ -268,7 +270,7 @@ function ScheduleRow({
         disabled={busy}
         onClick={onCancel}
         aria-label={`Stop recurring buy of ${schedule.asset}`}
-        className="flex h-7 shrink-0 items-center gap-1 rounded-md px-2.5 text-[11.5px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] [transition:color_0.15s] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex h-7 min-h-7 shrink-0 items-center gap-1 rounded-md px-2.5 text-[11.5px] text-[var(--text-tertiary)] max-[760px]:min-h-11 [border:0.5px_solid_var(--border)] [transition:color_0.15s] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? (
           <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />

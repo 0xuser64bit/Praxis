@@ -75,7 +75,7 @@ export function ProposalCard({
   };
 
   return (
-    <div className="mt-2 rounded-xl bg-[var(--bg)] px-6 py-[22px] [border:0.5px_solid_var(--border-strong)]">
+    <div className="mt-2 rounded-xl bg-[var(--bg)] px-6 py-[22px] max-[760px]:px-4 [border:0.5px_solid_var(--border-strong)]">
       <div className="mb-[22px] flex items-center justify-between">
         <Eyebrow>Transaction preview</Eyebrow>
         <span
@@ -273,12 +273,12 @@ function FlowCol({ flow }: { flow: Flow }) {
       <div className="mb-1.5 [font-family:var(--font-mono)] text-[10px] tracking-[0.12em] text-[var(--text-tertiary)] uppercase">
         {flow.label}
       </div>
-      <div className={`[font-family:var(--font-serif)] ${sizeClass} leading-none tracking-[-0.02em] truncate`}>
+      <div className={`[font-family:var(--font-serif)] ${sizeClass} leading-none tracking-[-0.02em] truncate`} title={flow.primary}>
         {flow.primary}
         {flow.unit && <span className="text-[22px] text-[var(--text-tertiary)]"> {flow.unit}</span>}
       </div>
       {flow.sub && (
-        <div className="mt-1.5 truncate [font-family:var(--font-mono)] text-[12px] text-[var(--text-tertiary)]">
+        <div className="mt-1.5 truncate [font-family:var(--font-mono)] text-[12px] text-[var(--text-tertiary)]" title={flow.sub}>
           {flow.sub}
         </div>
       )}

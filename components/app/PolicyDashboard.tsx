@@ -101,7 +101,7 @@ export function PolicyDashboard() {
     <AsyncActionProvider value={actions}>
       <Surface>
         {/* header */}
-        <div className="mb-7 flex items-start justify-between gap-4">
+        <div className="mb-7 flex items-start justify-between gap-4 max-[760px]:flex-col max-[760px]:items-stretch">
           <div>
             <h1 className="[font-family:var(--font-serif)] text-[34px] leading-none tracking-[-0.02em]">
               Policy envelope
@@ -113,7 +113,7 @@ export function PolicyDashboard() {
           {inactive ? (
             <Button
               variant="primary"
-              className="shrink-0"
+              className="shrink-0 max-[760px]:w-full max-[760px]:justify-center"
               disabled={busy}
               onClick={() => {
                 if (agentState === "paused") {
@@ -163,7 +163,7 @@ export function PolicyDashboard() {
               type="button"
               disabled={busy}
               onClick={() => setRevokeOpen(true)}
-              className="inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2.5 text-[14px] font-medium text-[var(--danger)] [transition:background_0.15s] hover:bg-[rgba(199,91,91,0.1)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2.5 text-[14px] font-medium text-[var(--danger)] [transition:background_0.15s] hover:bg-[rgba(199,91,91,0.1)] disabled:cursor-not-allowed disabled:opacity-50 max-[760px]:w-full max-[760px]:justify-center"
               style={{ border: "0.5px solid rgba(199,91,91,0.4)" }}
             >
               <IconShieldX size={15} />
@@ -433,7 +433,7 @@ function AddressBookCard({
 
   return (
     <Card className="mt-4 p-5">
-      <div className="mb-1 flex items-baseline justify-between">
+      <div className="mb-1 flex items-baseline justify-between max-[760px]:flex-col max-[760px]:items-start max-[760px]:gap-1">
         <Label>Address book</Label>
         <span className="[font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
           labels only — no signing power
@@ -464,7 +464,7 @@ function AddressBookCard({
                 aria-label={`Remove ${entry.name}`}
                 disabled={busy}
                 onClick={() => onRemove(entry.address)}
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-40 max-[760px]:h-11 max-[760px]:w-11"
               >
                 {pendingKey === actionKeys.removeContact(entry.address) ? (
                   <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
@@ -503,7 +503,7 @@ function AddressBookCard({
           onClick={add}
           disabled={!label.trim() || !address.trim() || busy}
           aria-label="Save contact"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[var(--accent)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[var(--accent)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-40 max-[760px]:h-11 max-[760px]:w-11"
         >
           {pendingKey === actionKeys.addContact ? (
             <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
@@ -784,14 +784,12 @@ function TokenEnvelopeCard({
   const defaultsFor = (mint: string): TokenEnvelopeConfig | null => {
     const scale = scaleFor(mint);
     if (scale === undefined) return null;
-    const price = stocks.find((s) => s.mint === mint)?.usdPrice;
+    const stock = stocks.find((s) => s.mint === mint);
+    const price = stock?.usdPrice;
+    const hasLivePrice = typeof price === "number" && Number.isFinite(price) && price > 0;
+    if (stock && !hasLivePrice) return null;
     const cap = (usd: number, units: string) =>
-      toBaseUnits(
-        typeof price === "number" && Number.isFinite(price) && price > 0
-          ? (usd / price).toFixed(scale)
-          : units,
-        scale,
-      );
+      toBaseUnits(hasLivePrice ? (usd / price!).toFixed(scale) : units, scale);
     return {
       tokenMint: mint,
       tokenMaxPerTx: cap(100, "200"),
@@ -811,11 +809,11 @@ function TokenEnvelopeCard({
 
   return (
     <Card className="mt-4 p-5">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between max-[760px]:flex-col max-[760px]:items-start max-[760px]:gap-2">
         <Label>Token transfers (SPL)</Label>
         {configured && (
-          <span className="inline-flex items-center gap-2 rounded-full bg-[var(--bg-elevated)] px-3 py-1 text-[11px] [border:0.5px_solid_var(--border)]">
-            <span className="text-[var(--text-primary)]">
+          <span className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-full bg-[var(--bg-elevated)] px-3 py-1 text-[11px] [border:0.5px_solid_var(--border)]">
+            <span className="truncate text-[var(--text-primary)]">
               {symbol}
               {universeIndex >= 0 && (
                 <span className="text-[var(--text-tertiary)]">
@@ -843,8 +841,8 @@ function TokenEnvelopeCard({
 
       {!configured ? (
         <div>
-          {catalogError ? (
-            <div className="rounded-md bg-[var(--bg)] p-3 text-[12.5px] leading-[1.45] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)]">
+          {catalogError && (
+            <div className="mb-3 rounded-md bg-[var(--bg)] p-3 text-[12.5px] leading-[1.45] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)]">
               <div className="flex items-start justify-between gap-3">
                 <span>Could not load the mint catalog: {catalogError}</span>
                 <button
@@ -856,27 +854,37 @@ function TokenEnvelopeCard({
                 </button>
               </div>
             </div>
-          ) : pickable.length > 0 ? (
+          )}
+          {pickable.length > 0 ? (
             <>
               <p className="mb-3 text-[13px] text-[var(--text-secondary)]">
                 No SPL token configured. Pick one to let the agent move it within its own
                 on-chain caps (separate from the SOL envelope).
               </p>
               <div className="flex flex-wrap gap-2">
-                {pickable.map((m) => (
-                  <button
-                    key={m.mint}
-                    type="button"
-                    disabled={busy}
-                    onClick={() => pick(m.mint)}
-                    title={`Configure an envelope for ${m.symbol}`}
-                    className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] [transition:color_0.15s] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <IconPlus size={11} />
-                    {m.symbol}
-                  </button>
-                ))}
+                {pickable.map((m) => {
+                  const config = defaultsFor(m.mint);
+                  return (
+                    <button
+                      key={m.mint}
+                      type="button"
+                      disabled={busy || !config}
+                      onClick={() => pick(m.mint)}
+                      title={config ? `Configure an envelope for ${m.symbol}` : `${m.symbol} needs a live price before caps can be set`}
+                      className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [border:0.5px_dashed_var(--border-strong)] [transition:color_0.15s] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <IconPlus size={11} />
+                      {m.symbol}
+                    </button>
+                  );
+                })}
               </div>
+              {pickable.some((m) => !defaultsFor(m.mint)) && (
+                <p className="mt-3 text-[12px] leading-[1.5] text-[var(--text-tertiary)]">
+                  Stock envelopes wait for a live quote before one-tap caps are offered — a
+                  generic unit cap could be orders of magnitude wrong.
+                </p>
+              )}
             </>
           ) : !catalogLoaded ? (
             <p className="text-[13px] text-[var(--text-tertiary)]">
@@ -1142,11 +1150,11 @@ function CapRow({
   };
 
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between max-[760px]:flex-wrap max-[760px]:gap-2">
       <span className="text-[13px] text-[var(--text-secondary)]">{label}</span>
       {editing ? (
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex items-center gap-1.5">
+        <div className="flex flex-col items-end gap-1 max-[760px]:min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5">
             <input
               autoFocus
               value={draft}
@@ -1173,7 +1181,7 @@ function CapRow({
               onClick={() => void commit()}
               disabled={busy}
               aria-label="Save"
-              className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--success)] hover:bg-[var(--bg-elevated)]"
+              className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--success)] hover:bg-[var(--bg-elevated)] max-[760px]:h-10 max-[760px]:w-10"
             >
               <IconCheck size={14} />
             </button>
@@ -1181,7 +1189,7 @@ function CapRow({
               type="button"
               onClick={() => setEditing(false)}
               aria-label="Cancel"
-              className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)]"
+              className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)] max-[760px]:h-10 max-[760px]:w-10"
             >
               <IconX size={14} />
             </button>
@@ -1262,7 +1270,7 @@ function SessionCard({
             type="button"
             onClick={onRotate}
             disabled={busy}
-            className="inline-flex items-center gap-1.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [transition:color_0.15s] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 max-[760px]:min-h-11 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)] [transition:color_0.15s] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
           >
             {pendingKey === actionKeys.rotate ? (
               <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
@@ -1300,7 +1308,7 @@ function SessionCard({
               type="button"
               onClick={extendSevenDays}
               disabled={busy}
-              className="rounded-md px-2 py-1 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-md px-2 py-1 max-[760px]:min-h-11 [font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {pendingKey === actionKeys.expiry ? "extending…" : "extend 7d"}
             </button>
@@ -1359,19 +1367,19 @@ function VaultCard({
 
   return (
     <Card className="p-5">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--bg-elevated)] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)]">
+      <div className="flex items-center justify-between max-[760px]:flex-col max-[760px]:items-stretch max-[760px]:gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)]">
             <IconWallet size={17} />
           </span>
-          <div>
+          <div className="min-w-0">
             <Label>Agent vault</Label>
-            <div className="mt-1 [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
+            <div className="mt-1 truncate [font-family:var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">
               {shortenAddress(policy.address, 6, 6)} · owner {shortenAddress(policy.owner)}
             </div>
           </div>
         </div>
-        <div className="text-right">
+        <div className="text-right max-[760px]:text-left">
           <div className="[font-family:var(--font-serif)] text-[26px] leading-none tracking-[-0.02em]">
             {formatSol(policy.vaultBalance)}{" "}
             <span className="text-[15px] text-[var(--text-tertiary)]">SOL</span>
@@ -1386,7 +1394,7 @@ function VaultCard({
               type="button"
               disabled={busy}
               onClick={() => open("fund")}
-              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40 ${
+              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] max-[760px]:min-h-11 [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40 ${
                 mode === "fund" ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]"
               }`}
             >
@@ -1396,7 +1404,7 @@ function VaultCard({
               type="button"
               onClick={() => open("withdraw")}
               disabled={busy || policy.vaultBalance === 0n}
-              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40 ${
+              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] max-[760px]:min-h-11 [border:0.5px_solid_var(--border)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40 ${
                 mode === "withdraw" ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]"
               }`}
             >
@@ -1408,7 +1416,7 @@ function VaultCard({
 
       {mode && (
         <div className="mt-4 [border-top:0.5px_solid_var(--border)] pt-4">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 max-[760px]:flex-wrap">
             <div className="relative flex-1">
               <input
                 autoFocus
@@ -1518,7 +1526,7 @@ function AllowList({
 
   return (
     <div>
-      <div className="mb-2 flex items-baseline justify-between">
+      <div className="mb-2 flex items-baseline justify-between max-[760px]:flex-col max-[760px]:items-start max-[760px]:gap-1">
         <span className="text-[13px] font-medium text-[var(--text-primary)]">{title}</span>
         <span className="[font-family:var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">
           {hint}
@@ -1552,7 +1560,7 @@ function AllowList({
                 onClick={() => {
                   if (!busy) onRemove(kind, a);
                 }}
-                className="flex h-4 w-4 items-center justify-center rounded-full text-[var(--text-tertiary)] hover:bg-[var(--bg-card)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-7 w-7 -my-1.5 items-center justify-center rounded-full text-[var(--text-tertiary)] hover:bg-[var(--bg-card)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-40 max-[760px]:h-9 max-[760px]:w-9"
               >
                 {pendingKey === actionKeys.allowList(kind, a, "remove") ? (
                   <span className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />

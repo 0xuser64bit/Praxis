@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 /** A small mono pill (matches the landing's balance/status chips). */
 export function Pill({
@@ -114,5 +114,61 @@ export function SurfaceBand({
     <div className={`shrink-0 [padding-inline:var(--app-gutter)] ${className}`}>
       <div className="mx-auto w-full max-w-[var(--app-measure)]">{children}</div>
     </div>
+  );
+}
+
+/**
+ * A native modal `<dialog>`, the one place modal behaviour lives: focus is
+ * trapped while open, Escape and a backdrop click dismiss it, the page behind
+ * stops scrolling, and focus returns to whatever opened it.
+ */
+export function Modal({
+  onDismiss,
+  busy = false,
+  labelledBy,
+  describedBy,
+  children,
+}: {
+  onDismiss: () => void;
+  /** Blocks dismissal, e.g. while a wallet prompt is waiting on this dialog. */
+  busy?: boolean;
+  labelledBy: string;
+  describedBy: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = ref.current;
+    const previousOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    dialog?.showModal();
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      if (dialog?.open) dialog.close();
+      // Keyboard focus otherwise drops to <body> after the dialog closes.
+      if (previouslyFocused && document.contains(previouslyFocused)) previouslyFocused.focus();
+    };
+  }, []);
+
+  return (
+    <dialog
+      ref={ref}
+      className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[440px] overflow-y-auto overscroll-contain rounded-2xl bg-[var(--bg-card)] p-0 [border:0.5px_solid_var(--border-strong)] [box-shadow:0_40px_100px_-30px_rgba(0,0,0,0.8)] backdrop:bg-[rgba(0,0,0,0.6)] backdrop:backdrop-blur-[2px] motion-safe:[animation:fadeUp_0.2s_ease]"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onDismiss();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget && !busy) onDismiss();
+      }}
+      aria-modal="true"
+      aria-busy={busy}
+      aria-labelledby={labelledBy}
+      aria-describedby={describedBy}
+    >
+      <div className="p-6">{children}</div>
+    </dialog>
   );
 }

@@ -6,8 +6,11 @@ export type AgentState = "live" | "expired" | "paused" | "revoked";
 
 export function getAgentState(policy: PolicyView, now: number): AgentState {
   if (policy.agentAuthority === KNOWN_PROGRAMS.system) return "revoked";
-  if (policy.expiryTs <= now) return "expired";
+  // Order mirrors on-chain `agent_transfer` (paused → expiry) and the server
+  // mirror in `server/agent/policy.ts`: a paused session reports paused even
+  // when its expiry has also passed.
   if (policy.paused) return "paused";
+  if (policy.expiryTs <= now) return "expired";
   return "live";
 }
 

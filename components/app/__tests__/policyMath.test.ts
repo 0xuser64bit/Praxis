@@ -43,6 +43,10 @@ describe("getAgentState", () => {
       ),
     ).toBe("revoked");
   });
+
+  test("paused outranks expired, matching on-chain check order", () => {
+    expect(getAgentState(policy({ paused: true, expiryTs: NOW - 1 }), NOW)).toBe("paused");
+  });
 });
 
 describe("expiryAfterSevenDays", () => {

@@ -126,8 +126,9 @@ export function Conversation({
             <span>{error.message}</span>
             <button
               type="button"
+              disabled={thinking}
               onClick={() => void onSend(error.text)}
-              className="min-h-9 shrink-0 rounded-md px-2.5 text-[11px] font-medium text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.35)] hover:bg-[rgba(199,91,91,0.12)]"
+              className="min-h-9 shrink-0 rounded-md px-2.5 text-[11px] font-medium text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.35)] hover:bg-[rgba(199,91,91,0.12)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Retry
             </button>

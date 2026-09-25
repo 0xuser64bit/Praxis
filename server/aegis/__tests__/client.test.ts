@@ -10,7 +10,7 @@ import {
 } from "../constants";
 import { findActionLogPda, findAssociatedTokenAddress, findPolicyPda, findVaultPda } from "../pdas";
 import { buildClosePolicyIx } from "../instructions";
-import { PraxisConfigError, PraxisInputError } from "../../errors";
+import { PraxisConfigError, PraxisInputError, PraxisSubmittedError } from "../../errors";
 import { DEFAULT_PRESTOCKS_API_URL, DEFAULT_PRESTOCKS_TIMEOUT_MS, DEFAULT_TOKENS, type PraxisServerConfig } from "../../env";
 import type { AgentSigner } from "../../agent/agentSigner";
 import { encodePolicyAccount, policyFixture } from "../../testing/fixtures";
@@ -428,6 +428,23 @@ describe("submitSignedTransaction", () => {
     const { config, draft } = await aegisOwnerDraft();
     const client = new AegisClient(config, fakeConnection());
     expect(await client.submitSignedTransaction(draft, config.ownerAddress!)).toBe("owner-sig");
+  });
+
+  test("keeps a submitted owner transaction safe to inspect when confirmation is lost", async () => {
+    const { config, draft } = await aegisOwnerDraft();
+    const client = new AegisClient(
+      config,
+      fakeConnection({
+        confirmTransaction: async () => {
+          throw new Error("confirmation timed out");
+        },
+      }),
+    );
+
+    const error = await client.submitSignedTransaction(draft, config.ownerAddress!).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(PraxisSubmittedError);
+    expect((error as PraxisSubmittedError).sig).toBe("owner-sig");
+    expect((error as PraxisSubmittedError).message).toMatch(/Do not retry/);
   });
 
   test("throws when the cluster reports an error", async () => {

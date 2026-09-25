@@ -773,7 +773,7 @@ export class PraxisServerProvider implements PraxisProvider {
       if (error instanceof PraxisNotFoundError) {
         await this.forgetTornDownAgent();
       } else {
-        throw error;
+        logger.warn("praxis.owner_action_refresh_failed", { ...errorFields(error), sig });
       }
     }
     return { sig };

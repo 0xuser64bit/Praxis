@@ -27,6 +27,7 @@ import {
 } from "./constants";
 import { decodeActionLog, decodePolicyAccount, decodeTokenAccountAmount } from "./codec";
 import { assertMatchesOwnerDraft, issueOwnerDraftToken } from "./ownerDraft";
+import { PraxisSubmittedError } from "../errors";
 import { checkMintMovable, resolveMintInfo, supportedTokenPrograms } from "../stocks/mintDecimals";
 import {
   buildAgentTransferIx,
@@ -979,21 +980,10 @@ export class AegisClient {
   ): Promise<string> {
     const raw = Buffer.from(input.transaction, "base64");
     this.assertSubmittableOwnerTransaction(raw, input, owner);
-    // Bounded like every other submit path (see sendAndConfirm): a hung RPC
-    // must not hold a serverless function open until the platform kills it.
-    const sig = await withTimeout(
-      this.conn.sendRawTransaction(raw, { preflightCommitment: this.config.commitment }),
-      envTimeout("PRAXIS_RPC_READ_TIMEOUT_MS", 8000),
-      "sendRawTransaction (owner)",
-    );
-    const confirmation = await withTimeout(
-      this.conn.confirmTransaction(
-        { signature: sig, blockhash: input.blockhash, lastValidBlockHeight: input.lastValidBlockHeight },
-        this.config.commitment,
-      ),
-      60_000,
-      "confirmTransaction (owner)",
-    );
+    const { sig, confirmation } = await this.sendAndConfirm(raw, {
+      blockhash: input.blockhash,
+      lastValidBlockHeight: input.lastValidBlockHeight,
+    });
     if (confirmation.value.err) {
       throw new Error(`owner transaction failed: ${JSON.stringify(confirmation.value.err)}`);
     }
@@ -1186,11 +1176,16 @@ export class AegisClient {
       sendMs,
       "sendRawTransaction",
     );
-    const confirmation = await withTimeout(
-      this.conn.confirmTransaction({ signature: sig, ...latestBlockhash }, this.config.commitment),
-      60_000,
-      "confirmTransaction",
-    );
+    let confirmation: Awaited<ReturnType<Connection["confirmTransaction"]>>;
+    try {
+      confirmation = await withTimeout(
+        this.conn.confirmTransaction({ signature: sig, ...latestBlockhash }, this.config.commitment),
+        60_000,
+        "confirmTransaction",
+      );
+    } catch {
+      throw new PraxisSubmittedError(sig);
+    }
     return { sig, confirmation };
   }
 

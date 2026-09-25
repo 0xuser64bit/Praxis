@@ -114,6 +114,17 @@ export class PraxisRateLimitError extends PraxisError {
   }
 }
 
+export class PraxisSubmittedError extends PraxisError {
+  readonly code = "internal_error" as const;
+  constructor(readonly sig: string) {
+    super(
+      `Transaction ${sig} was submitted, but confirmation is unknown. Do not retry — check Solana Explorer.`,
+      { sig },
+    );
+    this.name = "PraxisSubmittedError";
+  }
+}
+
 /** The wire shape of an error response body. */
 export interface PraxisErrorBody {
   error: string;

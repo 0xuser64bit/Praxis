@@ -7,7 +7,12 @@ import { Keypair } from "@solana/web3.js";
 import { ActionKind, type ActionLogEntry, type PolicyView } from "@praxis/shared";
 
 import { PraxisServerProvider } from "../praxisServer";
-import type { AegisClient, TransferExecution, TransferSimulation } from "../../aegis/client";
+import type {
+  AegisClient,
+  TransferExecution,
+  TransferSimulation,
+  UnsignedOwnerTransaction,
+} from "../../aegis/client";
 import { DEFAULT_AEGIS_PROGRAM_ID } from "../../aegis/constants";
 import { DEFAULT_PRESTOCKS_API_URL, DEFAULT_PRESTOCKS_TIMEOUT_MS, DEFAULT_TOKENS, type PraxisServerConfig } from "../../env";
 import { PraxisConfigError } from "../../errors";
@@ -36,6 +41,7 @@ afterAll(() => {
 
 class FakeAegis {
   policy: PolicyView;
+  policyError: Error | undefined;
   simResult: TransferSimulation;
   execResult: TransferExecution;
   calls: string[] = [];
@@ -57,7 +63,12 @@ class FakeAegis {
   }
 
   async getPolicy() {
+    if (this.policyError) throw this.policyError;
     return this.policy;
+  }
+  async submitSignedTransaction() {
+    this.calls.push("submitSignedTransaction");
+    return "owner-sig";
   }
   vaultTokenBalance: () => Promise<bigint | undefined> = async () => undefined;
   getVaultTokenBalance() {
@@ -408,6 +419,20 @@ describe("owner-action signing gate", () => {
     const { provider, fake } = build();
     await provider.revokeAgent().catch(() => undefined);
     expect(fake.calls).toContain("revokeAgent");
+  });
+
+  test("a confirmed owner action stays successful when the follow-up refresh fails", async () => {
+    const { provider, fake } = build();
+    fake.policyError = new Error("rpc down");
+    const signed = {
+      transaction: "",
+      blockhash: "",
+      lastValidBlockHeight: 0,
+      draft: "",
+    } satisfies UnsignedOwnerTransaction;
+
+    await expect(provider.submitOwnerAction(signed)).resolves.toEqual({ sig: "owner-sig" });
+    expect(fake.calls).toContain("submitSignedTransaction");
   });
 });
 

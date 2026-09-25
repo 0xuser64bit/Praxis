@@ -361,6 +361,8 @@ export type ConnectionErrorCode =
   | "rate_limited"
   /** A concurrent writer won (HTTP 409); the call is safe to retry. */
   | "conflict"
+  /** Submitted to Solana but confirmation is unknown; reconcile by signature, never blind-retry. */
+  | "submitted_unknown"
   | "client_error"
   | "internal_error";
 

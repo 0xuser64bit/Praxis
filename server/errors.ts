@@ -27,6 +27,11 @@ export type PraxisErrorCode =
   | "rate_limited"
   /** A concurrent writer changed this wallet's state first (optimistic-concurrency). */
   | "conflict"
+  /**
+   * Submitted to Solana but confirmation timed out — may have landed.
+   * Never retried blindly; reconcile by signature instead.
+   */
+  | "submitted_unknown"
   /** Anything unclassified. */
   | "internal_error";
 
@@ -115,7 +120,7 @@ export class PraxisRateLimitError extends PraxisError {
 }
 
 export class PraxisSubmittedError extends PraxisError {
-  readonly code = "internal_error" as const;
+  readonly code = "submitted_unknown" as const;
   constructor(readonly sig: string) {
     super(
       `Transaction ${sig} was submitted, but confirmation is unknown. Do not retry — check Solana Explorer.`,

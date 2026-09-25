@@ -14,6 +14,8 @@ export type PraxisErrorCode =
   | "rate_limited"
   /** A concurrent writer changed this wallet's state first; reload and retry. */
   | "conflict"
+  /** Submitted to Solana but confirmation is unknown; reconcile by signature, never blind-retry. */
+  | "submitted_unknown"
   | "internal_error"
   | "client_error";
 

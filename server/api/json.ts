@@ -15,6 +15,7 @@ import {
   PraxisInputError,
   PraxisNotFoundError,
   PraxisRateLimitError,
+  PraxisSubmittedError,
   type PraxisErrorBody,
 } from "../errors";
 import { assertRateLimit } from "./rateLimit";
@@ -43,8 +44,11 @@ export function jsonError(error: unknown, init: ResponseInit = {}): Response {
 
   // Unexpected (5xx) failures are reported for alerting; expected 4xx client
   // errors are not, to keep the signal clean. 503s are config problems worth a
-  // warning but not an error page.
-  if (status >= 500 && status !== 503) {
+  // warning but not an error page. A submitted-but-unknown confirmation is an
+  // expected RPC outcome, not a bug — it carries its own code and must not page.
+  if (error instanceof PraxisSubmittedError) {
+    logger.warn("praxis.submitted_unknown", errorFields(error));
+  } else if (status >= 500 && status !== 503) {
     reportError(error, { httpStatus: status });
   } else if (status === 503) {
     logger.warn("praxis.config_error", errorFields(error));

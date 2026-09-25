@@ -47,11 +47,14 @@ export function ConfirmDialog({
   useEffect(() => {
     const dialog = dialogRef.current;
     const previousOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
     dialog?.showModal();
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
       if (dialog?.open) dialog.close();
+      // Keyboard focus otherwise drops to <body> after the dialog closes.
+      if (previouslyFocused && document.contains(previouslyFocused)) previouslyFocused.focus();
     };
   }, []);
 

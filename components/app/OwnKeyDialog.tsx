@@ -38,11 +38,13 @@ export function OwnKeyDialog({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     const dialog = dialogRef.current;
     const previousOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
     dialog?.showModal();
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
       if (dialog?.open) dialog.close();
+      if (previouslyFocused && document.contains(previouslyFocused)) previouslyFocused.focus();
     };
   }, []);
 

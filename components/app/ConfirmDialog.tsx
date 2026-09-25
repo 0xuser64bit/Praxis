@@ -15,7 +15,7 @@
  */
 
 import { IconAlertTriangle } from "@tabler/icons-react";
-import { useEffect, useId, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 
 import { Button } from "@/components/praxis/Button";
 
@@ -42,32 +42,36 @@ export function ConfirmDialog({
   children: ReactNode;
 }) {
   const id = useId();
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      // Escaping mid-signature would leave the wallet prompt without anything
-      // listening for its answer.
-      if (event.key === "Escape" && !busy) onClose();
+    const dialog = dialogRef.current;
+    const previousOverflow = document.body.style.overflow;
+    dialog?.showModal();
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      if (dialog?.open) dialog.close();
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose, busy]);
+  }, []);
 
   return (
-    <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-[rgba(0,0,0,0.6)] px-6 backdrop-blur-[2px] [animation:fadeUp_0.2s_ease]"
-      onClick={() => {
+    <dialog
+      ref={dialogRef}
+      className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[440px] overflow-y-auto rounded-2xl bg-[var(--bg-card)] p-0 [border:0.5px_solid_var(--border-strong)] [box-shadow:0_40px_100px_-30px_rgba(0,0,0,0.8)] backdrop:bg-[rgba(0,0,0,0.6)] backdrop:backdrop-blur-[2px] motion-safe:[animation:fadeUp_0.2s_ease]"
+      onCancel={(event) => {
+        event.preventDefault();
         if (!busy) onClose();
       }}
-      role="dialog"
+      onClick={(event) => {
+        if (event.target === event.currentTarget && !busy) onClose();
+      }}
       aria-modal="true"
+      aria-busy={busy}
       aria-labelledby={`${id}-title`}
       aria-describedby={`${id}-desc`}
     >
-      <div
-        className="w-full max-w-[440px] rounded-2xl bg-[var(--bg-card)] p-6 [border:0.5px_solid_var(--border-strong)] [box-shadow:0_40px_100px_-30px_rgba(0,0,0,0.8)]"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="p-6">
         <div className="flex items-center gap-3">
           <span
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--danger)]"
@@ -122,6 +126,6 @@ export function ConfirmDialog({
           </p>
         )}
       </div>
-    </div>
+    </dialog>
   );
 }

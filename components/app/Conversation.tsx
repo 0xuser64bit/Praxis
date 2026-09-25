@@ -33,7 +33,10 @@ export function Conversation({
   const messageCount = thread?.messages.length ?? 0;
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    bottomRef.current?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "end",
+    });
   }, [messageCount, thinking]);
 
   // Surface a toast when a new agent reply carries a notice block (e.g. a saved
@@ -82,9 +85,11 @@ export function Conversation({
             New session. Type an instruction below to begin.
           </div>
         )}
-        {thread.messages.map((m) => (
-          <MessageItem key={m.id} message={m} onSend={onSend} onOpenPolicy={onOpenPolicy} />
-        ))}
+        <div role="log" aria-label="Conversation" aria-live="polite" aria-relevant="additions">
+          {thread.messages.map((m) => (
+            <MessageItem key={m.id} message={m} onSend={onSend} onOpenPolicy={onOpenPolicy} />
+          ))}
+        </div>
         {thinking && <Thinking />}
         <div ref={bottomRef} />
       </Surface>

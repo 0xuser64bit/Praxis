@@ -486,7 +486,7 @@ function AddressBookCard({
           }}
           placeholder="name (maya)"
           aria-label="Contact name"
-          className="h-9 w-[130px] shrink-0 rounded-md bg-[var(--bg)] px-2.5 text-[12px] text-[var(--text-primary)] outline-none [border:0.5px_solid_var(--border)] placeholder:text-[var(--text-quaternary)] focus:[border-color:var(--border-bright)]"
+          className="h-9 w-[130px] shrink-0 rounded-md bg-[var(--bg)] px-2.5 text-[12px] text-[var(--text-primary)] outline-none [border:0.5px_solid_var(--border)] placeholder:text-[var(--text-tertiary)] focus:[border-color:var(--border-bright)]"
         />
         <input
           value={address}
@@ -496,7 +496,7 @@ function AddressBookCard({
           }}
           placeholder="paste address…"
           aria-label="Contact address"
-          className="h-9 min-w-0 flex-1 rounded-md bg-[var(--bg)] px-2.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-primary)] outline-none [border:0.5px_solid_var(--border)] placeholder:text-[var(--text-quaternary)] focus:[border-color:var(--border-bright)]"
+          className="h-9 min-w-0 flex-1 rounded-md bg-[var(--bg)] px-2.5 [font-family:var(--font-mono)] text-[11px] text-[var(--text-primary)] outline-none [border:0.5px_solid_var(--border)] placeholder:text-[var(--text-tertiary)] focus:[border-color:var(--border-bright)]"
         />
         <button
           type="button"
@@ -1544,7 +1544,7 @@ function AllowList({
             }}
             placeholder="paste address…"
             aria-label="Paste address to add to allow-list"
-            className="w-[150px] rounded-md bg-[var(--bg)] px-2.5 py-1 [font-family:var(--font-mono)] text-[11px] text-[var(--text-primary)] outline-none [border:0.5px_solid_var(--border)] placeholder:text-[var(--text-quaternary)] focus:[border-color:var(--border-bright)]"
+            className="w-[150px] rounded-md bg-[var(--bg)] px-2.5 py-1 [font-family:var(--font-mono)] text-[11px] text-[var(--text-primary)] outline-none [border:0.5px_solid_var(--border)] placeholder:text-[var(--text-tertiary)] focus:[border-color:var(--border-bright)]"
           />
           {draft.trim() && (
             <button

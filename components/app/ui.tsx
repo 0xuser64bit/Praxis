@@ -32,7 +32,7 @@ export function Dot({
   return (
     <span
       aria-hidden
-      className={`shrink-0 rounded-full ${pulse ? "[animation:pulse_2s_infinite]" : ""}`}
+      className={`shrink-0 rounded-full ${pulse ? "motion-safe:[animation:pulse_2s_infinite]" : ""}`}
       style={{ width: size, height: size, background: color }}
     />
   );

@@ -73,7 +73,7 @@ export function Thinking() {
         <span className="thinking-label [font-family:var(--font-mono)] text-[13px] tracking-[0.02em]">
           {label}
         </span>
-        <span className="[font-family:var(--font-mono)] text-[12px] text-[var(--text-quaternary)] tabular-nums">
+        <span className="[font-family:var(--font-mono)] text-[12px] text-[var(--text-tertiary)] tabular-nums">
           {formatElapsed(elapsed)}
         </span>
       </div>

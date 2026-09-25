@@ -49,7 +49,7 @@ export function Composer({
               onClick={() => {
                 if (!disabled) onSend(s);
               }}
-              className="cursor-pointer rounded-full bg-[var(--bg-card)] px-3 py-1.5 [font-family:var(--font-mono)] text-[11.5px] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)] [transition:border-color_0.15s,color_0.15s] hover:[border-color:var(--border-bright)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-9 cursor-pointer rounded-full bg-[var(--bg-card)] px-3 py-1.5 [font-family:var(--font-mono)] text-[11.5px] text-[var(--text-secondary)] [border:0.5px_solid_var(--border-strong)] [transition:border-color_0.15s,color_0.15s] hover:[border-color:var(--border-bright)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 max-[760px]:min-h-11"
             >
               {s}
             </button>
@@ -58,7 +58,7 @@ export function Composer({
       )}
 
       <div
-        className={`flex items-center gap-2.5 rounded-lg bg-[var(--bg-card)] px-3.5 py-2.5 [transition:border-color_0.15s] focus-within:[border-color:var(--border-bright)] ${
+        className={`flex items-center gap-2.5 rounded-lg bg-[var(--bg-card)] px-3.5 py-2.5 [border:0.5px_solid_var(--border-strong)] [transition:border-color_0.15s] focus-within:[border-color:var(--accent)] ${
           disabled ? "opacity-60" : ""
         }`}
       >
@@ -77,15 +77,14 @@ export function Composer({
           // seconds, and a placeholder that disagrees with it reads as a stall.
           placeholder={disabled ? "Praxis is working…" : "Tell Praxis what to do…"}
           aria-label="Message Praxis"
-          data-focus-ring="none"
-          className="flex-1 bg-transparent [font-family:var(--font-mono)] text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
+          className="min-w-0 flex-1 bg-transparent [font-family:var(--font-mono)] text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] max-[760px]:text-[16px]"
         />
         <button
           type="button"
           onClick={submit}
           disabled={disabled || !value.trim()}
           aria-label="Send"
-          className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--text-primary)] text-[var(--bg)] [transition:background_0.15s] hover:bg-[var(--accent)] disabled:cursor-not-allowed disabled:bg-[var(--bg-elevated)] disabled:text-[var(--text-tertiary)]"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-[var(--text-primary)] text-[var(--bg)] [transition:background_0.15s] hover:bg-[var(--accent)] disabled:cursor-not-allowed disabled:bg-[var(--bg-elevated)] disabled:text-[var(--text-tertiary)]"
         >
           <IconArrowRight size={15} />
         </button>

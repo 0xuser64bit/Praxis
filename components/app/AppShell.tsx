@@ -307,31 +307,35 @@ function PolicyOnboarding({
           ))}
         </ul>
 
-        <div className="mt-5">
-          <p className="mb-2 text-[11.5px] font-medium uppercase tracking-wide text-[var(--text-tertiary)]">
+        <fieldset className="mt-5">
+          <legend className="mb-2 text-[11.5px] font-medium uppercase tracking-wide text-[var(--text-tertiary)]">
             Fund now (optional)
-          </p>
-          <div className="grid grid-cols-4 gap-1.5">
+          </legend>
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
             {FUNDING_PRESETS.map((option, index) => (
-              <button
-                key={option.label}
-                type="button"
-                disabled={busy}
-                onClick={() => setSelected(index)}
-                // Border on both states, colour-only change: a selected chip
-                // that drops its border also drops 1px of box and nudges its
-                // own label.
-                className={`h-9 rounded-md px-2 text-[12px] font-medium [border:0.5px_solid] [transition:background_0.15s,color_0.15s,border-color_0.15s] disabled:cursor-not-allowed ${
-                  index === selected
-                    ? "bg-[var(--accent)] text-[var(--bg)] [border-color:var(--accent)]"
-                    : "bg-[var(--bg)] text-[var(--text-secondary)] [border-color:var(--border)] hover:[border-color:var(--border-strong)]"
-                }`}
-              >
-                {option.label}
-              </button>
+              <label key={option.label} className="cursor-pointer">
+                <input
+                  type="radio"
+                  name="funding-preset"
+                  value={index}
+                  checked={selected === index}
+                  disabled={busy}
+                  onChange={() => setSelected(index)}
+                  className="peer sr-only"
+                />
+                <span
+                  className={`flex min-h-11 items-center justify-center rounded-md px-2 text-center text-[12px] font-medium [border:0.5px_solid] [transition:background_0.15s,color_0.15s,border-color_0.15s] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--accent)] peer-disabled:cursor-not-allowed peer-disabled:opacity-60 ${
+                    index === selected
+                      ? "bg-[var(--accent)] text-[var(--bg)] [border-color:var(--accent)]"
+                      : "bg-[var(--bg)] text-[var(--text-secondary)] [border-color:var(--border-strong)] hover:[border-color:var(--border-bright)]"
+                  }`}
+                >
+                  {option.label}
+                </span>
+              </label>
             ))}
           </div>
-        </div>
+        </fieldset>
 
         <button
           type="button"
@@ -488,13 +492,14 @@ function MobileTab({
       aria-label={label}
       aria-current={active ? "page" : undefined}
       onClick={onClick}
-      className={`flex flex-1 items-center justify-center rounded-md py-2 [transition:background_0.15s,color_0.15s] ${
+      className={`flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md py-2 [transition:background_0.15s,color_0.15s] ${
         active
           ? "bg-[var(--bg-card)] text-[var(--accent)]"
           : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
       }`}
     >
       {icon}
+      <span className="text-[12px] font-medium">{label}</span>
     </button>
   );
 }

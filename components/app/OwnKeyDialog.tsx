@@ -1,7 +1,7 @@
 "use client";
 
 import { IconKey, IconX } from "@tabler/icons-react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import {
   loadOwnKey,
@@ -25,6 +25,7 @@ export function OwnKeyDialog({ onClose }: { onClose: () => void }) {
   const own = useOwnKey();
   const titleId = useId();
   const bodyId = useId();
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const stored = own.provider ? ownProvider(own.provider) : null;
   const [replacing, setReplacing] = useState(false);
   const [provider, setProvider] = useState<OwnProviderId>(own.provider ?? "gemini");
@@ -35,12 +36,15 @@ export function OwnKeyDialog({ onClose }: { onClose: () => void }) {
   const choice = ownProvider(provider);
 
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+    const dialog = dialogRef.current;
+    const previousOverflow = document.body.style.overflow;
+    dialog?.showModal();
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      if (dialog?.open) dialog.close();
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   const save = () => {
     const draft = parseOwnKeyDraft(provider, secret);
@@ -68,18 +72,21 @@ export function OwnKeyDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-[rgba(0,0,0,0.6)] px-6 backdrop-blur-[2px]"
-      onClick={onClose}
-      role="dialog"
+    <dialog
+      ref={dialogRef}
+      className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[440px] overflow-y-auto rounded-2xl bg-[var(--bg-card)] p-0 [border:0.5px_solid_var(--border-strong)] [box-shadow:0_40px_100px_-30px_rgba(0,0,0,0.8)] backdrop:bg-[rgba(0,0,0,0.6)] backdrop:backdrop-blur-[2px] motion-safe:[animation:fadeUp_0.2s_ease]"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
       aria-modal="true"
       aria-labelledby={titleId}
       aria-describedby={bodyId}
     >
-      <div
-        className="w-full max-w-[440px] rounded-2xl bg-[var(--bg-card)] p-6 [border:0.5px_solid_var(--border-strong)] [box-shadow:0_40px_100px_-30px_rgba(0,0,0,0.8)]"
-        onClick={(event) => event.stopPropagation()}
-      >
+      <div className="p-6">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
             <span
@@ -101,7 +108,7 @@ export function OwnKeyDialog({ onClose }: { onClose: () => void }) {
             onClick={onClose}
             autoFocus={!showForm}
             aria-label="Close"
-            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--text-tertiary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
           >
             <IconX size={15} />
           </button>
@@ -155,7 +162,7 @@ export function OwnKeyDialog({ onClose }: { onClose: () => void }) {
                   setReplacing(false);
                   setError(null);
                 }}
-                className="inline-flex h-7 cursor-pointer items-center rounded-md px-2.5 text-[12px] font-medium text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.4)] hover:bg-[rgba(199,91,91,0.1)]"
+                className="inline-flex min-h-11 cursor-pointer items-center rounded-md px-3 text-[12px] font-medium text-[var(--danger)] [border:0.5px_solid_rgba(199,91,91,0.4)] hover:bg-[rgba(199,91,91,0.1)]"
               >
                 Remove key
               </button>
@@ -167,7 +174,7 @@ export function OwnKeyDialog({ onClose }: { onClose: () => void }) {
                   setError(null);
                   setRevealed(null);
                 }}
-                className="inline-flex h-7 cursor-pointer items-center rounded-md px-2.5 text-[12px] text-[var(--text-secondary)] [border:0.5px_solid_var(--border)] hover:text-[var(--text-primary)] hover:[border-color:var(--border-strong)]"
+                className="inline-flex min-h-11 cursor-pointer items-center rounded-md px-3 text-[12px] text-[var(--text-secondary)] [border:0.5px_solid_var(--border-strong)] hover:text-[var(--text-primary)] hover:[border-color:var(--border-bright)]"
               >
                 Replace
               </button>
@@ -222,8 +229,7 @@ export function OwnKeyDialog({ onClose }: { onClose: () => void }) {
                 placeholder="Paste your key"
                 aria-label={`${choice.label} API key`}
                 autoFocus
-                data-focus-ring="none"
-                className="mt-1.5 w-full rounded-lg bg-[var(--bg)] px-3 py-2 [font-family:var(--font-mono)] text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)] [border:0.5px_solid_var(--border)] focus:[border-color:var(--border-bright)]"
+                className="mt-1.5 w-full rounded-lg bg-[var(--bg)] px-3 py-2 [font-family:var(--font-mono)] text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] [border:0.5px_solid_var(--border-strong)] focus:[border-color:var(--accent)] max-[760px]:text-[16px]"
               />
             </label>
 
@@ -271,6 +277,6 @@ export function OwnKeyDialog({ onClose }: { onClose: () => void }) {
           </form>
         )}
       </div>
-    </div>
+    </dialog>
   );
 }

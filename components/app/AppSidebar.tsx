@@ -59,7 +59,7 @@ export function AppSidebar({
       </div>
 
       {/* primary nav */}
-      <nav className="mb-5 flex flex-col gap-0.5">
+      <nav aria-label="Primary" className="mb-5 flex flex-col gap-0.5">
         <NavItem
           icon={<IconMessages size={16} />}
           label="Conversation"
@@ -110,6 +110,7 @@ export function AppSidebar({
                 key={t.id}
                 type="button"
                 onClick={() => onSelectThread(t.id)}
+                aria-pressed={view === "chat" && t.id === activeThreadId}
                 className={`mb-px w-full cursor-pointer truncate rounded-md px-2.5 py-[7px] text-left text-[13px] [transition:background_0.15s,color_0.15s] ${
                   view === "chat" && t.id === activeThreadId
                     ? "bg-[var(--bg-card)] text-[var(--text-primary)]"
@@ -165,7 +166,8 @@ function NavItem({
     <button
       type="button"
       onClick={onClick}
-      className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] [transition:background_0.15s,color_0.15s] ${
+      aria-current={active ? "page" : undefined}
+      className={`flex min-h-10 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] [transition:background_0.15s,color_0.15s] ${
         active
           ? "bg-[var(--bg-card)] text-[var(--text-primary)] [&_svg]:text-[var(--accent)]"
           : "text-[var(--text-secondary)] hover:bg-[var(--bg-card)] hover:text-[var(--text-primary)] [&_svg]:text-[var(--text-tertiary)]"

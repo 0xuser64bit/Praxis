@@ -126,7 +126,15 @@ function DailyMeter({
 
   return (
     <div>
-      <div className="relative h-[7px] overflow-hidden rounded-full bg-[var(--bg-elevated)]">
+      <div
+        role="progressbar"
+        aria-label={`${symbol} daily cap after this action`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.min(100, Math.max(0, spentPct + txPct))}
+        aria-valuetext={`${formatUnits(spent + amount, decimals, { maxFrac: 4 })} of ${formatUnits(daily, decimals, { maxFrac: 4 })} ${symbol}`}
+        className="relative h-[7px] overflow-hidden rounded-full bg-[var(--bg-elevated)]"
+      >
         {/* already spent today */}
         <div
           className="absolute inset-y-0 left-0 bg-[var(--text-quaternary)]"

@@ -15,7 +15,7 @@ import type {
 } from "../../aegis/client";
 import { DEFAULT_AEGIS_PROGRAM_ID } from "../../aegis/constants";
 import { DEFAULT_PRESTOCKS_API_URL, DEFAULT_PRESTOCKS_TIMEOUT_MS, DEFAULT_TOKENS, type PraxisServerConfig } from "../../env";
-import { PraxisConfigError } from "../../errors";
+import { PraxisConfigError, PraxisConflictError } from "../../errors";
 import { getStateRepository } from "../stateRepository";
 import { findPolicyPda } from "../../aegis/pdas";
 import { policyFixture } from "../../testing/fixtures";
@@ -381,6 +381,40 @@ describe("send → sign flow", () => {
 
     expect(provider.getProposal(proposal.id)!.state).toBe("blocked");
     expect(provider.getActivity().find((entry) => entry.sig === "sig-failed")?.result).toBe("rejected");
+  });
+
+  test("a reconcile that loses a write race adopts the newer document instead of overwriting it", async () => {
+    const { provider, fake } = build();
+    fake.execResult = {
+      sig: "sig-race",
+      check: { allowed: true, spentToday: 0n, dailyLimit: 1_000_000_000n, remaining: 500_000_000n },
+      status: "submitted",
+      logs: [],
+    };
+    const { threadId } = await provider.send(null, "send 0.5 sol to maya");
+    const block = (provider.getThread(threadId)!.messages.at(-1) as { blocks: Array<{ proposalId?: string; type: string }> }).blocks.find(
+      (item) => item.type === "proposal",
+    )!;
+    await provider.signProposal(block.proposalId!);
+
+    // Another instance writes between this reconcile's reload and its save.
+    const repository = getStateRepository();
+    const save = repository.save.bind(repository);
+    repository.save = async () => {
+      repository.save = save;
+      throw new PraxisConflictError();
+    };
+    fake.transactionOutcome = "confirmed";
+    try {
+      await provider.reconcileSubmittedProposals();
+    } finally {
+      repository.save = save;
+    }
+    expect(provider.getProposal(block.proposalId!)!.state).toBe("submitted");
+
+    // The next read reconciles against the fresh revision.
+    await provider.reconcileSubmittedProposals();
+    expect(provider.getProposal(block.proposalId!)!.state).toBe("signed");
   });
 
   test("a blocked preview yields a blocked proposal and a rejected activity row", async () => {

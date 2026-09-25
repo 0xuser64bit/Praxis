@@ -447,7 +447,19 @@ export class PraxisServerProvider implements PraxisProvider {
         }
         changed = true;
       }
-      if (changed) await this.commit();
+      if (!changed) return;
+      // Compare-and-swap, never last-write-wins: this runs on a read path and
+      // must not overwrite a concurrent writer's newer document — that could
+      // revert a proposal another instance just claimed or submitted. On a
+      // conflict, adopt the newer state; the next read reconciles again.
+      this.notify();
+      try {
+        await this.casSave();
+      } catch (error) {
+        if (!(error instanceof PraxisConflictError)) throw error;
+        logger.warn("praxis.proposal_reconcile_conflict", { ownerKey: this.ownerKey });
+        await this.reload();
+      }
     });
   }
 

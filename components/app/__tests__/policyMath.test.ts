@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { PolicyView } from "@praxis/shared";
 
-import { expiryAfterSevenDays, getAgentState } from "../lib/policyMath";
+import { expiryAfterSevenDays, getAgentState, resumePatch } from "../lib/policyMath";
 
 const NOW = 1_000_000;
 const ACTIVE_KEY = "ActiveSessionKey11111111111111111111111111111";
@@ -57,5 +57,19 @@ describe("expiryAfterSevenDays", () => {
 
   test("restores an expired session for seven days", () => {
     expect(expiryAfterSevenDays(NOW - 1, NOW)).toBe(NOW + 7 * 86_400);
+  });
+});
+
+describe("resumePatch", () => {
+  test("unpauses a session that has not expired without touching its expiry", () => {
+    expect(resumePatch(policy({ paused: true }), NOW)).toEqual({ paused: false });
+  });
+
+  // update_policy requires a future expiry, so unpausing alone would be rejected on-chain.
+  test("restores the expiry of a paused session that has also expired", () => {
+    expect(resumePatch(policy({ paused: true, expiryTs: NOW - 1 }), NOW)).toEqual({
+      paused: false,
+      expiryTs: NOW + 7 * 86_400,
+    });
   });
 });

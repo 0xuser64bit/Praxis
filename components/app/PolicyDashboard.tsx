@@ -54,6 +54,7 @@ import {
   effectiveTokenSpentToday,
   expiryAfterSevenDays,
   getAgentState,
+  resumePatch,
   type AgentState,
 } from "./lib/policyMath";
 import { KNOWN_PROGRAMS, mintLabel, programLabel } from "./lib/tokenCatalog";
@@ -117,19 +118,18 @@ export function PolicyDashboard() {
               disabled={busy}
               onClick={() => {
                 if (agentState === "paused") {
-                  run(actionKeys.pause, () => provider.updatePolicy({ paused: false }), {
+                  run(actionKeys.pause, () => provider.updatePolicy(resumePatch(policy, now)), {
                     label: "Unpausing the agent",
                     fallback: "Could not unpause the agent.",
-                    success: "Agent unpaused.",
+                    success:
+                      policy.expiryTs <= now
+                        ? "Agent unpaused and its session restored for seven more days."
+                        : "Agent unpaused.",
                   });
                 } else if (agentState === "expired") {
                   run(
                     actionKeys.expiry,
-                    () =>
-                      provider.updatePolicy({
-                        expiryTs: expiryAfterSevenDays(policy.expiryTs, now),
-                        paused: false,
-                      }),
+                    () => provider.updatePolicy(resumePatch(policy, now)),
                     {
                       label: "Restoring the agent session",
                       fallback: "Could not restore the agent session.",
@@ -187,7 +187,7 @@ export function PolicyDashboard() {
             style={{ background: "rgba(199,91,91,0.10)", border: "0.5px solid rgba(199,91,91,0.3)" }}
           >
             <Dot color="var(--danger)" />
-            Agent expired — transfers are blocked. Restore the session for seven more days or rotate the key in Advanced.
+            Agent expired — transfers are blocked until you restore the session. Rotating the key does not extend it.
           </div>
         )}
         {agentState === "paused" && (

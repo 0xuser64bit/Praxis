@@ -24,7 +24,7 @@ export function MobileThreadBar({
   onNewThread,
 }: {
   threads: Thread[];
-  activeThreadId: string;
+  activeThreadId: string | null;
   onSelectThread: (id: string) => void;
   onNewThread: () => void;
 }) {

@@ -360,13 +360,14 @@ export type ConnectionErrorCode =
   | "rate_limited"
   /** A concurrent writer won (HTTP 409); the call is safe to retry. */
   | "conflict"
+  | "client_error"
   | "internal_error";
 
 export type ProviderConnectionState =
   | { mode: "mock"; phase: "ready" }
   | {
       mode: "api";
-      phase: "loading" | "ready" | "error";
+       phase: "loading" | "ready" | "stale" | "error";
       message?: string;
       code?: ConnectionErrorCode;
       /** From `policy_not_found`: the PDA this wallet's policy will live at. */

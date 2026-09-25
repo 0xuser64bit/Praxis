@@ -114,12 +114,12 @@ export class RemotePraxisProvider implements PraxisProvider {
     this.refreshTimer = setInterval(() => {
       if (document.visibilityState !== "visible") return;
       if (this.pendingSends.size > 0) return; // never race an in-flight send
-      void this.refreshAll({ background: true });
+      void this.refreshAll();
     }, REFRESH_MS);
 
     this.onVisibility = () => {
       if (document.visibilityState === "visible" && this.pendingSends.size === 0) {
-        void this.refreshAll({ background: true });
+        void this.refreshAll();
       }
     };
     document.addEventListener("visibilitychange", this.onVisibility);
@@ -394,7 +394,7 @@ export class RemotePraxisProvider implements PraxisProvider {
     );
   }
 
-  private async refreshAll(opts: { background?: boolean } = {}) {
+  private async refreshAll() {
     const token = ++this.refreshToken;
     try {
       // Five parallel reads, flat — regardless of conversation length. Proposals
@@ -433,9 +433,8 @@ export class RemotePraxisProvider implements PraxisProvider {
         this.notifyUnauthorized();
         return;
       }
-      // Foreground loads (initial mount, post-mutation) surface the error;
-      // background polls keep the last good state instead of flashing an error.
-      if (!opts.background) this.setConnectionError(error);
+      if (!this.state.policy) this.setConnectionError(error);
+      else this.setConnectionStale(error);
     }
   }
 
@@ -471,36 +470,48 @@ export class RemotePraxisProvider implements PraxisProvider {
   }
 
   private async get<T>(url: string): Promise<T> {
-    const res = await fetch(url, { cache: "no-store" });
-    return fromWire<T>(await parseResponse(res));
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      return fromWire<T>(await parseResponse(res));
+    } catch (error) {
+      throw normalizeRequestError(error);
+    }
   }
 
   private async post<T = { ok: true }>(url: string, body: unknown): Promise<T> {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(toWire(body)),
-    });
-    return fromWire<T>(await parseResponse(res));
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(toWire(body)),
+      });
+      return fromWire<T>(await parseResponse(res));
+    } catch (error) {
+      throw normalizeRequestError(error);
+    }
   }
 
   private async mutate<T>(fn: () => Promise<T>): Promise<T> {
     try {
-      const result = await fn();
-      // Only promote the connection to "ready" once a policy is actually loaded.
-      // A successful bootstrap submit resolves BEFORE the follow-up refreshAll()
-      // has fetched the freshly-created policy; flipping to "ready" here would
-      // render ReadyAppShell (which calls getPolicy()) and throw "policy has not
-      // loaded yet". refreshAll() is the authority on load state in that window.
-      if (this.state.policy) {
-        this.state = { ...this.state, connection: { mode: "api", phase: "ready" } };
-        this.notify();
-      }
-      return result;
+      return await fn();
     } catch (error) {
       if (this.isUnauthorized(error)) this.notifyUnauthorized();
       throw error;
     }
+  }
+
+  private setConnectionStale(error: unknown) {
+    const api = error instanceof PraxisApiError ? error : undefined;
+    this.state = {
+      ...this.state,
+      connection: {
+        mode: "api",
+        phase: "stale",
+        message: "Praxis is showing the last known state. Retry when you are back online.",
+        code: api?.code ?? "client_error",
+      },
+    };
+    this.notify();
   }
 
   private setConnectionError(error: unknown) {
@@ -557,6 +568,7 @@ const ERROR_CODES: ConnectionErrorCode[] = [
   "policy_not_found",
   "rate_limited",
   "conflict",
+  "client_error",
   "internal_error",
 ];
 
@@ -572,6 +584,15 @@ function readErrorDetails(body: unknown): Record<string, unknown> | undefined {
   return raw && typeof raw === "object" && !Array.isArray(raw)
     ? (raw as Record<string, unknown>)
     : undefined;
+}
+
+function normalizeRequestError(error: unknown): PraxisApiError {
+  if (error instanceof PraxisApiError) return error;
+  return new PraxisApiError(
+    "Praxis could not reach the server. Check your connection and try again.",
+    0,
+    "client_error",
+  );
 }
 
 async function parseResponse(res: Response): Promise<unknown> {

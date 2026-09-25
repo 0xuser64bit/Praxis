@@ -179,6 +179,36 @@ describe("RemotePraxisProvider authorization recovery", () => {
     expect(invalidations).toBe(1);
   });
 
+  test("a failed refresh keeps the last snapshot and marks it stale", async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const body = String(input).includes("get-policy") ? { vaultBalance: "5" } : [];
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof globalThis.fetch;
+    const provider = new RemotePraxisProvider();
+    await provider.refresh();
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      void input;
+      throw new Error("offline");
+    }) as unknown as typeof globalThis.fetch;
+    await provider.refresh();
+
+    expect(provider.getConnectionState()).toMatchObject({ mode: "api", phase: "stale", code: "client_error" });
+    expect(provider.getPolicy().vaultBalance).toBe(5n);
+  });
+
+  test("an initial network failure is an actionable error", async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      void input;
+      throw new Error("offline");
+    }) as unknown as typeof globalThis.fetch;
+    const provider = new RemotePraxisProvider();
+
+    await provider.refresh();
+
+    expect(provider.getConnectionState()).toMatchObject({ mode: "api", phase: "error", code: "client_error" });
+  });
+
   test("an action 401 invalidates and rejects without retrying", async () => {
     let invalidations = 0;
     let calls = 0;

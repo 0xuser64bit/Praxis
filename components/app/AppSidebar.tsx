@@ -29,7 +29,7 @@ export function AppSidebar({
   view: View;
   onView: (v: View) => void;
   threads: Thread[];
-  activeThreadId: string;
+  activeThreadId: string | null;
   onSelectThread: (id: string) => void;
   onNewThread: () => void;
   policy: PolicyView;

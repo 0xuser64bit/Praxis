@@ -8,6 +8,7 @@ import {
   IconKey,
   IconLogout,
   IconMessages,
+  IconRefresh,
   IconShieldLock,
   IconWallet,
 } from "@tabler/icons-react";
@@ -87,6 +88,12 @@ export function AppShell() {
         error
         title="Praxis is having trouble"
         message={connection.message ?? "Check the backend environment and reload the app."}
+        action={{
+          label: "Try again",
+          onClick: () => {
+            void provider.refresh?.();
+          },
+        }}
       />
     );
   }
@@ -97,6 +104,7 @@ export function AppShell() {
 function ReadyAppShell() {
   const auth = useAuthSession();
   const provider = useProvider();
+  const connection = useConnectionState();
   const policy = usePolicy();
   const threads = useThreads();
   const activity = useActivity();
@@ -108,9 +116,9 @@ function ReadyAppShell() {
   const activeThreadId =
     threads.find((thread) => thread.id === selectedThreadId)?.id ??
     threads[0]?.id ??
-    "t-welcome";
+    null;
 
-  const activeThread = useThread(activeThreadId);
+  const activeThread = useThread(activeThreadId ?? "");
   const now = useNow();
   const agentState = getAgentState(policy, now);
   const agentPill =
@@ -208,6 +216,23 @@ function ReadyAppShell() {
           </div>
         </header>
 
+        {connection.phase === "stale" && (
+          <div
+            role="status"
+            className="flex items-center justify-between gap-3 border-b border-[var(--border)] bg-[rgba(199,91,91,0.08)] px-[var(--app-gutter)] py-2.5 text-[12px] text-[var(--text-secondary)]"
+          >
+            <span>{connection.message ?? "Praxis is showing the last known state."}</span>
+            <button
+              type="button"
+              onClick={() => void provider.refresh?.()}
+              className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[var(--accent)] [border:0.5px_solid_var(--border-strong)] hover:bg-[var(--bg-card)]"
+            >
+              <IconRefresh size={13} />
+              Retry
+            </button>
+          </div>
+        )}
+
         {apiMode && <OwnKeySuggestion onManage={() => setKeyOpen(true)} />}
         {apiMode && keyOpen && <OwnKeyDialog onClose={() => setKeyOpen(false)} />}
 
@@ -230,7 +255,12 @@ function ReadyAppShell() {
         </div>
 
         {view === "chat" && (
-          <Conversation threadId={activeThreadId} onOpenPolicy={() => setView("policy")} />
+          <Conversation
+            key={activeThreadId ?? "new"}
+            threadId={activeThreadId}
+            onOpenPolicy={() => setView("policy")}
+            onNewThread={newThread}
+          />
         )}
         {view === "policy" && <PolicyDashboard />}
         {view === "activity" && <ActivityLog />}

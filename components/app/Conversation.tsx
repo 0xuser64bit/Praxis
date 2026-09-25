@@ -1,5 +1,6 @@
 "use client";
 
+import { IconPlus } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Composer } from "./Composer";
@@ -13,13 +14,15 @@ import { messageFromError } from "./lib/useAsyncAction";
 export function Conversation({
   threadId,
   onOpenPolicy,
+  onNewThread,
 }: {
-  threadId: string;
+  threadId: string | null;
   onOpenPolicy: () => void;
+  onNewThread: () => void;
 }) {
   const provider = useProvider();
-  const thread = useThread(threadId);
-  const thinking = useThinking(threadId);
+  const thread = useThread(threadId ?? "");
+  const thinking = useThinking(threadId ?? "");
   const { toast } = useToast();
   // Ids seen for the currently baselined thread. A thread's history is
   // snapshotted silently the first time we see it in this mount — only
@@ -61,18 +64,26 @@ export function Conversation({
 
   if (!thread) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-8 py-7 text-center">
-        <p className="text-[14px] text-[var(--text-secondary)]">This session no longer exists.</p>
-        <p className="text-[13px] text-[var(--text-tertiary)]">
-          It may have been trimmed from history — start a new session to continue.
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-8 py-7 text-center">
+        <p className="text-[15px] text-[var(--text-primary)]">Start a new session</p>
+        <p className="max-w-[36ch] text-[13px] leading-[1.5] text-[var(--text-tertiary)]">
+          Your conversation history is empty. Start a session to send your first instruction.
         </p>
+        <button
+          type="button"
+          onClick={onNewThread}
+          className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-md bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--bg)]"
+        >
+          <IconPlus size={15} />
+          New session
+        </button>
       </div>
     );
   }
 
   const onSend = (text: string) => {
     setError(null);
-    void provider.send(threadId, text).catch((err) => {
+    void provider.send(threadId ?? "", text).catch((err) => {
       setError(messageFromError(err, "Message failed."));
     });
   };

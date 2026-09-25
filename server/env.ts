@@ -11,39 +11,6 @@ import { PraxisConfigError } from "./errors";
 import { STOCK_SYMBOLS, buildStockTokens } from "./stocks/universe";
 import { primeMintDecimals } from "./stocks/mintDecimals";
 
-const DEFAULT_CONTACTS: AddressBookEntry[] = [
-  {
-    label: "maya",
-    name: "Maya Patel",
-    address: "ALUMw7kSn9xn67suHr2ti21CXBQVNMuRk7uWSM1WuXEt",
-    note: "saved contact",
-  },
-  {
-    label: "carlos",
-    name: "Carlos Rivera",
-    address: "QFHwzufVzALBoVNrbX4CGd3auxHhyELDMb1M1JwBtXh",
-    note: "saved contact",
-  },
-  {
-    label: "treasury",
-    name: "Ops Treasury",
-    address: "8xdGRM1bAy4gFDQrdiFesF1FsuRYdecDYC3B5wofYi9t",
-    note: "shared treasury",
-  },
-  {
-    label: "alex",
-    name: "Alex Kim",
-    address: "HVzzeZJjKj7UMjP7PTirZum5ANg3NYHiQe31AJpKk7kY",
-    note: "2 prior transactions",
-  },
-  {
-    label: "alex",
-    name: "Alex Stone",
-    address: "Ef6t2L4oAnPoZahdLoKHYUZADDjEYBQiSuDkrjDfTc3X",
-    note: "new contact",
-  },
-];
-
 export const DEFAULT_TOKENS: TokenInfo[] = [
   {
     symbol: "SOL",
@@ -345,7 +312,7 @@ function parseKeypair(raw: string, name: string): Keypair {
 }
 
 function parseAddressBook(raw: string | undefined): AddressBookEntry[] {
-  if (!raw?.trim()) return defaultAddressBook();
+  if (!raw?.trim()) return [];
   const parsed = parseJsonArray<AddressBookEntry>(raw, "PRAXIS_ADDRESS_BOOK");
   return parsed.map((entry) => {
     const label = String(entry.label ?? "").trim().toLowerCase();
@@ -354,13 +321,6 @@ function parseAddressBook(raw: string | undefined): AddressBookEntry[] {
     if (!label || !name) throw new PraxisConfigError("address book entries require label, name, and address");
     return { label, name, address, note: entry.note ? String(entry.note) : undefined };
   });
-}
-
-function defaultAddressBook(): AddressBookEntry[] {
-  if (process.env.NODE_ENV === "production" && process.env.PRAXIS_ALLOW_DEMO_DATA !== "1") {
-    return [];
-  }
-  return DEFAULT_CONTACTS;
 }
 
 /**

@@ -25,7 +25,6 @@ const ENV_KEYS = [
   "PRAXIS_NEXT_AGENT_KEYPAIR",
   "PRAXIS_NEXT_AGENT_KEYPAIR_PATH",
   "PRAXIS_ADDRESS_BOOK",
-  "PRAXIS_ALLOW_DEMO_DATA",
   "PRAXIS_TOKENS",
   "SOLANA_COMMITMENT",
   "NODE_ENV",
@@ -86,14 +85,14 @@ describe("getServerConfig", () => {
     expect(() => getServerConfig()).toThrow();
   });
 
-  test("does not load demo contacts by default in production", () => {
+  test("does not seed contacts without an explicit address book", () => {
     (process.env as Record<string, string | undefined>).NODE_ENV = "production";
     resetConfigForTests();
     expect(getServerConfig().addressBook).toEqual([]);
 
-    process.env.PRAXIS_ALLOW_DEMO_DATA = "1";
+    delete (process.env as Record<string, string | undefined>).NODE_ENV;
     resetConfigForTests();
-    expect(getServerConfig().addressBook.length).toBeGreaterThan(0);
+    expect(getServerConfig().addressBook).toEqual([]);
   });
 
   test("rejects a token with out-of-range decimals", () => {

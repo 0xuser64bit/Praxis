@@ -326,7 +326,7 @@ The local-validator smoke scripts read keypairs from `SMOKE_OWNER`,
 | `PRAXIS_INTENT_PROVIDERS` | Parse order before the local fallback (default `gemini,groq`). Providers without a key are skipped. |
 | `PRAXIS_LOCAL_INTENT` | `1` skips the LLMs entirely (off by default) |
 | `PRAXIS_RESEARCH_RPC_URL` | Read-only RPC for research. Stays on mainnet-beta, where the mints are. The public endpoint rate-limits `getTokenLargestAccounts`, so "Top 10 concentration" shows as unavailable there. |
-| `PRAXIS_ADDRESS_BOOK` | JSON array of saved contacts. Empty in production unless `PRAXIS_ALLOW_DEMO_DATA=1`. |
+| `PRAXIS_ADDRESS_BOOK` | JSON array of saved contacts. Empty by default in every environment; set it explicitly for operator-managed contacts. |
 
 Watch the logs for `intent.provider_failed` and
 `intent.all_providers_failed_fallback_local`. Parsing keeps working when every

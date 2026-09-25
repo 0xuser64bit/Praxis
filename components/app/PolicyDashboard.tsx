@@ -1168,10 +1168,8 @@ function CapRow({
                 if (e.key === "Enter") void commit();
                 if (e.key === "Escape") setEditing(false);
               }}
-              className="w-24 rounded-md bg-[var(--bg)] px-2 py-1 text-right [font-family:var(--font-mono)] text-[13px] text-[var(--text-primary)] outline-none"
-              style={{
-                border: `0.5px solid ${error ? "var(--danger)" : "var(--border-strong)"}`,
-              }}
+              className="w-24 rounded-md bg-[var(--bg)] px-2 py-1 text-right [font-family:var(--font-mono)] text-[13px] text-[var(--text-primary)] outline-none [border:0.5px_solid_var(--border-strong)] focus:[border-color:var(--accent)]"
+              style={error ? { border: "0.5px solid var(--danger)" } : undefined}
             />
             <span className="[font-family:var(--font-mono)] text-[12px] text-[var(--text-tertiary)]">
               {unit}

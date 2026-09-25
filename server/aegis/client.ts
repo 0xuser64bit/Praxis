@@ -407,7 +407,8 @@ export class AegisClient {
         const check = reasonCode !== undefined
           ? checkFromAegisReason(policy, reasonCode, amount, recipient.toBase58(), now)
           : fallbackTransferCheck(policy, now, error.message);
-        return { sig: submittedSig, check, status: "rejected", logs };
+        // Refused at preflight, so never broadcast: there is no transaction to link to.
+        return { check, status: "rejected", logs };
       }
       return {
         sig: submittedSig,
@@ -527,7 +528,8 @@ export class AegisClient {
         const check = reasonCode !== undefined
           ? checkTokenFromAegisReason(policy, token, reasonCode, amount, recipient.toBase58(), now)
           : fallbackTokenTransferCheck(policy, now, error.message);
-        return { sig: submittedSig, check, status: "rejected", logs };
+        // Refused at preflight, so never broadcast: there is no transaction to link to.
+        return { check, status: "rejected", logs };
       }
       return {
         sig: submittedSig,

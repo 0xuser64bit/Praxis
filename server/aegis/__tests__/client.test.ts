@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { ComputeBudgetProgram, Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js";
+import { ComputeBudgetProgram, Connection, Keypair, PublicKey, SendTransactionError, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js";
 
 import { AegisClient } from "../client";
 import {
@@ -397,6 +397,38 @@ describe("execute uses the AgentSigner", () => {
     expect(signCalls).toBe(1);
     expect(result.status).toBe("confirmed");
     expect(result.sig).toBe("owner-sig");
+  });
+
+  test("a transfer refused at preflight carries no signature, because nothing was broadcast", async () => {
+    const agent = Keypair.generate();
+    const signer: AgentSigner = {
+      publicKey: agent.publicKey,
+      async signTransaction(tx) {
+        tx.sign(agent);
+        return tx;
+      },
+    };
+    const config = makeConfig({ agentKeypair: undefined });
+    const policyData = encodePolicyAccount(policyFixture({ address: config.policyAddress!.toBase58() }));
+    const conn = fakeConnection({
+      getAccountInfo: async () => ({ data: policyData, owner: DEFAULT_AEGIS_PROGRAM_ID, lamports: 1, executable: false }),
+      getBalance: async () => 100_000_000_000,
+      getSlot: async () => 1,
+      getBlockTime: async () => Math.floor(Date.now() / 1000),
+      sendRawTransaction: async () => {
+        throw new SendTransactionError({
+          action: "send",
+          signature: "",
+          transactionMessage: "Transaction simulation failed",
+          logs: [],
+        });
+      },
+    });
+
+    const result = await new AegisClient(config, conn, signer).executeAgentTransfer(Keypair.generate().publicKey, 1_000_000n);
+
+    expect(result.status).toBe("rejected");
+    expect(result.sig).toBeUndefined();
   });
 
   test("a confirmation timeout becomes an unresolved submission with a durable signature", async () => {

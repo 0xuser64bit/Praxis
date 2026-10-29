@@ -148,6 +148,391 @@ fn new_svm() -> LiteSVM {
     svm
 }
 
+#[test]
+fn system_program_substitution_rejected_on_chain() {
+    let mut context = Ctx::setup(sol(2), sol(5), vec![], 200_000, 1_000, sol(20));
+    let recipient = context.owner.pubkey();
+    let agent = context.agent.insecure_clone();
+    let before_policy = context.svm.get_account(&context.policy).unwrap();
+    let before_vault = context.svm.get_account(&context.vault).unwrap();
+    let before_log = context.svm.get_account(&context.action_log).unwrap();
+    let before_recipient = context.svm.get_account(&recipient).unwrap();
+    let mut accounts = aegis::accounts::AgentTransfer {
+        agent_authority: agent.pubkey(),
+        policy: context.policy,
+        vault: context.vault,
+        recipient,
+        action_log: context.action_log,
+        system_program: aegis::ID,
+    }
+    .to_account_metas(None);
+    accounts.push(anchor_lang::solana_program::instruction::AccountMeta::new_readonly(
+        anchor_lang::system_program::ID,
+        false,
+    ));
+    let instruction = Instruction::new_with_bytes(
+        aegis::ID,
+        &aegis::instruction::AgentTransfer { amount: sol(1) }.data(),
+        accounts,
+    );
+
+    expect_reject(
+        &context.send(instruction, &[&agent]),
+        anchor_lang::error::ErrorCode::InvalidProgramId as u32,
+        "InvalidProgramId",
+        "substituted system program",
+    )
+    .unwrap();
+    assert_eq!(context.svm.get_account(&context.policy).unwrap(), before_policy);
+    assert_eq!(context.svm.get_account(&context.vault).unwrap(), before_vault);
+    assert_eq!(context.svm.get_account(&context.action_log).unwrap(), before_log);
+    assert_eq!(context.svm.get_account(&recipient).unwrap(), before_recipient);
+}
+
+#[test]
+fn cross_owner_admin_actions_leave_victim_state_unchanged() {
+    let mut context = Ctx::setup(sol(2), sol(5), vec![], 1_000_000, 1_000, sol(20));
+    let intruder = Keypair::new();
+    context.svm.airdrop(&intruder.pubkey(), sol(1)).unwrap();
+    let before_policy = context.svm.get_account(&context.policy).unwrap();
+    let before_vault = context.svm.get_account(&context.vault).unwrap();
+    let before_log = context.svm.get_account(&context.action_log).unwrap();
+    let instructions = vec![
+        (
+            aegis::instruction::UpdatePolicy {
+                max_per_tx: u64::MAX,
+                daily_limit: u64::MAX,
+                allowed_programs: vec![],
+                allowed_recipients: vec![],
+                allowed_mints: vec![],
+                expiry_ts: 1_000_000,
+                paused: false,
+            }
+            .data(),
+            aegis::accounts::UpdatePolicy {
+                owner: intruder.pubkey(),
+                policy: context.policy,
+            }
+            .to_account_metas(None),
+        ),
+        (
+            aegis::instruction::ConfigureToken {
+                token_mint: Pubkey::new_unique(),
+                token_max_per_tx: u64::MAX,
+                token_daily_limit: u64::MAX,
+            }
+            .data(),
+            aegis::accounts::ConfigureToken {
+                owner: intruder.pubkey(),
+                policy: context.policy,
+            }
+            .to_account_metas(None),
+        ),
+        (
+            aegis::instruction::RotateAgent {
+                new_agent_authority: intruder.pubkey(),
+            }
+            .data(),
+            aegis::accounts::RotateAgent {
+                owner: intruder.pubkey(),
+                policy: context.policy,
+            }
+            .to_account_metas(None),
+        ),
+        (
+            aegis::instruction::RevokeAgent {}.data(),
+            aegis::accounts::RevokeAgent {
+                owner: intruder.pubkey(),
+                policy: context.policy,
+            }
+            .to_account_metas(None),
+        ),
+        (
+            aegis::instruction::ClosePolicy {}.data(),
+            aegis::accounts::ClosePolicy {
+                owner: intruder.pubkey(),
+                policy: context.policy,
+                vault: context.vault,
+                action_log: context.action_log,
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None),
+        ),
+    ];
+    for (data, accounts) in instructions {
+        let instruction = Instruction::new_with_bytes(aegis::ID, &data, accounts);
+        let result = context.send(instruction, &[&intruder]);
+        let code = rejected_code(&result).unwrap();
+        assert!(
+            code == anchor_lang::error::ErrorCode::ConstraintSeeds as u32
+                || code == ecode(AegisError::UnauthorizedAgent)
+        );
+        assert_eq!(
+            context.svm.get_account(&context.policy).unwrap(),
+            before_policy
+        );
+        assert_eq!(
+            context.svm.get_account(&context.vault).unwrap(),
+            before_vault
+        );
+        assert_eq!(
+            context.svm.get_account(&context.action_log).unwrap(),
+            before_log
+        );
+    }
+    assert!(context.withdraw(sol(1), &intruder).is_err());
+    assert_eq!(
+        context.svm.get_account(&context.vault).unwrap(),
+        before_vault
+    );
+}
+
+#[test]
+fn stateful_sol_budget_survives_rejection_updates_revoke_and_rotation() {
+    let start = 1_000;
+    let expiry = 1_000_000_000;
+    let mut context = Ctx::setup(3, 7, vec![], expiry, start, sol(20));
+    let recipient = context.owner.pubkey();
+    let mut agent = context.agent.insecure_clone();
+    let mut now = start;
+    let mut window_start = start;
+    let mut spent = 0;
+    let mut random_state = 0x4a65_6769_735f_7631u64;
+
+    for step in 0..256 {
+        if step > 0 && step % 31 == 0 {
+            now += 86_400;
+            context.set_time(now);
+        }
+        if step % 13 == 0 {
+            expect_ok(&context.update_policy(3, 7, expiry), "sequence update").unwrap();
+            assert_eq!(context.policy_state().spent_today, spent);
+        }
+        if step % 17 == 0 {
+            expect_ok(&context.revoke(), "sequence revoke").unwrap();
+            expect_ok(&context.update_policy(3, 7, expiry), "sequence unpause").unwrap();
+            expect_reject(
+                &context.agent_transfer(1, recipient, &agent),
+                ecode(AegisError::UnauthorizedAgent),
+                "UnauthorizedAgent",
+                "unpause must not restore a revoked key",
+            )
+            .unwrap();
+            agent = Keypair::new();
+            context.svm.airdrop(&agent.pubkey(), sol(1)).unwrap();
+            expect_ok(&context.rotate(agent.pubkey()), "sequence rotation").unwrap();
+            assert_eq!(context.policy_state().spent_today, spent);
+        }
+
+        random_state = random_state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1);
+        let amount = (random_state >> 32) % 6;
+        let before_policy = context.svm.get_account(&context.policy).unwrap();
+        let before_vault = context.svm.get_account(&context.vault).unwrap();
+        let before_log = context.svm.get_account(&context.action_log).unwrap();
+        let before_recipient = context.svm.get_account(&recipient).unwrap();
+        let live_spent = if now >= window_start + 86_400 {
+            0
+        } else {
+            spent
+        };
+        let expected_error = if amount == 0 {
+            Some(AegisError::ZeroAmount)
+        } else if amount > 3 {
+            Some(AegisError::ExceedsPerTxLimit)
+        } else if live_spent + amount > 7 {
+            Some(AegisError::ExceedsDailyLimit)
+        } else {
+            None
+        };
+        let result = context.agent_transfer(amount, recipient, &agent);
+
+        if let Some(error) = expected_error {
+            assert_eq!(rejected_code(&result).unwrap(), ecode(error), "step {step}");
+            assert_eq!(
+                context.svm.get_account(&context.policy).unwrap(),
+                before_policy
+            );
+            assert_eq!(
+                context.svm.get_account(&context.vault).unwrap(),
+                before_vault
+            );
+            assert_eq!(
+                context.svm.get_account(&context.action_log).unwrap(),
+                before_log
+            );
+            assert_eq!(
+                context.svm.get_account(&recipient).unwrap(),
+                before_recipient
+            );
+        } else {
+            expect_ok(&result, "sequence transfer").unwrap();
+            if now >= window_start + 86_400 {
+                window_start = now;
+            }
+            spent = live_spent + amount;
+            assert_eq!(context.vault_lamports(), before_vault.lamports - amount);
+            assert_eq!(
+                context.svm.get_account(&recipient).unwrap().lamports,
+                before_recipient.lamports + amount
+            );
+        }
+        let policy = context.policy_state();
+        assert_eq!(policy.spent_today, spent, "step {step}");
+        assert_eq!(policy.day_start_ts, window_start, "step {step}");
+        assert!(spent <= policy.daily_limit);
+    }
+}
+
+#[test]
+fn spl_budget_survives_revoke_rotation_and_expiry() {
+    let expiry = 200_000;
+    let mut context = Ctx::setup(sol(2), sol(5), vec![], expiry, 1_000, sol(20));
+    let mint = Pubkey::new_unique();
+    let source = Pubkey::new_unique();
+    let destination = Pubkey::new_unique();
+    let recipient = Pubkey::new_unique();
+    let vault = context.vault;
+    context.set_mint(mint, TOKEN_DECIMALS, spl_token_id());
+    context.set_token_account(source, &mint, &vault, 100);
+    context.set_token_account(destination, &mint, &recipient, 0);
+    expect_ok(
+        &context.configure_token(mint, 5, 7),
+        "configure SPL sequence",
+    )
+    .unwrap();
+    let old_agent = context.agent.insecure_clone();
+    expect_ok(
+        &context.agent_transfer_spl(3, source, destination, &old_agent),
+        "initial SPL transfer",
+    )
+    .unwrap();
+    expect_ok(&context.revoke(), "SPL revoke").unwrap();
+    expect_reject(
+        &context.agent_transfer_spl(1, source, destination, &old_agent),
+        ecode(AegisError::UnauthorizedAgent),
+        "UnauthorizedAgent",
+        "revoked SPL agent",
+    )
+    .unwrap();
+    let next_agent = Keypair::new();
+    context.svm.airdrop(&next_agent.pubkey(), sol(1)).unwrap();
+    expect_ok(&context.rotate(next_agent.pubkey()), "SPL rotation").unwrap();
+    assert_eq!(context.policy_state().token_spent_today, 3);
+    expect_ok(
+        &context.agent_transfer_spl(3, source, destination, &next_agent),
+        "rotated SPL agent",
+    )
+    .unwrap();
+    expect_reject(
+        &context.agent_transfer_spl(2, source, destination, &next_agent),
+        ecode(AegisError::ExceedsDailyLimit),
+        "ExceedsDailyLimit",
+        "SPL cap retained across rotation",
+    )
+    .unwrap();
+
+    let before_policy = context.svm.get_account(&context.policy).unwrap();
+    let before_log = context.svm.get_account(&context.action_log).unwrap();
+    let before_source = context.svm.get_account(&source).unwrap();
+    let before_destination = context.svm.get_account(&destination).unwrap();
+    context.set_time(expiry);
+    expect_reject(
+        &context.agent_transfer_spl(1, source, destination, &next_agent),
+        ecode(AegisError::SessionExpired),
+        "SessionExpired",
+        "SPL expiry boundary precedes window rollover",
+    )
+    .unwrap();
+    assert_eq!(
+        context.svm.get_account(&context.policy).unwrap(),
+        before_policy
+    );
+    assert_eq!(
+        context.svm.get_account(&context.action_log).unwrap(),
+        before_log
+    );
+    assert_eq!(context.svm.get_account(&source).unwrap(), before_source);
+    assert_eq!(
+        context.svm.get_account(&destination).unwrap(),
+        before_destination
+    );
+}
+
+#[test]
+fn reinitialization_requires_close_and_does_not_restore_the_old_agent() {
+    let mut context = Ctx::setup(sol(2), sol(5), vec![], 200_000, 1_000, sol(20));
+    let owner = context.owner.insecure_clone();
+    let old_agent = context.agent.insecure_clone();
+    let new_agent = Keypair::new();
+    context.svm.airdrop(&new_agent.pubkey(), sol(1)).unwrap();
+    let policy = context.policy;
+    let action_log = context.action_log;
+    let owner_key = owner.pubkey();
+    let initialize = || {
+        Instruction::new_with_bytes(
+            aegis::ID,
+            &aegis::instruction::InitializePolicy {
+                agent_authority: new_agent.pubkey(),
+                max_per_tx: sol(2),
+                daily_limit: sol(5),
+                allowed_programs: vec![],
+                allowed_recipients: vec![],
+                allowed_mints: vec![],
+                expiry_ts: 200_000,
+            }
+            .data(),
+            aegis::accounts::InitializePolicy {
+                owner: owner_key,
+                policy,
+                action_log,
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None),
+        )
+    };
+    let before_policy = context.svm.get_account(&policy).unwrap();
+    assert!(context.send(initialize(), &[&owner]).is_err());
+    assert_eq!(context.svm.get_account(&policy).unwrap(), before_policy);
+
+    let close = Instruction::new_with_bytes(
+        aegis::ID,
+        &aegis::instruction::ClosePolicy {}.data(),
+        aegis::accounts::ClosePolicy {
+            owner: owner_key,
+            policy,
+            vault: context.vault,
+            action_log,
+            system_program: anchor_lang::system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    expect_ok(&context.send(close, &[&owner]), "owner close").unwrap();
+    for address in [policy, action_log, context.vault] {
+        assert!(context
+            .svm
+            .get_account(&address)
+            .is_none_or(|account| { account.lamports == 0 && account.data.is_empty() }));
+    }
+    expect_ok(&context.send(initialize(), &[&owner]), "owner reinitialize").unwrap();
+    assert_eq!(context.policy_state().agent_authority, new_agent.pubkey());
+    assert_eq!(context.policy_state().spent_today, 0);
+    expect_reject(
+        &context.agent_transfer(1, owner_key, &old_agent),
+        ecode(AegisError::UnauthorizedAgent),
+        "UnauthorizedAgent",
+        "closed policy's former agent",
+    )
+    .unwrap();
+    context.fund(sol(1));
+    expect_ok(
+        &context.agent_transfer(1, owner_key, &new_agent),
+        "reinitialized policy's new agent",
+    )
+    .unwrap();
+}
+
 impl Ctx {
     /// Build a fresh environment: fund owner + agent, initialize a policy with
     /// the given envelope, and fund the vault.

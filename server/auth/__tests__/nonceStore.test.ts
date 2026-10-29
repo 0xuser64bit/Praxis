@@ -1,6 +1,58 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { RedisNonceStore } from "../nonceStore";
+import { getNonceStore, MemoryNonceStore, RedisNonceStore, resetNonceStoreForTests } from "../nonceStore";
+
+describe("nonce store configuration", () => {
+  const names = [
+    "NODE_ENV", "REDIS_URL", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN",
+    "KV_REST_API_URL", "KV_REST_API_TOKEN",
+  ];
+  let previous: Array<string | undefined>;
+
+  beforeEach(() => {
+    previous = names.map((name) => process.env[name]);
+    for (const name of names) Reflect.deleteProperty(process.env, name);
+    resetNonceStoreForTests();
+  });
+
+  afterEach(() => {
+    names.forEach((name, index) => {
+      if (previous[index] === undefined) Reflect.deleteProperty(process.env, name);
+      else Reflect.set(process.env, name, previous[index]);
+    });
+    resetNonceStoreForTests();
+  });
+
+  test("refuses process-local replay protection in production", () => {
+    Reflect.set(process.env, "NODE_ENV", "production");
+    expect(() => getNonceStore()).toThrow(/shared Redis/);
+  });
+
+  test("refuses incomplete Redis credentials in production", () => {
+    Reflect.set(process.env, "NODE_ENV", "production");
+    process.env.UPSTASH_REDIS_REST_URL = "https://redis.example";
+    expect(() => getNonceStore()).toThrow(/shared Redis/);
+  });
+
+  test("uses configured shared replay protection in production", () => {
+    Reflect.set(process.env, "NODE_ENV", "production");
+    process.env.UPSTASH_REDIS_REST_URL = "https://redis.example";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+    expect(getNonceStore()).toBeInstanceOf(RedisNonceStore);
+  });
+
+  test("keeps process-local nonces available in development", () => {
+    Reflect.set(process.env, "NODE_ENV", "development");
+    expect(getNonceStore()).toBeInstanceOf(MemoryNonceStore);
+  });
+
+  test("a process-local nonce claim cannot protect another instance", async () => {
+    const firstInstance = new MemoryNonceStore();
+    const secondInstance = new MemoryNonceStore();
+    expect(await firstInstance.consume("captured-signed-challenge", 300)).toBe(true);
+    expect(await secondInstance.consume("captured-signed-challenge", 300)).toBe(true);
+  });
+});
 
 describe("RedisNonceStore", () => {
   function fakeFetch(handler: (url: string, body: unknown) => { status?: number; json: unknown }) {

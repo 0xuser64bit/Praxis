@@ -2111,25 +2111,12 @@ export class PraxisServerProvider implements PraxisProvider {
    * Write this provider's document, compare-and-swapping on the revision it
    * was loaded at.
    *
-   * On a conflict another *instance* wrote first. For the conversational
-   * document the resolution is to take the newer revision and write our
-   * snapshot over it — the same last-write-wins the blind write always had,
-   * except now it is deliberate, bounded, and logged instead of invisible.
-   * The one place that must NOT resolve this way is claiming a proposal for
-   * execution, which uses {@link casSave} directly and re-reads instead.
+   * Conversation and execution state share this document. A stale snapshot
+   * must never overwrite a newer proposal claim, submission or schedule
+   * advance. Propagate conflicts so callers can reload and re-decide.
    */
-  private async persist(): Promise<void> {
-    return this.enqueueWrite(async () => {
-      try {
-        this.rev = await this.repository.save(this.ownerKey, this.snapshot(), this.rev);
-      } catch (error) {
-        if (!(error instanceof PraxisConflictError)) throw error;
-        logger.warn("praxis.state_conflict_overwrite", { ownerKey: this.ownerKey, rev: this.rev });
-        const latest = await this.repository.load(this.ownerKey);
-        this.rev = latest?.rev ?? 0;
-        this.rev = await this.repository.save(this.ownerKey, this.snapshot(), this.rev);
-      }
-    });
+  private persist(): Promise<void> {
+    return this.casSave();
   }
 
   /**

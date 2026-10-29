@@ -111,14 +111,15 @@ values, not file paths.** Vercel has no writable key files.
 | `AEGIS_PROGRAM_ID` | Your program id |
 | `PRAXIS_SESSION_SECRET` | Random string, at least 32 characters. Required in production. |
 | `DATABASE_URL` | Neon (Vercel Marketplace) or any Postgres URL. The schema creates itself. |
-| `UPSTASH_REDIS_REST_URL` / `_TOKEN` | Shared rate limits and single-use sign-in nonces across instances |
+| `UPSTASH_REDIS_REST_URL` / `_TOKEN` | Required shared nonce replay protection in production (or use `REDIS_URL`); also backs rate limits |
 | `GEMINI_API_KEY` / `GROQ_API_KEY` | Intent parsing. Otherwise set `PRAXIS_LOCAL_INTENT=1`. |
 | Agent key | See [agent-key custody](#production-agent-key-custody) |
 
 Production refuses to fall back silently. With no `DATABASE_URL`, it requires
 an explicit `PRAXIS_STATE_BACKEND=fs`, and filesystem state is per-instance and
 ephemeral on Vercel. With no custody setup, it refuses a raw in-process agent
-key.
+key. Wallet sign-in also requires `REDIS_URL` or complete Upstash/KV credentials
+in production; it refuses to use process-local replay protection.
 
 ### App subdomain
 
@@ -321,7 +322,7 @@ The local-validator smoke scripts read keypairs from `SMOKE_OWNER`,
 | `PRAXIS_SESSION_SECRET` | Required in production |
 | `PRAXIS_SESSION_TTL_HOURS` | Default 24. A session can spend within the envelope, so keep it short. |
 | `DATABASE_URL` | Postgres state. When set, the default backend is `postgres`. |
-| `REDIS_URL` or `UPSTASH_REDIS_REST_URL`/`_TOKEN` | Shared rate limits and nonces. When set, the limiter defaults to Redis. |
+| `REDIS_URL` or `UPSTASH_REDIS_REST_URL`/`_TOKEN` | Required for production wallet sign-in. Shared nonces and rate limits; the limiter defaults to Redis when configured. |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | Model defaults to `gemini-flash-lite-latest`. Use a `-latest` alias, because a retired pinned model returns 404. On the free tier stay on flash-lite, because plain flash allows 20 requests a day. |
 | `GROQ_API_KEY`, `GROQ_MODEL` | A second parser with its own free quota. Defaults to `openai/gpt-oss-120b`, which realistically gives about 4 parses a minute and about 100 a day. |
 | `PRAXIS_INTENT_PROVIDERS` | Parse order before the local fallback (default `gemini,groq`). Providers without a key are skipped. |

@@ -1,6 +1,7 @@
 import { createClient } from "redis";
 
 import { fetchWithTimeout, type FetchLike } from "../api/timeout";
+import { PraxisConfigError } from "../errors";
 import { logger } from "../observability/logger";
 
 /**
@@ -32,7 +33,7 @@ const MAX_MEMORY_NONCES = 10_000;
 /**
  * Process-local store. Correct on a single instance; on multiple instances it
  * only narrows the replay window rather than closing it, which is why
- * production should configure Redis (see docs/ARCHITECTURE.md).
+ * production requires Redis (see docs/ARCHITECTURE.md).
  */
 export class MemoryNonceStore implements NonceStore {
   private readonly used = new Map<string, number>();
@@ -155,6 +156,11 @@ export function getNonceStore(): NonceStore {
   if (creds) {
     cached = new RedisNonceStore(creds.url, creds.token);
     return cached;
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new PraxisConfigError(
+      "Production wallet sign-in requires shared Redis replay protection: set REDIS_URL or complete Upstash/KV credentials.",
+    );
   }
   cached = new MemoryNonceStore();
   return cached;

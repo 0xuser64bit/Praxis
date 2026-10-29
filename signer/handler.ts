@@ -3,6 +3,7 @@ import { createPrivateKey, sign as edSign, timingSafeEqual } from "node:crypto";
 import { Keypair, PublicKey } from "@solana/web3.js";
 
 import { describeAegisAgentTransfer } from "../server/agent/agentTxPolicy";
+import { readLimitedText } from "../server/api/body";
 import { logger } from "../server/observability/logger";
 
 export interface SignerConfig {
@@ -22,6 +23,7 @@ export interface SignerConfig {
 
 const RATE_WINDOW_MS = 60_000;
 const DEFAULT_MAX_SIGNATURES_PER_MINUTE = 60;
+const MAX_SIGNER_BODY_BYTES = 8 * 1024;
 
 /** Sign raw bytes with an ed25519 keypair — the same signature `Keypair` produces. */
 export function signEd25519(keypair: Keypair, message: Uint8Array): Buffer {
@@ -93,7 +95,7 @@ export function createSignerHandler(config: SignerConfig) {
 
     let body: unknown;
     try {
-      body = await request.json();
+      body = JSON.parse(await readLimitedText(request, MAX_SIGNER_BODY_BYTES));
     } catch {
       return json({ error: "invalid json" }, 400);
     }

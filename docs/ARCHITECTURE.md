@@ -246,13 +246,16 @@ writer elsewhere.
   advanced and written *before* any proposal is built. A crash between the
   claim and the card misses one fire, and for money that is the right way to
   fail.
-- **Conversation data** (threads, activity, contacts) resolves conflicts by
-  deliberate, logged last-write-wins. It reloads the newer revision and
-  rewrites.
+- **Conversation data** (threads, activity, contacts) uses the same strict
+  compare-and-swap as execution state because they share one document. Stale
+  writes fail with a conflict; callers must reload and re-decide rather than
+  overwrite newer proposal claims, submissions or schedule advances.
 - **Sign-in nonces** are claimed through a shared store: `SET NX EX` on Redis
-  when `REDIS_URL` or Upstash is configured, or in memory otherwise. The nonce
-  store fails **closed**: if a configured store cannot answer, sign-in is
-  refused. The rate limiter fails **open**, to a process-local limiter.
+  when `REDIS_URL` or complete Upstash/KV credentials are configured. Production
+  refuses sign-in without shared replay protection; in-memory nonces are only
+  available outside production. The nonce store fails **closed**: if a
+  configured store cannot answer, sign-in is refused. The rate limiter fails
+  **open**, to a process-local limiter.
 
 ## Trust boundaries
 
@@ -311,16 +314,17 @@ signer.
   durable is the operator's job.
 - **State backend.** Filesystem state lives on one instance and does not
   survive redeploys. Production should use `PRAXIS_STATE_BACKEND=postgres`.
-- **Redis.** Without Redis, rate limits and nonce single-use hold per instance
-  only. A multi-instance deployment should set `REDIS_URL` or Upstash
-  credentials.
+- **Redis.** Production wallet sign-in requires `REDIS_URL` or complete
+  Upstash/KV credentials. During a Redis outage sign-in fails closed, while rate
+  limits fall back to process-local enforcement and lose cross-instance limits.
 - **Concurrent owner edits.** Owner policy edits read the full allow-list
   vectors, modify them and write them back. The program takes whole
   `Vec<Pubkey>` values and cannot compare-and-swap, so two edits built from
-  the same read clobber each other. The window is one blockhash lifetime, and
-  the worst case is a lost allow-list entry, not lost funds. Fixing it needs a
-  nonce on `PolicyAccount`, which means a change to the account layout and a
-  migration.
+  the same read can clobber each other, including restoring older caps, pause
+  state or allow-lists in the full policy update. Each write still needs the
+  owner's signature; the window is one blockhash lifetime. Preventing stale
+  owner-approved updates robustly needs a revision on `PolicyAccount` checked
+  by update instructions, which means an account-layout change and migration.
 - **Rejected actions.** No durable indexer records transactions rejected
   outside the app process.
 - **Cron scale.** The scheduled-buy job walks at most 500 wallets per tick.

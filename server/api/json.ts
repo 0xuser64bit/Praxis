@@ -19,6 +19,7 @@ import {
   type PraxisErrorBody,
 } from "../errors";
 import { assertRateLimit } from "./rateLimit";
+import { readLimitedText } from "./body";
 
 const U64_MAX = 2n ** 64n - 1n;
 const MAX_JSON_BODY_BYTES = 64 * 1024;
@@ -57,23 +58,27 @@ export function jsonError(error: unknown, init: ResponseInit = {}): Response {
   // Config (503) failures frequently name internal env vars in their message.
   // That detail is for operators (already logged above), not end users — return
   // a generic, non-leaky note to the client instead.
+  const expectedError = error instanceof PraxisError
+    && (status < 500 || error instanceof PraxisSubmittedError);
   const clientMessage =
     status === 503
       ? "Praxis is temporarily unavailable due to a server configuration issue. Please try again shortly."
-      : error instanceof Error
+      : expectedError
         ? error.message
-        : "Unexpected Praxis backend error";
+        : "An unexpected server error occurred.";
 
   // The message is prose and may be reworded; `code` is the stable contract a
   // client branches on (see PraxisErrorCode), and `details` carries the facts
   // it would otherwise have to parse back out of the message.
   const body: PraxisErrorBody = {
     error: clientMessage,
-    type: error instanceof Error ? error.name : "Error",
+    type: error instanceof PraxisError && (status !== 500 || error instanceof PraxisSubmittedError)
+      ? error.name
+      : "Error",
     code: error instanceof PraxisError ? error.code : "internal_error",
   };
   // Config details name internal env vars; those stay in the operator log.
-  if (error instanceof PraxisError && error.details && status !== 503) {
+  if (expectedError && error.details) {
     body.details = error.details;
   }
 
@@ -115,15 +120,7 @@ export async function withApi<T>(fn: () => Promise<T> | T): Promise<Response> {
 }
 
 export async function readJson(request: Request): Promise<Record<string, unknown>> {
-  const declaredLength = request.headers.get("content-length");
-  if (declaredLength && Number(declaredLength) > MAX_JSON_BODY_BYTES) {
-    throw new PraxisInputError(`Request body must be ${MAX_JSON_BODY_BYTES} bytes or smaller`);
-  }
-
-  const body = await request.text();
-  if (Buffer.byteLength(body, "utf8") > MAX_JSON_BODY_BYTES) {
-    throw new PraxisInputError(`Request body must be ${MAX_JSON_BODY_BYTES} bytes or smaller`);
-  }
+  const body = await readLimitedText(request, MAX_JSON_BODY_BYTES);
   if (!body.trim()) return {};
   let parsed: unknown;
   try {

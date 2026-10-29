@@ -27,6 +27,10 @@ Env:
 - `SIGNER_PORT` (optional) — defaults to `8787`.
 - `SIGNER_MAX_SIGNATURES_PER_MINUTE` (optional) — defaults to `60`.
 
+Authenticated signing requests have an 8 KiB body limit, enforced while reading
+the stream even without `Content-Length`. Oversized bodies are cancelled before
+JSON parsing; the signature rate limit does not substitute for this input bound.
+
 ## Wire contract
 
 ```

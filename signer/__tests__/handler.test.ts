@@ -46,6 +46,32 @@ function signRequest(message: string, token = TOKEN): Request {
 }
 
 describe("signer handler", () => {
+  test("cancels an oversized authenticated body before consuming its tail", async () => {
+    const { handle } = handler();
+    let reads = 0;
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        reads += 1;
+        if (reads <= 3) controller.enqueue(new Uint8Array(4096).fill(32));
+        else controller.error(new Error("read beyond the signer request budget"));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    }, { highWaterMark: 0 });
+    const response = await handle(new Request("http://signer.local/sign", {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}` },
+      body: stream,
+    }));
+
+    expect(response.status).toBe(400);
+    expect(reads).toBe(3);
+    expect(cancelled).toBe(true);
+    expect(stream.locked).toBe(false);
+  });
+
   test("signs a valid agent_transfer and the signature verifies", async () => {
     const { keypair, handle } = handler();
     const message = agentTransferMessage(keypair.publicKey);

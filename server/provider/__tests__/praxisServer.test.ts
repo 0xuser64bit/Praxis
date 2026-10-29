@@ -253,6 +253,35 @@ describe("unknown assets", () => {
 });
 
 describe("concurrent signers (optimistic concurrency)", () => {
+  test("a stale refresh cannot reopen an executed proposal", async () => {
+    const config = makeConfig();
+    const policy = policyFixture();
+    const firstAegis = new FakeAegis(policy);
+    const first = new PraxisServerProvider(config, firstAegis as unknown as AegisClient);
+    const { threadId } = await first.send(null, "send 0.5 sol to maya");
+    const thread = first.getThread(threadId)!;
+    const message = thread.messages.at(-1) as { blocks: Array<{ type: string; proposalId?: string }> };
+    const proposalId = message.blocks.find((block) => block.type === "proposal")!.proposalId!;
+    const repository = getStateRepository();
+    const ownerKey = config.ownerAddress!.toBase58();
+    const stale = new PraxisServerProvider(
+      config,
+      new FakeAegis(policy) as unknown as AegisClient,
+      await repository.load(ownerKey),
+    );
+
+    await first.signProposal(proposalId);
+    await expect(stale.refreshOnChain()).rejects.toBeInstanceOf(PraxisConflictError);
+    const latest = await repository.load(ownerKey);
+    expect(latest!.state.proposals[proposalId].state).toBe("signed");
+
+    const replayAegis = new FakeAegis(policy);
+    const replay = new PraxisServerProvider(config, replayAegis as unknown as AegisClient, latest);
+    await replay.signProposal(proposalId);
+    expect(replayAegis.calls).not.toContain("executeAgentTransfer");
+    expect(firstAegis.calls.filter((call) => call === "executeAgentTransfer")).toHaveLength(1);
+  });
+
   test("two instances holding the same pending proposal execute it exactly once", async () => {
     // One wallet, two providers built from the SAME loaded revision — the
     // shape of two serverless instances serving a duplicated confirm tap.

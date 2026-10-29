@@ -1,0 +1,89 @@
+
+=== Node security regressions ===
+{"level":"info","msg":"signer.signed","time":"2026-10-28T19:27:41.379Z","agent":"CkJACNXcBg98EuXpB59cPx7P71rnaAVsfM9k86nRN2mA","instruction":"agent_transfer","policy":"4AgFCGF5HDBuvWHFuiTLwLK958Mb8SKWQxUF8ezNB2tw","amount":"1"}
+{"level":"error","msg":"praxis.error","time":"2026-10-28T19:27:41.383Z","httpStatus":500,"errorName":"InternalDatabaseDriverError","errorMessage":"internal database host; synthetic-secret=not-a-real-secret","stack":"InternalDatabaseDriverError: internal database host; synthetic-secret=not-a-real-secret\n    at TestContext.<anonymous> (file:///Users/user64bit/Code/Praxis/audit_1/security-regressions.mjs:220:17)\n    at Test.runInAsyncScope (node:async_hooks:226:14)\n    at Test.run (node:internal/test_runner/test:1402:25)\n    at Test.processPendingSubtests (node:internal/test_runner/test:974:18)\n    at Test.postRun (node:internal/test_runner/test:1542:19)\n    at Test.run (node:internal/test_runner/test:1467:12)\n    at async Test.processPendingSubtests (node:internal/test_runner/test:974:7)"}
+{"level":"warn","msg":"praxis.submitted_unknown","time":"2026-10-28T19:27:41.383Z","errorName":"PraxisSubmittedError","errorMessage":"Transaction local-signature was submitted, but confirmation is unknown. Do not retry — check Solana Explorer.","stack":"PraxisSubmittedError: Transaction local-signature was submitted, but confirmation is unknown. Do not retry — check Solana Explorer.\n    at TestContext.<anonymous> (file:///Users/user64bit/Code/Praxis/audit_1/security-regressions.mjs:230:17)\n    at Test.runInAsyncScope (node:async_hooks:226:14)\n    at Test.run (node:internal/test_runner/test:1402:25)\n    at Test.processPendingSubtests (node:internal/test_runner/test:974:18)\n    at Test.postRun (node:internal/test_runner/test:1542:19)\n    at Test.run (node:internal/test_runner/test:1467:12)\n    at async Test.processPendingSubtests (node:internal/test_runner/test:974:7)"}
+✔ stale refresh cannot restore a paid proposal or allow a duplicate execution (25.362833ms)
+✔ stale writes cannot resurrect a cancelled schedule (1.532125ms)
+✔ production refuses process-local nonce replay protection and incomplete Redis config (0.167542ms)
+✔ two process-local nonce stores accept the same challenge independently (0.065ms)
+✔ signed challenge replay succeeds across replica-local stores, but not against one shared store (16.933875ms)
+✔ the bounded signer still signs a valid message at exactly the body limit (18.818875ms)
+✔ authenticated signer stops consuming an oversized body and cancels its stream (0.654541ms)
+✔ unexpected server errors do not expose internal messages or class names (0.396584ms)
+✔ submitted transaction evidence survives error redaction (0.201042ms)
+✔ API JSON body limits stop a stream even without Content-Length (0.227167ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 663.6565
+
+=== Offline Rust and LiteSVM tests ===
+   Compiling aegis v0.1.0 (/Users/user64bit/Code/Praxis/aegis/programs/aegis)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.92s
+     Running unittests src/lib.rs (aegis/target/debug/deps/aegis-6856445083fe983f)
+
+running 1 test
+test test_id ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/account_validation.rs (aegis/target/debug/deps/account_validation-6226799674c711c7)
+
+running 2 tests
+test system_program_rejects_another_executable ... ok
+test system_program_accepts_only_the_executable_system_program ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/enforcement.rs (aegis/target/debug/deps/enforcement-3826df8bd4cacab5)
+
+running 6 tests
+test system_program_substitution_rejected_on_chain ... ok
+test cross_owner_admin_actions_leave_victim_state_unchanged ... ok
+test reinitialization_requires_close_and_does_not_restore_the_old_agent ... ok
+test spl_budget_survives_revoke_rotation_and_expiry ... ok
+
+┌──── AEGIS ENFORCEMENT GATE ──────────────────────────────────────────────
+│ T1  Cap boundary             PASS ✅
+│        ↳ per-tx: max-1 ok, max ok, max+1→Custom(6003) over_per_tx | daily: limit-1 ok, limit ok, +1→Custom(6004) over_daily
+│ T2  Day rollover             PASS ✅
+│        ↳ cap ok; +1→Custom(6004) over_daily; t0+86399 (<24h)→Custom(6004) over_daily; t0+86400 (exact >= boundary) ok; t0+86401 (>24h) ok + spent_today reset
+│ T3  Signer / owner-withdraw  PASS ✅
+│        ↳ intruder→Custom(6000) unauthorized; owner withdraw 10 SOL (>2 SOL cap) ok, vault −10 SOL
+│ T4  Revoke                   PASS ✅
+│        ↳ agent ok pre-revoke; revoke; old key→Custom(6000) unauthorized (authority zeroed + paused)
+│ T5  Allow-list               PASS ✅
+│        ↳ allowed recipient ok; non-allowed→Custom(6005) recipient_not_allowed
+│ T6  Admin invariants         PASS ✅
+│        ↳ zero limits / expired update→Custom(6010) invalid_limits; default rotate key→Custom(6012) invalid_agent_authority
+│ T7  SPL token envelope       PASS ✅
+│        ↳ not-configured→Custom(6014); wrong mint→Custom(6013) mint_not_allowed; non-allowed recipient→Custom(6005); token per-tx {100 ok, 101→Custom(6003)}; token daily {→200 ok, →300→Custom(6004)}; SOL/token counters independent (SOL=1, token=200)
+│ T8  Token-2022 envelope      PASS ✅
+│        ↳ token-2022 transfer settles; per-tx cap holds; mismatched mint→Custom(6013); program confusion + mint-as-account + unknown program→Custom(6015)
+│ T9  Vault invariants         PASS ✅
+│        ↳ zero amounts→Custom(6016); reserve unspendable→Custom(6011); rent-paying vault→Custom(6017)
+│ T10  Token window on reconfigure PASS ✅
+│        ↳ raise: 199 spent kept, 299 then +2→Custom(6004); lower below spend: +1→Custom(6004); new mint: window reset to 0
+└──────────────────────────────────────────────────────────────────────────
+
+test aegis_enforcement_gate ... ok
+test stateful_sol_budget_survives_rejection_updates_revoke_and_rotation ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s
+
+
+=== ESLint ===
+
+=== App TypeScript ===
+
+=== SDK TypeScript ===
+
+=== Diff whitespace ===
+
+=== Verified SBF SHA-256 ===
+c8dd1e7920aed75f5efefa5ca8de1707a88b496afd5dc79fa63dd756758c4b50  aegis/target/deploy/aegis.so

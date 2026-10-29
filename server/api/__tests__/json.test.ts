@@ -15,7 +15,7 @@ import {
   readUnsignedOwnerTransaction,
   assertSameOrigin,
 } from "../json";
-import { PraxisConfigError, PraxisInputError, PraxisPolicyNotFoundError } from "../../errors";
+import { PraxisConfigError, PraxisInputError, PraxisPolicyNotFoundError, PraxisSubmittedError } from "../../errors";
 import { makeRequest } from "../../testing/fixtures";
 
 const URL = "https://praxis.test/api/praxis/send";
@@ -46,6 +46,45 @@ describe("readJson", () => {
   test("rejects an oversized actual body", async () => {
     const big = "x".repeat(64 * 1024 + 10);
     await expect(readJson(makeRequest(URL, { body: { big } }))).rejects.toThrow(/bytes or smaller/);
+  });
+
+  for (const declaredLength of [undefined, "1"]) {
+    test(`cancels an oversized stream before reading its tail (content-length ${declaredLength})`, async () => {
+      let reads = 0;
+      let cancelled = false;
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          reads += 1;
+          if (reads <= 3) controller.enqueue(new Uint8Array(32 * 1024).fill(32));
+          else controller.error(new Error("read beyond the request budget"));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }, { highWaterMark: 0 });
+      const headers = declaredLength ? { "content-length": declaredLength } : undefined;
+      const request = new Request(URL, { method: "POST", headers, body: stream });
+
+      await expect(readJson(request)).rejects.toThrow(/bytes or smaller/);
+      expect(reads).toBe(3);
+      expect(cancelled).toBe(true);
+      expect(request.body?.locked).toBe(false);
+    });
+  }
+
+  test("accepts exactly the byte limit, including a split UTF-8 character", async () => {
+    const encoded = new TextEncoder().encode(JSON.stringify({ value: "é" + "x".repeat(64 * 1024 - 14) }));
+    expect(encoded.byteLength).toBe(64 * 1024);
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoded.subarray(0, 11));
+        controller.enqueue(encoded.subarray(11));
+        controller.close();
+      },
+    });
+
+    expect(await readJson(new Request(URL, { method: "POST", body: stream })))
+      .toEqual({ value: "é" + "x".repeat(64 * 1024 - 14) });
   });
 });
 
@@ -238,6 +277,30 @@ describe("assertSameOrigin", () => {
 });
 
 describe("jsonError", () => {
+  test("does not expose unexpected upstream error messages or class names", async () => {
+    const error = new Error("database connection failed for internal-db.example: secret=private-value");
+    error.name = "InternalDatabaseDriverError";
+    const response = jsonError(error);
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      error: "An unexpected server error occurred.",
+      type: "Error",
+      code: "internal_error",
+    });
+  });
+
+  test("preserves submitted-but-unknown evidence so callers do not blindly retry", async () => {
+    const error = new PraxisSubmittedError("submitted-transaction-signature");
+    const response = jsonError(error);
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      error: error.message,
+      type: "PraxisSubmittedError",
+      code: "submitted_unknown",
+      details: { sig: error.sig },
+    });
+  });
+
   test("does not leak env var names from config (503) errors", async () => {
     const res = jsonError(new PraxisConfigError("PRAXIS_SESSION_SECRET is required in production API mode."));
     expect(res.status).toBe(503);

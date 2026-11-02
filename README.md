@@ -1,214 +1,207 @@
-# Praxis
+<p align="center">
+  <img src="docs/assets/hero.svg" alt="Praxis. Plain-language intent. On-chain limits. A conversational agent for Solana." width="100%">
+</p>
 
-Praxis is a conversational Solana agent. You type what you want, such as
-*"send 0.5 SOL to maya"* or *"buy $40 openai"*, and the agent turns it into a
-typed, simulated on-chain action for you to sign. **Aegis** keeps it safe.
-Aegis is an Anchor program that enforces a scoped spending policy on-chain.
+<p align="center">
+  <strong>Delegate a little spending power. Not your whole wallet.</strong><br>
+  Describe an action. Inspect the proposal. Let Aegis enforce the limits.
+</p>
 
-The core claim fits in one sentence: **the agent may interpret intent, but the
-program enforces the envelope.** An LLM, a parser or a compromised backend can
-propose anything. None of them can move value past the caps, allow-lists,
-expiry and pause that Aegis checks inside the instruction.
+<p align="center">
+  <a href="https://app.usepraxis.fun">Try the devnet app</a> ·
+  <a href="#run-it-locally">Run locally</a> ·
+  <a href="docs/GUIDE.md">User guide</a> ·
+  <a href="docs/ARCHITECTURE.md">Architecture</a> ·
+  <a href="sdk/README.md">SDK</a>
+</p>
 
-- Live app (devnet): <https://app.usepraxis.fun>. The landing page is at <https://usepraxis.fun>.
-- Aegis program (devnet): `3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd`
-- SDK: [`@usepraxis/sdk`](sdk/) on npm
+---
 
-## How it works
+## Your intent, with a boundary
 
-1. You type a message in the conversation.
-2. The agent parses it into a typed action. It tries Gemini, then Groq, then a
-   local deterministic parser. Each provider has its own free-tier quota, so
-   the second one keeps parsing alive after the first runs out. A signed-in
-   browser can also call Gemini or Groq directly with a key kept in local
-   storage. Praxis receives the parsed result, never the key.
-3. Recipient names resolve through an off-chain address book.
-4. The action is simulated and checked against the policy. The result is a
-   proposal card showing the fee, the simulation and the Aegis verdict.
-5. When you confirm, the backend signs an Aegis instruction with a **scoped
-   agent key** and submits it. A proposal stays signable for a week. Its
-   amount is fixed, and Aegis checks the envelope again when it lands.
-6. Aegis runs its checks *on-chain* before any value moves: signer, pause,
-   expiry, per-transaction cap, rolling daily cap and recipient allow-list.
-   For SPL tokens it also checks the configured mint and token envelope.
+**Praxis is a conversational Solana agent with an on-chain spending policy.**
+Send SOL, transfer a configured token, research assets, and prepare recurring
+stock-token transfers in plain English. Every executable proposal shows its
+recipient, amount, simulation, and policy verdict before you confirm it.
 
-Aegis has two value instructions: `agent_transfer` for native SOL and
-`agent_transfer_spl` for one configured SPL Token or Token-2022 mint. Owner
-actions are fund, withdraw, update policy, allow-lists, revoke and rotate.
-Your own wallet signs them, and they are not limited by the agent caps. The
-backend never holds the owner key.
+The difference is **Aegis**, the Anchor program behind the vault. You fund a
+separate vault and give the agent a scoped key. Aegis checks that key, spending
+caps, recipient restrictions, expiry, and pause state before funds move.
+An LLM can misunderstand you; it cannot change those on-chain limits.
 
-**Trusted:** Solana consensus, the Aegis program and owner wallet signatures.
-**Not trusted for enforcement:** prompt text, LLM output, the parser, the
-off-chain policy mirror and the UI. The off-chain mirrors only explain and
-preview. They never decide whether value moves.
+Praxis is for wallet owners who want bounded delegation, and developers who
+want to build on the same proposal-and-policy workflow through a typed SDK.
+It is not an unrestricted wallet assistant or an autonomous trading bot.
 
-Design, trust boundaries and concurrency are covered in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+![Praxis conversation showing a 0.5 SOL proposal to Maya, a successful simulated outcome, and 4.5 SOL remaining under a 5 SOL daily cap.](docs/assets/conversation.png)
 
-## Stocks (PreStocks)
+*Actual local mock-mode UI. Balances, prices, addresses, and simulation results
+are fixtures; this screenshot is not evidence of an on-chain transaction.*
 
-When `PRAXIS_STOCKS_ENABLED=1`, the agent handles the eight
-[PreStocks](https://prestocks.com/) pre-IPO tokens (ANDURIL, ANTHROPIC,
-FIGUREAI, KALSHI, NEURALINK, OPENAI, POLYMARKET, SPACEX). They get the same
-Aegis envelope as any other token.
+### What makes it useful
 
-- `buy $40 openai` means $40 of OPENAI, converted to a quantity at the live
-  PreStocks price. The reply names the price it used. If no price is
-  available, the agent asks instead of guessing. `buy 0.05 openai` without a
-  `$` is a quantity.
-- `buy $50 spacex every monday` creates a schedule. Each fire produces a
-  proposal that you still sign. Nothing auto-signs.
-- `buy ai basket $60` splits the dollars across the basket's stocks at their
-  live prices. If any one of them is blocked or has no price, the agent asks
-  about the whole basket instead of filling part of it.
-- `research openai` shows PreStocks data and what the issuer can still do to
-  the token. It never gives buy, sell or hold advice.
+| Capability | What you get |
+| --- | --- |
+| **Intent you can inspect** | Typed proposals rather than opaque transaction bytes; ambiguous recipients trigger a question. |
+| **Limits outside the model** | Independent SOL and single-mint token caps, a rolling 24-hour spend window, optional recipient allow-list, and expiry enforced by Aegis. |
+| **Owner control** | Wallet-signed funding, policy changes, withdrawal, key rotation, and revocation. Revoke clears the agent authority and pauses the policy. |
+| **A visible outcome** | Proposal status, activity history, transaction links, and a fixed-size on-chain log of allowed actions. |
+| **A parser that degrades gracefully** | Configurable Gemini/Groq parsing with deterministic local fallback; optional browser-held model keys. |
+| **The same workflow in code** | A Node-first SDK for sign-in, conversations, proposals, research, schedules, and wallet-signed owner transactions. |
 
-What that does and does not mean:
+## From a sentence to a transaction
 
-- **A buy moves stock out of your guarded vault. It does not purchase it.**
-  There is no USDC-to-stock swap. Swaps are parsed and previewed, but always
-  blocked (see [Limitations](#limitations)). Praxis guards the agent's access
-  to stock you already hold. A buy with no recipient settles into your own
-  wallet.
-- **Dollars are priced once.** A dollar amount or dollar cap is converted when
-  it is proposed, and Aegis enforces token quantities. A recurring buy fixes
-  its quantity when you create it. A stock envelope defaults to $100 per buy
-  and $500 a day at the current price.
-- **The PreStocks mints are Token-2022 and mainnet-only.** A devnet deployment
-  runs on mirror mints: Token-2022 stand-ins with the same symbol and 9
-  decimals. Prices and research still come from the live PreStocks API. The
-  app labels a mirrored universe wherever it shows one.
-- **The issuer outranks the policy.** PreStocks holds permanent-delegate,
-  freeze and pause authority on the real mints. Aegis limits what the *agent*
-  can do with your vault. It cannot limit the issuer of a token you chose to
-  hold.
-
-### Try it on devnet
-
-1. Open <https://app.usepraxis.fun> and connect Phantom on **devnet**. You can
-   get devnet SOL from <https://faucet.solana.com>. Then initialize your policy.
-2. Go to Policy → Token transfers and switch the envelope to **OPENAI**. It
-   takes one signature.
-3. Click **$1,000 demo OPENAI** to mint mirror stock into your vault. This is
-   limited to 3 grants per wallet per day.
-4. `buy $40 openai` → sign → Explorer link.
-5. `buy $500 openai` → blocked. The program is what refuses it.
-
-### On-chain proof
-
-`bun run praxis:stocksbuycheck` tests the whole claim against a live cluster.
-Here is its output from devnet on the OPENAI mirror mint:
-
-```
-✓ mint is Token-2022      TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb
-✓ buy CONFIRMED on-chain  U53wAMhGme5Rh6HG7LtRqp5z6CczwqQj1h6szxvUf1C5…
-✓ recipient credited exactly 40, vault debited exactly 40
-✓ over-cap buy REJECTED on-chain — reason code 3 (OverPerTx)
-✓ vault untouched by the blocked buy
+```text
+"send 0.5 SOL to maya"
+          │
+          ▼
+Parse intent → resolve recipient → simulate → show proposal
+                                                  │
+                                           You confirm
+                                                  │
+                                                  ▼
+Scoped agent signs → Aegis checks the live policy → vault transfers
 ```
 
-The [buy transaction](https://explorer.solana.com/tx/U53wAMhGme5Rh6HG7LtRqp5z6CczwqQj1h6szxvUf1C5PsfeMt8PQHm4j8YVT3HREq1mVdLnhbYLgNQEnhZnKfS?cluster=devnet)
-logs show that the agent key never calls the token program directly. Aegis
-checks the envelope first, and only then calls the token program:
+**Confirmation is not another owner-wallet signature.** In API mode, your
+authenticated session authorizes the backend to use its scoped agent key.
+Your wallet signs owner actions such as changing limits. Protect the session
+as a spending credential: someone holding it can request transfers within the
+envelope. Aegis remains the boundary even if the backend is compromised.
 
+Read the [trust model](docs/ARCHITECTURE.md#trust-boundaries) before using real
+value. Policy enforcement does not guarantee that an action is a good idea,
+that a recipient is trustworthy, or that an issuer cannot freeze a token.
+
+## Run it locally
+
+You need **Bun** and **Node.js 20.9+**. No wallet, RPC, model key, database,
+or Rust toolchain is needed for the mock experience.
+
+```bash
+git clone https://github.com/0xuser64bit/Praxis.git
+cd Praxis
+bun install --frozen-lockfile
+(cd sdk && bun install --frozen-lockfile)
+NEXT_PUBLIC_PRAXIS_PROVIDER=mock bun run dev
 ```
-Program 3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd invoke [1]
-Program log: Instruction: AgentTransferSpl
-Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb invoke [2]
-Program log: Instruction: TransferChecked
+
+Open **http://localhost:3000/app**. Try these in order:
+
+| Say or do this | What to look for |
+| --- | --- |
+| `send 0.5 SOL to maya` | A named recipient, a simulated result, and an allowed proposal. Confirm to exercise the mock flow. |
+| `send 50 SOL to maya` | A rejection against the 5 SOL daily budget, not a larger transfer. |
+| `send 0.1 SOL to alex` | A clarifying question: the seeded address book has two Alexes. |
+| `swap 100 usdc for jup` | A blocked preview. Swaps cannot execute. |
+| Open **Policy** → **Revoke agent**, then request another send | Revocation blocks the next action. |
+
+Mock state resets on reload and never touches Solana. Stock flows need API
+mode. To move devnet SOL, follow [local API setup](docs/DEPLOY.md#local-api-mode-on-devnet),
+then the [first-transfer walkthrough](docs/GUIDE.md#your-first-devnet-transfer).
+
+## Stock tokens, without pretending to be a trading venue
+
+With `PRAXIS_STOCKS_ENABLED=1`, Praxis adds a pinned eight-symbol PreStocks
+universe: **ANDURIL, ANTHROPIC, FIGUREAI, KALSHI, NEURALINK, OPENAI,
+POLYMARKET, and SPACEX**.
+
+```text
+research openai                  Read market data and issuer-authority warnings
+buy $40 openai                   Propose a quantity using the fetched token price
+buy $50 spacex every monday      Schedule proposals; each still needs confirmation
+buy ai basket $60                Prepare a basket, or clarify if any leg is blocked
 ```
 
-## SDK
+> **A “buy” transfers stock tokens you already hold in the guarded vault. It
+> does not exchange SOL or USDC for stock.** There is no purchase or swap route.
 
-[`@usepraxis/sdk`](sdk/) is a typed, Node-first client for a hosted Praxis
-backend. It signs the wallet-ownership challenge, holds the session and drives
-the agent. It never holds model keys or the agent private key.
+Only one SPL mint can be active in a policy at a time. Dollar requests become
+fixed token quantities when proposed; recurring schedules fix their quantity
+at creation, not at each fire. Devnet uses clearly labeled Token-2022 mirror
+mints, not real pre-IPO tokens. Issuer powers on real tokens are outside Aegis's
+control. [Stock workflow and caveats](docs/GUIDE.md#stock-token-workflows).
+
+## Build on Praxis
+
+The SDK is an authenticated client of a hosted backend, not an agent runtime.
+Start with a wallet that already has a funded policy. Use a dedicated devnet
+key for local experiments; never paste a primary wallet secret into examples.
+
+```bash
+bun add @usepraxis/sdk
+```
 
 ```ts
 import { PraxisClient, keypairSigner } from "@usepraxis/sdk";
 
 const praxis = new PraxisClient({
-  baseUrl: "https://your-praxis.app",
+  baseUrl: process.env.PRAXIS_URL!,
   signer: keypairSigner(process.env.PRAXIS_SECRET_KEY!),
 });
 
 await praxis.connect();
-const { proposals } = await praxis.ask("send 0.5 SOL to maya");
-for (const p of proposals) {
-  if (p.check.allowed) await praxis.signProposal(p.id); // Aegis enforces caps on-chain
+const { proposals } = await praxis.ask("send 0.01 SOL to maya");
+
+for (const proposal of proposals) {
+  console.log(proposal.id, proposal.detail, proposal.check);
 }
 ```
 
-See [sdk/README.md](sdk/README.md) for the full API.
+This example only prepares proposals. After your own review, call
+`await praxis.signProposal(proposal.id)` for the selected proposal; that call
+can move value. Maya must be a saved contact on that backend.
+[SDK setup, authentication, and owner transactions](sdk/README.md).
 
-## Development
+## Under the hood
 
-You need [Bun](https://bun.sh) and Node.js 20.9 or later. To build or test
-the Aegis program you also need Rust, the Solana CLI and Anchor, at the
-versions pinned in `aegis/Anchor.toml`.
+**Next.js 16 / React 19 / TypeScript** provide the web app and same-origin API.
+**Anchor / Rust** provide Aegis. **Postgres** stores per-wallet application
+state; **Redis** provides shared sign-in replay protection and rate limits.
+Production agent-key custody can live behind the standalone signer.
 
-```bash
-bun install
-(cd sdk && bun install)
+| Area | Start here |
+| --- | --- |
+| Product UI and mock provider | [`components/app/`](components/app/) |
+| Landing page and brand | [`components/praxis/`](components/praxis/), [`data/`](data/) |
+| API routes and server orchestration | [`app/api/`](app/api/), [`server/`](server/) |
+| Policy enforcement and tests | [`aegis/`](aegis/) |
+| Shared contract and generated IDL | [`shared/`](shared/) |
+| Client and key boundary | [`sdk/`](sdk/), [`signer/`](signer/) |
 
-# Mock mode: no chain, keys or LLM key. The whole UI and policy flow runs in memory.
-NEXT_PUBLIC_PRAXIS_PROVIDER=mock bun run dev   # http://localhost:3000/app
-```
+The configured default program ID is
+`3z9GuipayYpAcPnjiwFkfe6gZvfSfuPZgX8djYu67Yhd`.
+Verify the target cluster and deployed binary before relying on a deployment;
+a source checkout is not an attestation of what's on-chain.
 
-To run against a real cluster, with Aegis on devnet, local Postgres/Redis and
-the env reference, see [docs/DEPLOY.md](docs/DEPLOY.md).
+## Know the edges
 
-| Command | What it does |
-|---|---|
-| `bun run check` | lint + typecheck (app and SDK) + tests + production build. This is what CI runs. |
-| `bun run test` | TypeScript suite. Offline, and it ignores `.env`. |
-| `bun run praxis:stocksgate` | Offline stock gate. Also runs in CI. |
-| `bun run aegis:test` | Rebuilds the program and runs the LiteSVM enforcement tests T1–T10 (`aegis/programs/aegis/tests/enforcement.rs`) |
-| `bun run aegis:idl` | Rebuilds and copies the generated IDL into `shared/src/idl/`. Run it after any change to the program's interface. |
-| `bun run signer` | Runs the standalone agent-key signer ([signer/README.md](signer/README.md)) |
+- **No executable swaps or automatic scheduled execution.** Scheduled fires
+  create proposals, not signatures.
+- **One token envelope per policy.** Switching the active mint is an owner
+  transaction, not a portfolio of independent budgets.
+- **Token-2022 has limits.** Active transfer hooks are unsupported; transfer-fee
+  tokens can credit the recipient less than the displayed gross amount.
+- **Not an audit certification.** The [October 29, 2026 security review](audit_1/REPORT.md)
+  documents a bounded source-and-local-test review, its fixes, and its coverage
+  gaps. It is not an independent or exhaustive audit.
 
-Scripts that run against a live cluster are listed in
-[docs/DEPLOY.md](docs/DEPLOY.md#verifying-a-cluster).
+See [known operational gaps](docs/ARCHITECTURE.md#known-gaps) for concurrency,
+indexing, token funding, and scheduler limits.
 
-### Layout
+## Where to go next
 
-| Path | What |
-|---|---|
-| `app/` | Next.js routes: landing page, `/app` conversation surface, `/api/praxis/*`, `/api/cron/stocks` |
-| `components/`, `data/` | `praxis/` landing page (with its copy in `data/`), `app/` product UI, including the in-memory mock provider |
-| `server/` | Provider, intent parsing, Aegis client, auth, state repositories, stocks |
-| `shared/` | `@praxis/shared` types and the generated Aegis IDL |
-| `aegis/` | The Aegis Anchor program and its LiteSVM tests |
-| `signer/` | Standalone agent-key signer for production custody |
-| `sdk/` | `@usepraxis/sdk`, published separately |
-| `scripts/` | Demo, setup and live-cluster check scripts |
-| `proxy.ts` | Host routing: serves `app.` from the same deployment |
-
-## Limitations
-
-These are deliberately not built. New features have to make the safety
-guarantee stronger. They must not open a way around it.
-
-- **Real swaps.** Swap intents are parsed and previewed, but always blocked.
-  There is no Jupiter CPI and no `agent_swap` instruction. A real swap needs
-  mint and program allow-lists and value caps enforced *inside the program*.
-- **Several mints per envelope.** A policy holds one SPL envelope at a time.
-  Switching stocks reconfigures it. Holding several mints at once needs a
-  change to the account layout and a migration.
-- **Token-2022 transfer hooks.** A mint with an active hook needs accounts
-  `agent_transfer_spl` does not pass, so the transaction reverts. That is
-  safe, but unsupported.
-- **Transfer-fee display.** A fee-bearing mint debits the vault by the capped
-  amount and the recipient receives less. The card does not show the net yet.
-- **Auto-signing.** Recurring buys produce proposals, and each one still needs
-  your signature. This is by design.
-- **Token-vault funding** has no product UI yet. It goes through scripts, or
-  the demo faucet on devnet.
-- **Rejected-action indexing.** The on-chain log records allowed actions.
-  Rejections exist only as failed-transaction logs.
+| I want to… | Read |
+| --- | --- |
+| Use the app and understand a proposal | [User guide](docs/GUIDE.md) |
+| Run API mode, enable stocks, or host Praxis | [Deployment and operations](docs/DEPLOY.md) |
+| Understand accounts, enforcement, and failure modes | [Architecture](docs/ARCHITECTURE.md) |
+| Integrate a bot or service | [SDK reference](sdk/README.md) |
+| Isolate the agent key | [Signer service](signer/README.md) |
+| Make a change and test it | [Contributing](CONTRIBUTING.md) |
 
 ## License
 
-The SDK is MIT-licensed ([sdk/LICENSE](sdk/LICENSE)).
+The SDK is [MIT-licensed](sdk/LICENSE). This repository does not declare a
+root license; do not assume the SDK's license covers the application, signer,
+or Aegis program.
